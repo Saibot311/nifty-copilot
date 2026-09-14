@@ -1,6 +1,6 @@
 # NIFTY COPILOT — Project Plan
 
-Living document. Update it as phases complete or decisions change. Current status: **Phase 1 done, Phase 2 scaffolded (Next.js app created, dev server verified working).**
+Living document. Update it as phases complete or decisions change. Current status: **Phase 1 & 2 done. Phase 3 (FastAPI backend) scaffolded and verified.**
 
 **Phase 0 decision (2026-09-14):** You have an active Zerodha account. Chosen path: **free-only for now** — build Phases 1-6 on free/limited data (NSE limits, yfinance, sample data), and revisit the ₹500/month Kite Connect subscription only if/when Phase 7's 10-year research actually needs the extra depth. Nothing paid has been signed up for.
 
@@ -84,7 +84,9 @@ class MarketDataProvider(Protocol):
 | Git / local repo | ✅ Set up at `NIFTY-Trading-App` |
 | GitHub account + remote repo | ✅ Connected — https://github.com/Saibot311/nifty-copilot (auth via `gh auth login`, since GitHub retired password-based git pushes in 2021) |
 | VS Code | Skipped — working directly in the Claude Code app |
-| Python | Not needed yet — arrives in Phase 3 |
+| Python | ✅ Already installed (v3.13.3) — no install needed |
+
+**Phase 3 status:** FastAPI backend scaffolded in `api/` with its own virtual environment (`api/.venv`, gitignored). Three endpoints so far — `/health`, `/api/snapshot`, `/api/indicators` — returning the same placeholder shape as `web/src/lib/mock-data.ts`, verified via curl and the auto-generated `/docs` page. CORS is open to `http://localhost:3000` only. No database yet — SQLite gets added once there's something real to persist (journal entries or cached market data), not before. The frontend does not call this API yet; that wiring is the next step.
 
 **Phase 2 status:** Mock dashboard built and verified running in-browser — price header, regime badge, indicator grid, three scenario cards (bullish/bearish/no-trade) each with entry/target/stop/reward:risk, confirmation/invalidation conditions, placeholder historical-evidence stats, and a working "Why?" toggle. All data in `web/src/lib/mock-data.ts` is explicitly fake — no real data yet. Chart is a placeholder box (real charting library arrives once there's real data to plot). Not yet built: trading journal UI, historical-similarity view (those are Phases 13 and 11 respectively — later).
 

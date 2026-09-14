@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "web"],
       "port": 3000
+    },
+    {
+      "name": "nifty-copilot-api",
+      "runtimeExecutable": "api/.venv/bin/uvicorn",
+      "runtimeArgs": ["main:app", "--reload", "--port", "8000", "--app-dir", "api"],
+      "port": 8000
     }
   ]
 }
