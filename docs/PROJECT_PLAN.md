@@ -1,6 +1,8 @@
 # NIFTY COPILOT — Project Plan
 
-Living document. Update it as phases complete or decisions change. Current status: **Phases 1-4 done.** Broker-agnostic market-data abstraction is live: real free NIFTY data (Yahoo Finance) and synthetic sample data (CSV) both flow through the identical interface; Zerodha is a documented stub, not wired up (needs the ₹500/month subscription you haven't approved yet — planned for ~Phase 7).
+Living document. Update it as phases complete or decisions change. Current status: **Phases 1-5 done.** The dashboard now shows real, computed values (price, regime, most indicators) instead of hardcoded numbers — pulled from free Yahoo Finance data through the Phase 4 abstraction, computed by hand-written deterministic formulas (no LLM, no third-party indicator library).
+
+**Important finding from Phase 5 (2026-09-15):** NIFTY 50 is a spot index — it has no real trading volume of its own (only its constituent stocks and derivatives do). Yahoo Finance's free intraday data reports volume as a flat 0 for `^NSEI`, which makes VWAP and relative-volume genuinely *uncomputable* from this source, not just imprecise. Rather than fake these, the API returns them as explicitly unreliable/unavailable with the reason stated, and the dashboard shows that caveat inline. Real volume-based analysis will need NIFTY futures data (Zerodha, paid) — reinforces the Phase 7 timeline, doesn't change it.
 
 **Phase 0 decision (2026-09-14):** You have an active Zerodha account. Chosen path: **free-only for now** — build Phases 1-6 on free/limited data (NSE limits, yfinance, sample data), and revisit the ₹500/month Kite Connect subscription only if/when Phase 7's 10-year research actually needs the extra depth. Nothing paid has been signed up for.
 
@@ -59,7 +61,7 @@ class MarketDataProvider(Protocol):
 | 2 | UI with mock data | Next.js only. Price, chart, regime, indicators, scenarios, WHY panel — all fake data. |
 | 3 | Backend | Python, FastAPI, SQLite. |
 | 4 | Market data abstraction | ✅ Done. `MarketDataProvider` Protocol in `api/market_data/base.py`; `CSVProvider` (synthetic sample data) and `YFinanceProvider` (real, free, daily NIFTY data via Yahoo Finance — no signup) both implement it and are swappable via one query param on `/api/candles`. `ZerodhaProvider` is a stub that raises a clear error until you approve the ₹500/month Kite Connect subscription — proves the abstraction without pretending Zerodha is wired up. |
-| 5 | Quant engine | Indicators, price action, VWAP, regime detection — empirically tested, not assumed. |
+| 5 | Quant engine | ✅ Done (first cut). `api/quant/`: hand-written EMA/SMA/RSI/MACD/ATR/Bollinger/ADX/OBV/historical-volatility/session-VWAP formulas, a threshold-based regime classifier (ADX + EMA structure), and a couple of fully-implemented price-action checks (prev-day high/low break, HH-HL structure). Wired into `/api/snapshot` and `/api/indicators` — no more hardcoded placeholders for those two. Not yet done: the fuller price-action pattern list, and *empirically testing* whether any of this predicts anything — that's Phase 6-8's job, not this one. |
 | 6 | Backtest engine | Costs, slippage, full metric set. Reviewed specifically for look-ahead bias. |
 | 7 | 10-year research | Uses whatever data source Phase 0 lands on. Start logging every hypothesis tested here. |
 | 8 | Walk-forward validation | Train → test → move window. Multiple-comparisons correction applied. |

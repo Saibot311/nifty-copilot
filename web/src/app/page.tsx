@@ -72,8 +72,10 @@ export default async function Home() {
       </section>
 
       <footer className="mt-4 border-t border-zinc-900 pt-4 text-xs text-zinc-600">
-        All figures on this page are placeholder mock data (Phase 2 — UI shell only). No live market
-        data, no real backtests, and no automatic trading — you always make the final decision.
+        Price, regime, and indicators above are real — computed from free daily NIFTY data (see the
+        VWAP/Relative Volume caveats: NIFTY is a spot index with no genuine trading volume). Scenarios
+        below are still placeholder mock data — real setups arrive once backtesting (Phase 6+) exists.
+        No automatic trading, ever — you always make the final decision.
       </footer>
     </div>
   );
