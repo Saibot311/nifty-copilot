@@ -2,32 +2,48 @@ import { ChartPlaceholder } from "@/components/ChartPlaceholder";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { ScenarioCard } from "@/components/ScenarioCard";
-import { mockIndicators, mockScenarios, mockSnapshot } from "@/lib/mock-data";
+import { fetchIndicators, fetchSnapshot } from "@/lib/api";
+import { mockScenarios } from "@/lib/mock-data";
 
-export default function Home() {
-  const isUp = mockSnapshot.change >= 0;
+export default async function Home() {
+  const [snapshotResult, indicatorsResult] = await Promise.all([
+    fetchSnapshot(),
+    fetchIndicators(),
+  ]);
+  const snapshot = snapshotResult.data;
+  const indicators = indicatorsResult.data;
+  const apiLive = snapshotResult.live && indicatorsResult.live;
+  const isUp = snapshot.change >= 0;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-8 sm:px-8">
+      {!apiLive && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          Backend API not reachable — showing local placeholder data. Start it with{" "}
+          <code className="rounded bg-black/30 px-1 py-0.5">
+            cd api &amp;&amp; .venv/bin/uvicorn main:app --reload --port 8000
+          </code>
+        </div>
+      )}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-sm text-zinc-500">{mockSnapshot.symbol}</div>
+          <div className="text-sm text-zinc-500">{snapshot.symbol}</div>
           <div className="flex items-baseline gap-3">
             <span className="text-4xl font-semibold tracking-tight text-zinc-50">
-              {mockSnapshot.price.toLocaleString("en-IN")}
+              {snapshot.price.toLocaleString("en-IN")}
             </span>
             <span className={`text-base font-medium ${isUp ? "text-emerald-400" : "text-rose-400"}`}>
               {isUp ? "+" : ""}
-              {mockSnapshot.change.toFixed(2)} ({isUp ? "+" : ""}
-              {mockSnapshot.changePct.toFixed(2)}%)
+              {snapshot.change.toFixed(2)} ({isUp ? "+" : ""}
+              {snapshot.change_pct.toFixed(2)}%)
             </span>
           </div>
           <div className="mt-1 text-xs text-zinc-600">
-            {mockSnapshot.asOf}
-            {mockSnapshot.provisional && " · provisional — candle still forming"}
+            {snapshot.as_of}
+            {snapshot.provisional && " · provisional — candle still forming"}
           </div>
         </div>
-        <RegimeBadge regime={mockSnapshot.regime} />
+        <RegimeBadge regime={snapshot.regime} />
       </header>
 
       <section aria-labelledby="chart-heading">
@@ -41,7 +57,7 @@ export default function Home() {
         <h2 id="indicators-heading" className="mb-3 text-sm font-medium text-zinc-400">
           Indicators
         </h2>
-        <IndicatorGrid indicators={mockIndicators} />
+        <IndicatorGrid indicators={indicators} />
       </section>
 
       <section aria-labelledby="scenarios-heading">
