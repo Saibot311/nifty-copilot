@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from backtest import run_ema_pullback_backtest
 from market_data import Candle, CSVProvider, YFinanceProvider
 from quant import build_analysis
 
@@ -148,3 +149,20 @@ def get_candles(
         "count": len(candles),
         "candles": candles,
     }
+
+
+@app.get("/api/backtest/ema_pullback")
+def backtest_ema_pullback(
+    symbol: str = Query("^NSEI"),
+    days: int = Query(7000, ge=100, le=10000, description="Free Yahoo Finance daily data goes back to 2007-09-17 for NIFTY (~7000 days)"),
+    hold_days: int = Query(10, ge=1, le=60),
+) -> dict:
+    """Runs the EMA-pullback example strategy over real historical NIFTY
+    data and returns every metric the project plan asked for — expectancy,
+    profit factor, drawdown, Sharpe/Sortino, and breakdowns by year and by
+    regime. This is Phase 6 (prove the engine works), not Phase 8
+    (walk-forward validation) — treat results as exploratory."""
+    try:
+        return run_ema_pullback_backtest(symbol=symbol, days=days, hold_days=hold_days)
+    except Exception as e:
+        raise HTTPException(503, f"Backtest failed: {e}")

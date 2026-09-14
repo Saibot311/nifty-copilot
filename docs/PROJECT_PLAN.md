@@ -1,6 +1,10 @@
 # NIFTY COPILOT — Project Plan
 
-Living document. Update it as phases complete or decisions change. Current status: **Phases 1-5 done.** The dashboard now shows real, computed values (price, regime, most indicators) instead of hardcoded numbers — pulled from free Yahoo Finance data through the Phase 4 abstraction, computed by hand-written deterministic formulas (no LLM, no third-party indicator library).
+Living document. Update it as phases complete or decisions change. Current status: **Phases 1-6 done.**
+
+**Major finding (2026-09-15): free daily NIFTY data goes back to 2007-09-17 — ~19 years — via Yahoo Finance, confirmed by actually pulling it (`period="max"` returned 4,659 daily bars).** This changes the Phase 0 picture materially: the "10 years realistically isn't free" warning still holds at the *15-minute* timeframe (still ~60 days free via Yahoo), but at the *daily* timeframe we already have almost double the target history, for free, right now. This is enough to meaningfully exercise the whole backtest/walk-forward pipeline before any Zerodha decision — the ₹500/month subscription still matters for real 15-minute intraday history, but is no longer blocking daily-level research.
+
+The dashboard shows real, computed values (price, regime, most indicators) instead of hardcoded numbers — pulled from free Yahoo Finance data through the Phase 4 abstraction, computed by hand-written deterministic formulas (no LLM, no third-party indicator library). The backtest engine (Phase 6) is proven against a real example strategy over the full ~19-year history.
 
 **Important finding from Phase 5 (2026-09-15):** NIFTY 50 is a spot index — it has no real trading volume of its own (only its constituent stocks and derivatives do). Yahoo Finance's free intraday data reports volume as a flat 0 for `^NSEI`, which makes VWAP and relative-volume genuinely *uncomputable* from this source, not just imprecise. Rather than fake these, the API returns them as explicitly unreliable/unavailable with the reason stated, and the dashboard shows that caveat inline. Real volume-based analysis will need NIFTY futures data (Zerodha, paid) — reinforces the Phase 7 timeline, doesn't change it.
 
@@ -62,7 +66,7 @@ class MarketDataProvider(Protocol):
 | 3 | Backend | Python, FastAPI, SQLite. |
 | 4 | Market data abstraction | ✅ Done. `MarketDataProvider` Protocol in `api/market_data/base.py`; `CSVProvider` (synthetic sample data) and `YFinanceProvider` (real, free, daily NIFTY data via Yahoo Finance — no signup) both implement it and are swappable via one query param on `/api/candles`. `ZerodhaProvider` is a stub that raises a clear error until you approve the ₹500/month Kite Connect subscription — proves the abstraction without pretending Zerodha is wired up. |
 | 5 | Quant engine | ✅ Done (first cut). `api/quant/`: hand-written EMA/SMA/RSI/MACD/ATR/Bollinger/ADX/OBV/historical-volatility/session-VWAP formulas, a threshold-based regime classifier (ADX + EMA structure), and a couple of fully-implemented price-action checks (prev-day high/low break, HH-HL structure). Wired into `/api/snapshot` and `/api/indicators` — no more hardcoded placeholders for those two. Not yet done: the fuller price-action pattern list, and *empirically testing* whether any of this predicts anything — that's Phase 6-8's job, not this one. |
-| 6 | Backtest engine | Costs, slippage, full metric set. Reviewed specifically for look-ahead bias. |
+| 6 | Backtest engine | ✅ Done (first cut). `api/backtest/`: non-overlapping-position trade simulator that strictly executes decisions one bar after they're observed (signal from bar i's close → entry at bar i+1's open — the concrete no-lookahead rule), a configurable NSE cost model (brokerage/STT/exchange/GST/stamp duty/slippage), and the full metric set (win rate, expectancy, profit factor, max drawdown, Sharpe/Sortino approx, by-year, by-regime, long/short breakdown). Proven against a real example strategy ("EMA Pullback", named in this spec's own strategy-database example) over real NIFTY data: **24 trades / 5.5yr → −0.20% expectancy; 109 trades / 19yr → +0.61% expectancy, profit factor 1.63** — a genuine, useful illustration of why small samples mislead, not a claim that this strategy works. An append-only hypothesis log (`api/backtest/hypothesis_log.json`, gitignored — it's generated data, not source) already records every run, per the multiple-comparisons discipline in the spec. Not yet done: walk-forward validation and FDR correction across many strategies — that's Phase 8, once there's more than one strategy to compare. |
 | 7 | 10-year research | Uses whatever data source Phase 0 lands on. Start logging every hypothesis tested here. |
 | 8 | Walk-forward validation | Train → test → move window. Multiple-comparisons correction applied. |
 | 9 | Strategy playbook | Only real, computed numbers. APPROVED / CONDITIONAL / REJECTED. |
@@ -104,8 +108,8 @@ class MarketDataProvider(Protocol):
 
 ---
 
-## 6. Open decision — Phase 0 (this needs your answer before Phase 1 starts)
+## 6. Phase 0 decision — resolved, revisit at Phase 7
 
-**What's still unverified:** blog posts and forum threads say Zerodha's historical API can return NIFTY daily data back to ~2015, but minute-level granularity is capped at 60 days *per request* — which usually just means you loop over date ranges, not that the data doesn't exist further back. Nobody's confirmed in writing how far back *15-minute* NIFTY index data actually goes through the paid API. That's a 10-minute test, not a research project, but it does mean signing up for the ₹500/month plan before we know for sure it'll deliver 10 years.
+Original open question was whether Zerodha's paid historical API actually delivers 10 years of 15-minute NIFTY data — still genuinely unverified (nobody's confirmed it in writing; it's a 10-minute test once you're actually paying for Kite Connect). That question no longer blocks anything: since free Yahoo Finance data covers ~19 years at the *daily* timeframe, Phases 1-6 have real data to work with regardless. The Zerodha question becomes relevant again specifically at Phase 7, and specifically for *15-minute* granularity — worth testing empirically before committing to the ₹500/month subscription, exactly as originally planned.
 
 I've asked you directly (see question) how you'd like to sequence this.

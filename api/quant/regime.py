@@ -6,6 +6,7 @@ should be revisited empirically once Phase 6-8 backtesting exists.
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from .indicators import adx, ema
@@ -51,3 +52,30 @@ def classify_regime(df: pd.DataFrame, fast_span: int = 20, slow_span: int = 50) 
         ema_fast=round(float(latest_fast), 2),
         ema_slow=round(float(latest_slow), 2),
     )
+
+
+def classify_regime_series(df: pd.DataFrame, fast_span: int = 20, slow_span: int = 50) -> pd.Series:
+    """Same rule as classify_regime, applied bar-by-bar for the whole
+    history. Safe from lookahead: EMA/ADX at row i are computed by pandas'
+    rolling/ewm operations using only rows <= i, by construction — the
+    regime label at row i reflects only information available at that bar,
+    never a future one. Used by the backtester to know the regime as it
+    would genuinely have appeared at the time of each historical trade.
+    """
+    close = df["close"]
+    ema_fast = ema(close, fast_span)
+    ema_slow = ema(close, slow_span)
+    adx_series = adx(df)
+
+    trending = adx_series >= 25
+    ranging = adx_series < 20
+    bullish = ema_fast > ema_slow
+
+    regime = np.select(
+        [trending & bullish, trending & ~bullish, ranging],
+        ["TREND_BULL", "TREND_BEAR", "RANGE"],
+        default="TRANSITION",
+    )
+    result = pd.Series(regime, index=df.index)
+    result[adx_series.isna() | ema_fast.isna() | ema_slow.isna()] = "UNKNOWN"
+    return result
