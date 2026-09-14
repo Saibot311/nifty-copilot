@@ -86,7 +86,7 @@ class MarketDataProvider(Protocol):
 | VS Code | Skipped — working directly in the Claude Code app |
 | Python | Not needed yet — arrives in Phase 3 |
 
-**Phase 2 status:** Next.js app scaffolded in `web/` (TypeScript, Tailwind, App Router, ESLint). Dev server starts and serves the default starter page correctly — verified in-browser. Still using the default template content; next actual UI work is replacing it with the NIFTY Copilot dashboard layout (mock data).
+**Phase 2 status:** Mock dashboard built and verified running in-browser — price header, regime badge, indicator grid, three scenario cards (bullish/bearish/no-trade) each with entry/target/stop/reward:risk, confirmation/invalidation conditions, placeholder historical-evidence stats, and a working "Why?" toggle. All data in `web/src/lib/mock-data.ts` is explicitly fake — no real data yet. Chart is a placeholder box (real charting library arrives once there's real data to plot). Not yet built: trading journal UI, historical-similarity view (those are Phases 13 and 11 respectively — later).
 
 ---
 
