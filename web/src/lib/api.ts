@@ -83,3 +83,49 @@ export async function fetchBacktest(days = 7000): Promise<ApiResult<BacktestResu
     return { data: null, live: false };
   }
 }
+
+export interface ResearchCompareResult {
+  symbol: string;
+  period: { start: string; end: string; bars: number };
+  hold_days: number;
+  results: Record<string, BacktestMetrics>;
+  total_hypotheses_tested_all_time: number;
+}
+
+export async function fetchResearchCompare(days = 7000): Promise<ApiResult<ResearchCompareResult | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/research/compare?days=${days}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}
+
+export interface ParamSweepCell {
+  ema_span: number;
+  hold_days: number;
+  num_trades: number;
+  expectancy_pct: number | null;
+  profit_factor: number | null;
+  max_drawdown_pct: number | null;
+}
+
+export interface ParamSweepResult {
+  symbol: string;
+  period: { start: string; end: string; bars: number };
+  grid: ParamSweepCell[];
+  combinations_tested: number;
+  combinations_with_positive_expectancy: number;
+  total_hypotheses_tested_all_time: number;
+}
+
+export async function fetchParamSweep(days = 7000): Promise<ApiResult<ParamSweepResult | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/research/param_sweep?days=${days}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}

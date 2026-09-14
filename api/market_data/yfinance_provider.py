@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import date
 
 import pandas as pd
@@ -17,6 +19,27 @@ _INTERVAL_MAP = {
     "5m": "5m",
 }
 
+# The dashboard's one page load fires off several independent API calls
+# (snapshot, indicators, backtest, two research endpoints) that all end up
+# wanting the same underlying daily bars. Without this, that's 5 redundant
+# network round-trips to Yahoo Finance per page view — slow, and under
+# concurrent load prone to timing out. A short in-memory cache means one
+# real fetch serves all of them; 60s is short enough that live-ish data
+# still updates promptly once markets are actually being watched.
+_CACHE: dict[tuple, tuple[float, list[Candle]]] = {}
+_CACHE_TTL_SECONDS = 60
+
+# yfinance writes a local cache file for cookie/timezone data as a side
+# effect of every call. Two threads calling it at the same instant (which
+# happens routinely here — one dashboard page load fires off 5 independent
+# API requests, and FastAPI runs sync endpoints in a thread pool) can
+# corrupt each other's writes to that file, surfacing as a confusing
+# "Extra data" JSON parse error with no obvious connection to the real
+# cause. A single lock around the actual download serializes access and
+# eliminates the race outright — simpler and more robust than trying to
+# reconfigure yfinance's internal cache.
+_FETCH_LOCK = threading.Lock()
+
 
 class YFinanceProvider:
     def get_ohlc(self, symbol: str, timeframe: str, start: date, end: date) -> list[Candle]:
@@ -24,32 +47,42 @@ class YFinanceProvider:
         if interval is None:
             raise ValueError(f"Unsupported timeframe '{timeframe}' for YFinanceProvider")
 
-        df = yf.download(
-            symbol,
-            start=start.isoformat(),
-            end=end.isoformat(),
-            interval=interval,
-            progress=False,
-            auto_adjust=False,
-        )
-        if df.empty:
-            return []
+        cache_key = (symbol, interval, start.isoformat(), end.isoformat())
 
-        # yfinance returns MultiIndex columns when given a single ticker in
-        # recent versions — flatten to plain column names.
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        with _FETCH_LOCK:
+            # Re-check inside the lock: another thread may have just
+            # populated the cache while we were waiting for it.
+            cached = _CACHE.get(cache_key)
+            if cached and (time.monotonic() - cached[0]) < _CACHE_TTL_SECONDS:
+                return cached[1]
 
-        candles = []
-        for ts, row in df.iterrows():
-            candles.append(
-                Candle(
-                    timestamp=ts.isoformat(),
-                    open=float(row["Open"]),
-                    high=float(row["High"]),
-                    low=float(row["Low"]),
-                    close=float(row["Close"]),
-                    volume=float(row["Volume"]) if "Volume" in row else None,
-                )
+            df = yf.download(
+                symbol,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                interval=interval,
+                progress=False,
+                auto_adjust=False,
             )
-        return candles
+            if df.empty:
+                return []
+
+            # yfinance returns MultiIndex columns when given a single ticker
+            # in recent versions — flatten to plain column names.
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            candles = []
+            for ts, row in df.iterrows():
+                candles.append(
+                    Candle(
+                        timestamp=ts.isoformat(),
+                        open=float(row["Open"]),
+                        high=float(row["High"]),
+                        low=float(row["Low"]),
+                        close=float(row["Close"]),
+                        volume=float(row["Volume"]) if "Volume" in row else None,
+                    )
+                )
+            _CACHE[cache_key] = (time.monotonic(), candles)
+            return candles

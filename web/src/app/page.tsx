@@ -1,16 +1,26 @@
 import { BacktestCard } from "@/components/BacktestCard";
 import { ChartPlaceholder } from "@/components/ChartPlaceholder";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
+import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
 import { RegimeBadge } from "@/components/RegimeBadge";
+import { ResearchCompare } from "@/components/ResearchCompare";
 import { ScenarioCard } from "@/components/ScenarioCard";
-import { fetchBacktest, fetchIndicators, fetchSnapshot } from "@/lib/api";
+import {
+  fetchBacktest,
+  fetchIndicators,
+  fetchParamSweep,
+  fetchResearchCompare,
+  fetchSnapshot,
+} from "@/lib/api";
 import { mockScenarios } from "@/lib/mock-data";
 
 export default async function Home() {
-  const [snapshotResult, indicatorsResult, backtestResult] = await Promise.all([
+  const [snapshotResult, indicatorsResult, backtestResult, compareResult, sweepResult] = await Promise.all([
     fetchSnapshot(),
     fetchIndicators(),
     fetchBacktest(),
+    fetchResearchCompare(),
+    fetchParamSweep(),
   ]);
   const snapshot = snapshotResult.data;
   const indicators = indicatorsResult.data;
@@ -67,6 +77,20 @@ export default async function Home() {
           Backtest Results
         </h2>
         <BacktestCard result={backtestResult.data} live={backtestResult.live} />
+      </section>
+
+      <section aria-labelledby="research-heading">
+        <h2 id="research-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Research (Phase 7) — Strategy Comparison
+        </h2>
+        <ResearchCompare result={compareResult.data} live={compareResult.live} />
+      </section>
+
+      <section aria-labelledby="sweep-heading">
+        <h2 id="sweep-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Research (Phase 7) — Parameter Robustness
+        </h2>
+        <ParamSweepHeatmap result={sweepResult.data} live={sweepResult.live} />
       </section>
 
       <section aria-labelledby="scenarios-heading">
