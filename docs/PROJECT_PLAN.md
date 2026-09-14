@@ -1,6 +1,6 @@
 # NIFTY COPILOT — Project Plan
 
-Living document. Update it as phases complete or decisions change. Current status: **Phase 0 decided — starting Phase 1.**
+Living document. Update it as phases complete or decisions change. Current status: **Phase 1 done, Phase 2 scaffolded (Next.js app created, dev server verified working).**
 
 **Phase 0 decision (2026-09-14):** You have an active Zerodha account. Chosen path: **free-only for now** — build Phases 1-6 on free/limited data (NSE limits, yfinance, sample data), and revisit the ₹500/month Kite Connect subscription only if/when Phase 7's 10-year research actually needs the extra depth. Nothing paid has been signed up for.
 
@@ -70,6 +70,7 @@ class MarketDataProvider(Protocol):
 | 13 | Journal | TAKE/SKIP/WAIT tracking, mistake analysis. |
 | 14 | Paper observation | Live markets, zero execution. |
 | 15 | Deployment | Only once stable. |
+| 16 (candidate, not yet approved) | News context layer | User idea (2026-09-14): explain how the market is reacting to financial news. Scope: a **qualitative context add-on to the WHY panel** — LLM summarizes recent relevant headlines (free RSS: Economic Times, Moneycontrol, NSE/BSE corporate announcements) alongside the already-computed scenario. Explicitly NOT a backtested numeric input to the regime/setup engine unless/until historical news-sentiment data is sourced and validated separately (reliable historical sentiment datasets are paid — e.g. RavenPack — and out of scope for now). Natural home: after Phase 10 (needs live data) / alongside Phase 12 (LLM copilot). |
 
 ---
 
@@ -79,11 +80,13 @@ class MarketDataProvider(Protocol):
 
 | Item | Status |
 |---|---|
-| Node.js | ✅ Already installed (v18.20.4 — fine for Next.js) |
-| Git / local repo | ✅ Already set up at `NIFTY-Trading-App` |
-| GitHub account + remote repo | ⬜ Not yet done — **this is the current step** |
-| VS Code | Optional/skippable — you're already working with me in the Claude Code app, which covers editing/running code. Only install VS Code separately if you specifically want a second editor open. |
+| Node.js | ✅ Upgraded to v26.8.2 via Homebrew (the original v18.20.4 was too old for Tailwind v4 / ESLint 9, which need Node 20+) |
+| Git / local repo | ✅ Set up at `NIFTY-Trading-App` |
+| GitHub account + remote repo | ✅ Connected — https://github.com/Saibot311/nifty-copilot (auth via `gh auth login`, since GitHub retired password-based git pushes in 2021) |
+| VS Code | Skipped — working directly in the Claude Code app |
 | Python | Not needed yet — arrives in Phase 3 |
+
+**Phase 2 status:** Next.js app scaffolded in `web/` (TypeScript, Tailwind, App Router, ESLint). Dev server starts and serves the default starter page correctly — verified in-browser. Still using the default template content; next actual UI work is replacing it with the NIFTY Copilot dashboard layout (mock data).
 
 ---
 
