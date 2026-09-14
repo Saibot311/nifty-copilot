@@ -1,6 +1,6 @@
 # NIFTY COPILOT — Project Plan
 
-Living document. Update it as phases complete or decisions change. Current status: **Phase 1 & 2 done. Phase 3 (FastAPI backend) scaffolded and verified.**
+Living document. Update it as phases complete or decisions change. Current status: **Phases 1-4 done.** Broker-agnostic market-data abstraction is live: real free NIFTY data (Yahoo Finance) and synthetic sample data (CSV) both flow through the identical interface; Zerodha is a documented stub, not wired up (needs the ₹500/month subscription you haven't approved yet — planned for ~Phase 7).
 
 **Phase 0 decision (2026-09-14):** You have an active Zerodha account. Chosen path: **free-only for now** — build Phases 1-6 on free/limited data (NSE limits, yfinance, sample data), and revisit the ₹500/month Kite Connect subscription only if/when Phase 7's 10-year research actually needs the extra depth. Nothing paid has been signed up for.
 
@@ -58,7 +58,7 @@ class MarketDataProvider(Protocol):
 | 1 | Foundation | GitHub, VS Code, Node.js. No Python yet. |
 | 2 | UI with mock data | Next.js only. Price, chart, regime, indicators, scenarios, WHY panel — all fake data. |
 | 3 | Backend | Python, FastAPI, SQLite. |
-| 4 | Market data abstraction | Define the interface *first*, then implement `ZerodhaProvider`. |
+| 4 | Market data abstraction | ✅ Done. `MarketDataProvider` Protocol in `api/market_data/base.py`; `CSVProvider` (synthetic sample data) and `YFinanceProvider` (real, free, daily NIFTY data via Yahoo Finance — no signup) both implement it and are swappable via one query param on `/api/candles`. `ZerodhaProvider` is a stub that raises a clear error until you approve the ₹500/month Kite Connect subscription — proves the abstraction without pretending Zerodha is wired up. |
 | 5 | Quant engine | Indicators, price action, VWAP, regime detection — empirically tested, not assumed. |
 | 6 | Backtest engine | Costs, slippage, full metric set. Reviewed specifically for look-ahead bias. |
 | 7 | 10-year research | Uses whatever data source Phase 0 lands on. Start logging every hypothesis tested here. |
