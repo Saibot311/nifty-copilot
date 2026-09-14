@@ -1,14 +1,16 @@
+import { BacktestCard } from "@/components/BacktestCard";
 import { ChartPlaceholder } from "@/components/ChartPlaceholder";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { ScenarioCard } from "@/components/ScenarioCard";
-import { fetchIndicators, fetchSnapshot } from "@/lib/api";
+import { fetchBacktest, fetchIndicators, fetchSnapshot } from "@/lib/api";
 import { mockScenarios } from "@/lib/mock-data";
 
 export default async function Home() {
-  const [snapshotResult, indicatorsResult] = await Promise.all([
+  const [snapshotResult, indicatorsResult, backtestResult] = await Promise.all([
     fetchSnapshot(),
     fetchIndicators(),
+    fetchBacktest(),
   ]);
   const snapshot = snapshotResult.data;
   const indicators = indicatorsResult.data;
@@ -58,6 +60,13 @@ export default async function Home() {
           Indicators
         </h2>
         <IndicatorGrid indicators={indicators} />
+      </section>
+
+      <section aria-labelledby="backtest-heading">
+        <h2 id="backtest-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Backtest Results
+        </h2>
+        <BacktestCard result={backtestResult.data} live={backtestResult.live} />
       </section>
 
       <section aria-labelledby="scenarios-heading">
