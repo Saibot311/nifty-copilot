@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backtest import run_ema_pullback_backtest
+from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
 from market_data import Candle, CSVProvider, YFinanceProvider
 from quant import build_analysis
 
@@ -166,3 +167,34 @@ def backtest_ema_pullback(
         return run_ema_pullback_backtest(symbol=symbol, days=days, hold_days=hold_days)
     except Exception as e:
         raise HTTPException(503, f"Backtest failed: {e}")
+
+
+@app.get("/api/research/compare")
+def research_compare(
+    symbol: str = Query("^NSEI"),
+    days: int = Query(7000, ge=100, le=10000),
+    hold_days: int = Query(10, ge=1, le=60),
+) -> dict:
+    """Phase 7: runs every strategy in the registry over the same real
+    data with the same costs — a fair side-by-side comparison, not a
+    search for whichever one looks best. Every run is logged to the
+    hypothesis log regardless of outcome."""
+    try:
+        return run_all_strategies(symbol=symbol, days=days, hold_days=hold_days)
+    except Exception as e:
+        raise HTTPException(503, f"Research run failed: {e}")
+
+
+@app.get("/api/research/param_sweep")
+def research_param_sweep(
+    symbol: str = Query("^NSEI"),
+    days: int = Query(7000, ge=100, le=10000),
+) -> dict:
+    """Parameter-robustness check for the EMA Pullback strategy: sweeps
+    ema_span and hold_days across nearby values. A strategy that only
+    "works" at one exact setting and collapses one step either side is a
+    sign of overfitting, not a real effect."""
+    try:
+        return run_ema_pullback_param_sweep(symbol=symbol, days=days)
+    except Exception as e:
+        raise HTTPException(503, f"Parameter sweep failed: {e}")

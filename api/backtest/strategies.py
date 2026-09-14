@@ -15,7 +15,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from market_data import YFinanceProvider
-from quant.indicators import ema
+from quant.indicators import bollinger_bands, ema, rsi
 from quant.pipeline import candles_to_df
 from quant.regime import classify_regime_series
 
@@ -34,6 +34,56 @@ def ema_pullback_signals(df: pd.DataFrame, regime_series: pd.Series, ema_span: i
     return just_reclaimed & (regime_series == "TREND_BULL")
 
 
+def rsi_reversal_signals(
+    df: pd.DataFrame, regime_series: pd.Series, rsi_period: int = 14, oversold: float = 30
+) -> pd.Series:
+    """Long when RSI was below the oversold line yesterday and has reclaimed
+    it today — a bounce attempt. No regime filter: tested as-is, on purpose,
+    to see whether restricting to a regime would even help (a question for
+    later, not assumed up front)."""
+    r = rsi(df["close"], rsi_period)
+    was_oversold = (r.shift(1) < oversold).fillna(False)
+    reclaimed = (r >= oversold).fillna(False)
+    return was_oversold & reclaimed
+
+
+def prev_day_breakout_signals(df: pd.DataFrame, regime_series: pd.Series) -> pd.Series:
+    """Long when today's close breaks above yesterday's daily high — the
+    purest possible price-action signal, no indicator involved at all."""
+    prev_high = df["high"].shift(1)
+    return (df["close"] > prev_high).fillna(False)
+
+
+def bollinger_reversion_signals(
+    df: pd.DataFrame, regime_series: pd.Series, window: int = 20, num_std: float = 2
+) -> pd.Series:
+    """Long when price closed below the lower Bollinger Band yesterday and
+    has reclaimed it today — a mean-reversion bet, the opposite philosophy
+    from the trend-following EMA Pullback strategy."""
+    bands = bollinger_bands(df["close"], window, num_std)
+    was_below = (df["close"].shift(1) < bands["lower"].shift(1)).fillna(False)
+    reclaimed = (df["close"] >= bands["lower"]).fillna(False)
+    return was_below & reclaimed
+
+
+STRATEGY_REGISTRY = {
+    "ema_pullback": {"fn": ema_pullback_signals, "params": {"ema_span": 20}},
+    "rsi_reversal": {"fn": rsi_reversal_signals, "params": {"rsi_period": 14, "oversold": 30}},
+    "prev_day_breakout": {"fn": prev_day_breakout_signals, "params": {}},
+    "bollinger_reversion": {"fn": bollinger_reversion_signals, "params": {"window": 20, "num_std": 2}},
+}
+
+
+def load_daily_data(symbol: str = "^NSEI", days: int = 7000) -> tuple[pd.DataFrame, pd.Series]:
+    provider = YFinanceProvider()
+    candles = provider.get_ohlc(symbol, "1d", date.today() - timedelta(days=days), date.today())
+    if len(candles) < 100:
+        raise ValueError(f"Only got {len(candles)} daily bars for {symbol} — need 100+ to backtest.")
+    df = candles_to_df(candles)
+    regime_series = classify_regime_series(df)
+    return df, regime_series
+
+
 def run_ema_pullback_backtest(
     symbol: str = "^NSEI",
     days: int = 2000,
@@ -41,13 +91,7 @@ def run_ema_pullback_backtest(
     ema_span: int = 20,
     cost_model: CostModel | None = None,
 ) -> dict:
-    provider = YFinanceProvider()
-    candles = provider.get_ohlc(symbol, "1d", date.today() - timedelta(days=days), date.today())
-    if len(candles) < 100:
-        raise ValueError(f"Only got {len(candles)} daily bars for {symbol} — need 100+ to backtest.")
-    df = candles_to_df(candles)
-
-    regime_series = classify_regime_series(df)
+    df, regime_series = load_daily_data(symbol, days)
     entries = ema_pullback_signals(df, regime_series, ema_span)
 
     trades = run_backtest(
