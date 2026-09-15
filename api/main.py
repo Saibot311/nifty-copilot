@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from backtest import run_ema_pullback_backtest
 from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
 from backtest.options_research import run_options_strike_sweep
+from cache import cached
 from backtest.walkforward import evaluate_strategy
 from briefing import build_briefing
 from options.advisor import translate_to_options
@@ -282,9 +283,19 @@ def options_strike_sweep(
     """Sweeps strike offset against expiry distance to measure which
     contract choice actually performed best when the signal fired —
     returns are on PREMIUM, including theta decay and modeled costs.
-    Reports how many combinations were tested alongside the results."""
+    Reports how many combinations were tested alongside the results.
+
+    Cached briefly: each grid cell is a full backtest against the options
+    archive, too slow to recompute per page load, but short enough a TTL
+    that results refresh as the archive backfills."""
     try:
-        return run_options_strike_sweep(symbol=symbol, days=days, hold_days=hold_days)
+        return cached(
+            f"strike_sweep:{symbol}:{days}:{hold_days}",
+            ttl_seconds=900,
+            producer=lambda: run_options_strike_sweep(
+                symbol=symbol, days=days, hold_days=hold_days
+            ),
+        )
     except Exception as e:
         raise HTTPException(503, f"Strike sweep failed: {e}")
 

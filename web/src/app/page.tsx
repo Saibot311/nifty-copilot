@@ -5,6 +5,7 @@ import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { BriefingCard } from "@/components/BriefingCard";
 import { OptionsAdvisorCard } from "@/components/OptionsAdvisorCard";
+import { OptionsStrikeSweep } from "@/components/OptionsStrikeSweep";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { ScenarioCard } from "@/components/ScenarioCard";
 import { ValidationCard } from "@/components/ValidationCard";
@@ -13,9 +14,11 @@ import {
   fetchBriefing,
   fetchIndicators,
   fetchOptionsAdvisor,
+  fetchOptionsArchive,
   fetchParamSweep,
   fetchResearchCompare,
   fetchSnapshot,
+  fetchStrikeSweep,
   fetchValidation,
 } from "@/lib/api";
 import { mockScenarios } from "@/lib/mock-data";
@@ -30,6 +33,8 @@ export default async function Home() {
     validationResult,
     optionsResult,
     briefingResult,
+    strikeSweepResult,
+    archiveResult,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchIndicators(),
@@ -39,6 +44,8 @@ export default async function Home() {
     fetchValidation(),
     fetchOptionsAdvisor(),
     fetchBriefing(),
+    fetchStrikeSweep(),
+    fetchOptionsArchive(),
   ]);
   const snapshot = snapshotResult.data;
   const indicators = indicatorsResult.data;
@@ -130,6 +137,17 @@ export default async function Home() {
           Options Trade Helper
         </h2>
         <OptionsAdvisorCard advice={optionsResult.data} live={optionsResult.live} />
+      </section>
+
+      <section aria-labelledby="strike-sweep-heading">
+        <h2 id="strike-sweep-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Options Research — Strike &amp; Expiry Selection
+        </h2>
+        <OptionsStrikeSweep
+          sweep={strikeSweepResult.data}
+          archive={archiveResult.data}
+          live={strikeSweepResult.live}
+        />
       </section>
 
       <section aria-labelledby="scenarios-heading">

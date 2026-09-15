@@ -240,3 +240,56 @@ export async function fetchBriefing(): Promise<ApiResult<Briefing | null>> {
     return { data: null, live: false };
   }
 }
+
+export interface OptionsArchive {
+  option_bars: number;
+  trading_days_with_data: number;
+  days_checked: number;
+  first_date: string | null;
+  last_date: string | null;
+}
+
+export async function fetchOptionsArchive(): Promise<ApiResult<OptionsArchive | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/options/archive`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}
+
+export interface StrikeSweepCell {
+  strike_offset_pts: number;
+  moneyness: string;
+  min_days_to_expiry: number;
+  num_trades: number;
+  win_rate: number | null;
+  expectancy_pct: number | null;
+  profit_factor: number | null;
+  max_drawdown_pct: number | null;
+  sample_size_warning: string | null;
+}
+
+export interface StrikeSweepResult {
+  strategy: string;
+  signal_count: number;
+  hold_days: number;
+  grid: StrikeSweepCell[];
+  combinations_tested: number;
+  combinations_with_trades: number;
+  combinations_with_positive_expectancy: number;
+  best_cell: StrikeSweepCell | null;
+  multiple_comparisons_note: string;
+  cost_note: string;
+}
+
+export async function fetchStrikeSweep(): Promise<ApiResult<StrikeSweepResult | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/options/strike_sweep`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}
