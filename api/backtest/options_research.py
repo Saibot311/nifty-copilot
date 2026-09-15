@@ -17,8 +17,32 @@ import pandas as pd
 from .engine import Trade
 from .hypothesis_log import log_run, total_hypotheses_tested
 from .metrics import compute_metrics
-from .options_engine import OptionsCostModel, run_options_backtest
+from .options_engine import OptionsCostModel, OptionTrade, run_options_backtest
 from .strategies import ema_pullback_signals, load_daily_data
+
+# Option trades swing far more per-trade than index trades (+244%, -79% in
+# one real backtest run) -- full capital reinvestment between trades, which
+# compute_metrics assumes for the index engine, mathematically erodes
+# equity toward zero over a long enough sequence even with a POSITIVE
+# average edge (volatility drag). No real trader stakes the whole account
+# on one option position repeatedly. 10% is a conservative, realistic
+# fixed-fraction size for a leveraged options position -- position sizing
+# is a real, separate decision from the signal itself, not modeled beyond
+# this one assumption.
+REALISTIC_POSITION_FRACTION = 0.10
+
+
+def _realistic_max_drawdown_pct(option_trades: list[OptionTrade], position_fraction: float = REALISTIC_POSITION_FRACTION) -> float | None:
+    if not option_trades:
+        return None
+    equity = 1.0
+    peak = 1.0
+    max_dd = 0.0
+    for t in option_trades:
+        equity *= 1 + position_fraction * t.net_return_pct / 100
+        peak = max(peak, equity)
+        max_dd = min(max_dd, (equity - peak) / peak)
+    return round(max_dd * 100, 2)
 
 
 def _as_index_trades(option_trades) -> list[Trade]:
@@ -112,7 +136,8 @@ def run_options_strike_sweep(
                 "win_rate": metrics.get("win_rate"),
                 "expectancy_pct": metrics.get("expectancy_pct"),
                 "profit_factor": metrics.get("profit_factor"),
-                "max_drawdown_pct": metrics.get("max_drawdown_pct"),
+                "max_drawdown_pct": _realistic_max_drawdown_pct(option_trades),
+                "max_drawdown_full_reinvestment_pct": metrics.get("max_drawdown_pct"),
                 "avg_win_pct": metrics.get("avg_win_pct"),
                 "avg_loss_pct": metrics.get("avg_loss_pct"),
                 "sample_size_warning": metrics.get("sample_size_warning"),
@@ -133,6 +158,15 @@ def run_options_strike_sweep(
         "combinations_with_positive_expectancy": len(positive),
         "best_cell": best,
         "total_hypotheses_tested_all_time": total_hypotheses_tested(),
+        "position_sizing_note": (
+            f"max_drawdown_pct assumes {REALISTIC_POSITION_FRACTION*100:.0f}% of capital risked per "
+            "trade, not full reinvestment. Option trades swing far more per-trade than index trades "
+            "(individual results here range roughly -90% to +250%); compounding 100% of capital "
+            "through a sequence like that mathematically erodes equity toward zero over enough "
+            "trades even with a positive average edge (volatility drag) -- that produced misleading "
+            "~-100% drawdowns here before this was fixed. See max_drawdown_full_reinvestment_pct for "
+            "the uncorrected figure. Position sizing is a real decision separate from the signal."
+        ),
         "multiple_comparisons_note": (
             f"{len(grid)} strike/expiry combinations were tested against the same signal. "
             "With that many tries, the best-looking cell is partly luck — treat it as a "

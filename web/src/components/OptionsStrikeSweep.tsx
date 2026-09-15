@@ -109,6 +109,9 @@ export function OptionsStrikeSweep({
         {sweep.multiple_comparisons_note}
       </p>
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">{sweep.cost_note}</p>
+      {sweep.position_sizing_note && (
+        <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">{sweep.position_sizing_note}</p>
+      )}
     </Panel>
   );
 }

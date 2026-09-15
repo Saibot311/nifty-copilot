@@ -206,6 +206,7 @@ export interface StrikeSweepCell {
   expectancy_pct: number | null;
   profit_factor: number | null;
   max_drawdown_pct: number | null;
+  max_drawdown_full_reinvestment_pct?: number | null;
   sample_size_warning: string | null;
 }
 
@@ -220,6 +221,7 @@ export interface StrikeSweepResult {
   best_cell: StrikeSweepCell | null;
   multiple_comparisons_note: string;
   cost_note: string;
+  position_sizing_note?: string;
 }
 
 export interface LiveQuote {
