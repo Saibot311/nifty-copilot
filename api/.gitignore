@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 backtest/hypothesis_log.json
+
+# Locally built options archive — millions of rows downloaded from NSE's
+# public bhavcopy. Regenerate with scripts/backfill_options.py rather than
+# committing it.
+data/
