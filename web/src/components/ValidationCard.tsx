@@ -1,33 +1,25 @@
 import type { ValidationResult } from "@/lib/api";
+import { Offline, Panel, Pill } from "./ui";
 
-const STATUS_STYLE: Record<string, { ring: string; bg: string; text: string }> = {
-  APPROVED: { ring: "ring-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-400" },
-  CONDITIONAL: { ring: "ring-amber-500/40", bg: "bg-amber-500/10", text: "text-amber-400" },
-  REJECTED: { ring: "ring-rose-500/40", bg: "bg-rose-500/10", text: "text-rose-400" },
+const TONE: Record<string, "good" | "warn" | "bad"> = {
+  APPROVED: "good",
+  CONDITIONAL: "warn",
+  REJECTED: "bad",
 };
 
-export function ValidationCard({ result, live }: { result: ValidationResult | null; live: boolean }) {
-  if (!live || !result) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-500">
-        Validation results unavailable — the backend API isn&apos;t reachable right now.
-      </div>
-    );
-  }
+export function ValidationCard({ result }: { result: ValidationResult | null }) {
+  if (!result) return <Offline what="Validation" />;
 
-  const style = STATUS_STYLE[result.final_status] ?? STATUS_STYLE.CONDITIONAL;
   const wf = result.walk_forward;
   const ho = result.holdout;
 
   return (
-    <div className={`rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 ring-1 ${style.ring}`}>
+    <Panel emphasis="raised" className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          Phase 8 — Walk-Forward Validation: EMA Pullback
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+          Walk-forward validation · EMA Pullback
         </div>
-        <span className={`rounded-full px-3 py-1 text-sm font-bold ${style.bg} ${style.text}`}>
-          {result.final_status}
-        </span>
+        <Pill tone={TONE[result.final_status] ?? "warn"}>{result.final_status}</Pill>
       </div>
 
       <p className="mt-3 text-sm leading-relaxed text-zinc-300">{result.final_reason}</p>
@@ -74,7 +66,7 @@ export function ValidationCard({ result, live }: { result: ValidationResult | nu
         </summary>
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">{result.methodology_note}</p>
       </details>
-    </div>
+    </Panel>
   );
 }
 

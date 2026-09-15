@@ -1,19 +1,14 @@
 import type { OptionsAdvice } from "@/lib/api";
+import { Offline, Panel, Pill } from "./ui";
 
-export function OptionsAdvisorCard({ advice, live }: { advice: OptionsAdvice | null; live: boolean }) {
-  if (!live || !advice) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-500">
-        Options advisor unavailable — the backend API isn&apos;t reachable right now.
-      </div>
-    );
-  }
+export function OptionsAdvisorCard({ advice }: { advice: OptionsAdvice | null }) {
+  if (!advice) return <Offline what="Options helper" />;
 
   if (!advice.actionable_today) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-2">
-          EMA Pullback → Options Idea
+      <Panel className="p-4">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+          EMA Pullback → options idea
         </div>
         <div className="rounded-lg bg-zinc-950/60 p-3 text-sm text-zinc-400">
           {advice.message}
@@ -23,19 +18,17 @@ export function OptionsAdvisorCard({ advice, live }: { advice: OptionsAdvice | n
             Last fired: {advice.recent_signal_dates[advice.recent_signal_dates.length - 1]}
           </div>
         )}
-      </div>
+      </Panel>
     );
   }
 
   return (
-    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 ring-1 ring-emerald-500/20">
+    <Panel emphasis="raised" className="border-emerald-500/30 bg-emerald-500/[0.04] p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-emerald-400">
           EMA Pullback → Options Idea (as of {advice.as_of})
         </div>
-        <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm font-bold text-emerald-300">
-          {advice.direction}
-        </span>
+        <Pill tone="good">{advice.direction}</Pill>
       </div>
 
       <p className="mt-3 text-sm text-zinc-300">{advice.rationale}</p>
@@ -61,6 +54,6 @@ export function OptionsAdvisorCard({ advice, live }: { advice: OptionsAdvice | n
           ))}
         </ul>
       </div>
-    </div>
+    </Panel>
   );
 }

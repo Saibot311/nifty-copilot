@@ -1,6 +1,25 @@
-import { mockIndicators, mockSnapshot, type IndicatorReading } from "@/lib/mock-data";
-
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export type Regime = "TREND_BULL" | "TREND_BEAR" | "RANGE" | "TRANSITION";
+
+export interface ApiResult<T> {
+  data: T | null;
+  live: boolean;
+}
+
+/** Every fetch returns null rather than substituted values when the API is
+ *  unreachable. This project's core rule is that no displayed number is
+ *  invented — a plausible-looking placeholder price would break that even
+ *  with a warning banner attached. */
+async function get<T>(path: string): Promise<ApiResult<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: (await res.json()) as T, live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}
 
 export interface Snapshot {
   symbol: string;
@@ -9,43 +28,30 @@ export interface Snapshot {
   change_pct: number;
   as_of: string;
   provisional: boolean;
-  regime: "TREND_BULL" | "TREND_BEAR" | "RANGE" | "TRANSITION";
+  regime: Regime;
 }
 
-export interface ApiResult<T> {
-  data: T;
-  live: boolean; // false = API was unreachable, showing local mock data instead
+export interface IndicatorReading {
+  name: string;
+  value: string;
+  read: "supports" | "conflicts" | "neutral";
 }
 
-export async function fetchSnapshot(): Promise<ApiResult<Snapshot>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/snapshot`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return {
-      data: {
-        symbol: mockSnapshot.symbol,
-        price: mockSnapshot.price,
-        change: mockSnapshot.change,
-        change_pct: mockSnapshot.changePct,
-        as_of: mockSnapshot.asOf,
-        provisional: mockSnapshot.provisional,
-        regime: mockSnapshot.regime,
-      },
-      live: false,
-    };
-  }
+export interface Candle {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | null;
 }
 
-export async function fetchIndicators(): Promise<ApiResult<IndicatorReading[]>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/indicators`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: mockIndicators, live: false };
-  }
+export interface CandleResponse {
+  provider: string;
+  symbol: string;
+  timeframe: string;
+  count: number;
+  candles: Candle[];
 }
 
 export interface BacktestMetrics {
@@ -71,35 +77,12 @@ export interface BacktestResult {
   metrics: BacktestMetrics;
 }
 
-// No mock fallback here on purpose: a fake backtest result would be exactly
-// the kind of invented statistic this project is built to avoid. If the API
-// is unreachable, the UI shows "not available," not a plausible-looking lie.
-export async function fetchBacktest(days = 7000): Promise<ApiResult<BacktestResult | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/backtest/ema_pullback?days=${days}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
-}
-
 export interface ResearchCompareResult {
   symbol: string;
   period: { start: string; end: string; bars: number };
   hold_days: number;
   results: Record<string, BacktestMetrics>;
   total_hypotheses_tested_all_time: number;
-}
-
-export async function fetchResearchCompare(days = 7000): Promise<ApiResult<ResearchCompareResult | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/research/compare?days=${days}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
 }
 
 export interface ParamSweepCell {
@@ -117,17 +100,6 @@ export interface ParamSweepResult {
   grid: ParamSweepCell[];
   combinations_tested: number;
   combinations_with_positive_expectancy: number;
-  total_hypotheses_tested_all_time: number;
-}
-
-export async function fetchParamSweep(days = 7000): Promise<ApiResult<ParamSweepResult | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/research/param_sweep?days=${days}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
 }
 
 export interface WalkForwardFold {
@@ -156,16 +128,6 @@ export interface ValidationResult {
   methodology_note: string;
 }
 
-export async function fetchValidation(days = 7000): Promise<ApiResult<ValidationResult | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/validation/ema_pullback?days=${days}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
-}
-
 export interface OptionsAdvice {
   as_of: string;
   actionable_today: boolean;
@@ -177,16 +139,6 @@ export interface OptionsAdvice {
   validation_status: string;
   critical_warnings?: string[];
   recent_signal_dates: string[];
-}
-
-export async function fetchOptionsAdvisor(): Promise<ApiResult<OptionsAdvice | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/options/advisor`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
 }
 
 export interface LiveChain {
@@ -210,7 +162,7 @@ export interface LiveChain {
 export interface Briefing {
   as_of: string;
   symbol: string;
-  market_state: { price: number; change: number; change_pct: number; regime: string };
+  market_state: { price: number; change: number; change_pct: number; regime: Regime };
   evidence: {
     bullish: string[];
     bearish: string[];
@@ -231,32 +183,12 @@ export interface Briefing {
   how_to_read_this: string;
 }
 
-export async function fetchBriefing(): Promise<ApiResult<Briefing | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/briefing`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
-}
-
 export interface OptionsArchive {
   option_bars: number;
   trading_days_with_data: number;
   days_checked: number;
   first_date: string | null;
   last_date: string | null;
-}
-
-export async function fetchOptionsArchive(): Promise<ApiResult<OptionsArchive | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/options/archive`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
 }
 
 export interface StrikeSweepCell {
@@ -284,12 +216,19 @@ export interface StrikeSweepResult {
   cost_note: string;
 }
 
-export async function fetchStrikeSweep(): Promise<ApiResult<StrikeSweepResult | null>> {
-  try {
-    const res = await fetch(`${API_BASE}/api/options/strike_sweep`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API returned ${res.status}`);
-    return { data: await res.json(), live: true };
-  } catch {
-    return { data: null, live: false };
-  }
-}
+export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
+export const fetchIndicators = () => get<IndicatorReading[]>("/api/indicators");
+export const fetchCandles = (days = 140) =>
+  get<CandleResponse>(`/api/candles?provider=yfinance&days=${days}`);
+export const fetchBacktest = (days = 7000) =>
+  get<BacktestResult>(`/api/backtest/ema_pullback?days=${days}`);
+export const fetchResearchCompare = (days = 7000) =>
+  get<ResearchCompareResult>(`/api/research/compare?days=${days}`);
+export const fetchParamSweep = (days = 7000) =>
+  get<ParamSweepResult>(`/api/research/param_sweep?days=${days}`);
+export const fetchValidation = (days = 7000) =>
+  get<ValidationResult>(`/api/validation/ema_pullback?days=${days}`);
+export const fetchOptionsAdvisor = () => get<OptionsAdvice>("/api/options/advisor");
+export const fetchBriefing = () => get<Briefing>("/api/briefing");
+export const fetchOptionsArchive = () => get<OptionsArchive>("/api/options/archive");
+export const fetchStrikeSweep = () => get<StrikeSweepResult>("/api/options/strike_sweep");

@@ -1,4 +1,5 @@
 import type { ResearchCompareResult } from "@/lib/api";
+import { Offline, Panel, Pill, fmtPct } from "./ui";
 
 const NAME_LABEL: Record<string, string> = {
   ema_pullback: "EMA Pullback",
@@ -7,29 +8,21 @@ const NAME_LABEL: Record<string, string> = {
   bollinger_reversion: "Bollinger Band Reversion",
 };
 
-export function ResearchCompare({ result, live }: { result: ResearchCompareResult | null; live: boolean }) {
-  if (!live || !result) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-500">
-        Research results unavailable — the backend API isn&apos;t reachable right now.
-      </div>
-    );
-  }
+export function ResearchCompare({ result }: { result: ResearchCompareResult | null }) {
+  if (!result) return <Offline what="Strategy comparison" />;
 
   const rows = Object.entries(result.results).sort(
     (a, b) => (b[1].expectancy_pct ?? -Infinity) - (a[1].expectancy_pct ?? -Infinity)
   );
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <Panel className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
         <div className="text-xs text-zinc-500">
           {result.symbol} · {result.period.start} to {result.period.end} · {result.period.bars} daily bars ·
           identical costs &amp; {result.hold_days}-day hold for every strategy
         </div>
-        <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-medium text-indigo-300">
-          {result.total_hypotheses_tested_all_time} hypotheses logged all-time
-        </span>
+        <Pill tone="info">{result.total_hypotheses_tested_all_time} hypotheses logged</Pill>
       </div>
 
       <div className="overflow-x-auto">
@@ -69,6 +62,6 @@ export function ResearchCompare({ result, live }: { result: ResearchCompareResul
         Only the top strategy here is worth carrying forward — the rest are legitimate exploratory dead ends,
         not failures. None of this is validated yet; see Phase 8.
       </p>
-    </div>
+    </Panel>
   );
 }

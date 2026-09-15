@@ -1,4 +1,5 @@
 import type { OptionsArchive, StrikeSweepResult } from "@/lib/api";
+import { Offline, Panel, Pill } from "./ui";
 
 function cellStyle(expectancy: number | null, maxAbs: number) {
   if (expectancy == null) return { background: "rgba(113,113,122,0.12)", color: "#71717a" };
@@ -11,20 +12,11 @@ function cellStyle(expectancy: number | null, maxAbs: number) {
 export function OptionsStrikeSweep({
   sweep,
   archive,
-  live,
 }: {
   sweep: StrikeSweepResult | null;
   archive: OptionsArchive | null;
-  live: boolean;
 }) {
-  if (!live || !sweep) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-500">
-        Options strike sweep unavailable — the backend API isn&apos;t reachable, or the options
-        archive hasn&apos;t been built yet.
-      </div>
-    );
-  }
+  if (!sweep) return <Offline what="Options strike sweep" />;
 
   const offsets = [...new Set(sweep.grid.map((c) => c.strike_offset_pts))].sort((a, b) => a - b);
   const dtes = [...new Set(sweep.grid.map((c) => c.min_days_to_expiry))].sort((a, b) => a - b);
@@ -35,20 +27,14 @@ export function OptionsStrikeSweep({
   const allNegative = sweep.combinations_with_positive_expectancy === 0 && sweep.combinations_with_trades > 0;
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <Panel className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
         <div className="text-xs font-semibold uppercase tracking-wide text-indigo-400">
           Which option should you actually buy?
         </div>
-        <span
-          className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
-            allNegative
-              ? "border border-rose-500/30 bg-rose-500/10 text-rose-300"
-              : "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-          }`}
-        >
+        <Pill tone={allNegative ? "bad" : "good"}>
           {sweep.combinations_with_positive_expectancy}/{sweep.combinations_with_trades} profitable
-        </span>
+        </Pill>
       </div>
       <div className="text-xs text-zinc-500 mb-3">
         Returns on <span className="text-zinc-300">premium</span>, including theta decay and costs —
@@ -66,8 +52,8 @@ export function OptionsStrikeSweep({
         <table className="border-separate" style={{ borderSpacing: 4 }}>
           <thead>
             <tr>
-              <th className="text-[11px] font-medium text-zinc-500 text-right pr-2">
-                min DTE ↓ / strike →
+              <th className="whitespace-nowrap pr-2 text-right text-[11px] font-medium text-zinc-500">
+                DTE ╲ strike
               </th>
               {offsets.map((off) => (
                 <th key={off} className="px-1 pb-1 text-[11px] font-medium text-zinc-500">
@@ -123,6 +109,6 @@ export function OptionsStrikeSweep({
         {sweep.multiple_comparisons_note}
       </p>
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">{sweep.cost_note}</p>
-    </div>
+    </Panel>
   );
 }

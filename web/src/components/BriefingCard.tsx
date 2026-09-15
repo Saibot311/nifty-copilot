@@ -1,116 +1,117 @@
 import type { Briefing } from "@/lib/api";
+import { Offline, Panel, Pill, Stat, fmtNum } from "./ui";
 
-export function BriefingCard({ briefing, live }: { briefing: Briefing | null; live: boolean }) {
-  if (!live || !briefing) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-500">
-        Research briefing unavailable — the backend API isn&apos;t reachable right now.
-      </div>
-    );
-  }
+export function BriefingCard({ briefing }: { briefing: Briefing | null }) {
+  if (!briefing) return <Offline what="Research briefing" />;
 
   const ev = briefing.evidence;
   const chain = briefing.live_option_chain;
   const signal = briefing.signal;
 
-  const netTone = ev.net_read.includes("bullish")
-    ? "text-emerald-400"
-    : ev.net_read.includes("bearish")
-      ? "text-rose-400"
-      : "text-amber-400";
+  const bullish = ev.net_read.includes("bullish");
+  const bearish = ev.net_read.includes("bearish");
+  const tone = bullish ? "text-emerald-400" : bearish ? "text-rose-400" : "text-amber-400";
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-indigo-400">
-          Research Briefing — {briefing.symbol}
+    <Panel emphasis="raised" className="overflow-hidden">
+      <div className="border-b border-zinc-800 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className={`text-xl font-semibold tracking-tight ${tone}`}>{ev.net_read}</p>
+          <div className="flex items-center gap-2">
+            <Pill tone={bullish ? "good" : "neutral"}>{ev.counts.bullish} bullish</Pill>
+            <Pill tone={bearish ? "bad" : "neutral"}>{ev.counts.bearish} bearish</Pill>
+          </div>
         </div>
-        <div className="text-xs text-zinc-600">as of {briefing.as_of?.slice(0, 10)}</div>
       </div>
 
-      <p className={`mt-3 text-base font-medium ${netTone}`}>{ev.net_read}</p>
-
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <EvidenceList title={`Bullish evidence (${ev.counts.bullish})`} items={ev.bullish} tone="good" />
-        <EvidenceList title={`Bearish evidence (${ev.counts.bearish})`} items={ev.bearish} tone="bad" />
+      <div className="grid gap-5 px-5 py-4 md:grid-cols-2">
+        <EvidenceList title="Bullish evidence" items={ev.bullish} tone="good" />
+        <EvidenceList title="Bearish evidence" items={ev.bearish} tone="bad" />
       </div>
 
       {ev.neutral_or_context.length > 0 && (
-        <div className="mt-3">
-          <EvidenceList title="Context" items={ev.neutral_or_context} tone="neutral" />
+        <div className="border-t border-zinc-800/70 px-5 py-4">
+          <EvidenceList title="Context" items={ev.neutral_or_context} tone="muted" />
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="grid gap-5 border-t border-zinc-800/70 px-5 py-4 md:grid-cols-2">
         <EvidenceList
-          title="What would confirm a long setup"
+          title="Would confirm a long setup"
           items={briefing.levels.confirmation_would_be}
-          tone="neutral"
+          tone="muted"
         />
         <EvidenceList
-          title="What would invalidate it"
+          title="Would invalidate it"
           items={briefing.levels.invalidation_would_be}
-          tone="neutral"
+          tone="muted"
         />
       </div>
 
       {signal && !signal.unavailable && (
-        <div className="mt-4 rounded-lg bg-zinc-950/60 p-3">
+        <div className="border-t border-zinc-800/70 bg-zinc-950/40 px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-medium text-zinc-500">
-              EMA Pullback signal:{" "}
-              <span className={signal.active_today ? "text-emerald-400" : "text-zinc-400"}>
+            <span className="text-xs text-zinc-400">
+              EMA Pullback signal ·{" "}
+              <span className={signal.active_today ? "text-emerald-400" : "text-zinc-500"}>
                 {signal.active_today ? "ACTIVE today" : "not active today"}
               </span>
             </span>
-            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300">
+            <Pill tone={signal.validation_status === "APPROVED" ? "good" : "warn"}>
               {signal.validation_status}
-            </span>
+            </Pill>
           </div>
           {signal.validation_reason && (
-            <p className="mt-2 text-xs leading-relaxed text-zinc-500">{signal.validation_reason}</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+              {signal.validation_reason}
+            </p>
           )}
         </div>
       )}
 
-      {chain && (
-        <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-          <div className="mb-2 text-xs font-medium text-zinc-500">Live option chain</div>
-          {chain.unavailable ? (
-            <p className="text-xs text-zinc-500">{chain.unavailable}</p>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Metric label="Spot" value={chain.underlying_value?.toLocaleString("en-IN")} />
-                <Metric label="ATM strike" value={chain.atm_strike?.toLocaleString("en-IN")} />
-                <Metric
-                  label="ATM IV (C/P)"
-                  value={`${chain.atm_iv?.call ?? "–"} / ${chain.atm_iv?.put ?? "–"}`}
-                />
-                <Metric label="PCR (OI)" value={chain.open_interest?.pcr?.toFixed(2)} />
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <Metric
-                  label="Max call OI (often read as resistance)"
-                  value={chain.open_interest?.max_call_oi_strike?.toLocaleString("en-IN")}
-                />
-                <Metric
-                  label="Max put OI (often read as support)"
-                  value={chain.open_interest?.max_put_oi_strike?.toLocaleString("en-IN")}
-                />
-              </div>
-              {chain.interpretation_caveat && (
-                <p className="mt-3 text-[11px] leading-relaxed text-zinc-600">
-                  {chain.interpretation_caveat}
-                </p>
-              )}
-            </>
+      {chain && !chain.unavailable && (
+        <div className="border-t border-zinc-800/70 px-5 py-4">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Live option chain
+            </span>
+            <span className="text-[11px] text-zinc-600">
+              {chain.expiry} · {chain.strikes_analysed} strikes
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <Stat label="Spot" value={fmtNum(chain.underlying_value)} />
+            <Stat label="ATM strike" value={fmtNum(chain.atm_strike)} />
+            <Stat
+              label="ATM IV call / put"
+              value={`${chain.atm_iv?.call ?? "–"} / ${chain.atm_iv?.put ?? "–"}`}
+            />
+            <Stat label="PCR (OI)" value={chain.open_interest?.pcr?.toFixed(2) ?? "–"} />
+            <Stat
+              label="Max call OI"
+              value={fmtNum(chain.open_interest?.max_call_oi_strike)}
+              sub="often read as resistance"
+            />
+            <Stat
+              label="Max put OI"
+              value={fmtNum(chain.open_interest?.max_put_oi_strike)}
+              sub="often read as support"
+            />
+          </div>
+          {chain.interpretation_caveat && (
+            <p className="mt-3 text-[11px] leading-relaxed text-zinc-600">
+              {chain.interpretation_caveat}
+            </p>
           )}
         </div>
       )}
 
-      <p className="mt-4 text-[11px] leading-relaxed text-zinc-600">{briefing.how_to_read_this}</p>
-    </div>
+      {chain?.unavailable && (
+        <div className="border-t border-zinc-800/70 px-5 py-3 text-[11px] text-zinc-600">
+          {chain.unavailable}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -121,31 +122,26 @@ function EvidenceList({
 }: {
   title: string;
   items: string[];
-  tone: "good" | "bad" | "neutral";
+  tone: "good" | "bad" | "muted";
 }) {
-  const color =
-    tone === "good" ? "text-emerald-400" : tone === "bad" ? "text-rose-400" : "text-zinc-500";
+  const color = { good: "text-emerald-400", bad: "text-rose-400", muted: "text-zinc-500" }[tone];
   return (
     <div>
-      <div className={`mb-1.5 text-xs font-medium ${color}`}>{title}</div>
+      <div className={`mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] ${color}`}>
+        {title}
+      </div>
       {items.length === 0 ? (
         <div className="text-xs text-zinc-600">None.</div>
       ) : (
-        <ul className="space-y-1 text-xs text-zinc-400">
+        <ul className="space-y-1.5">
           {items.map((item, i) => (
-            <li key={i}>• {item}</li>
+            <li key={i} className="flex gap-2 text-xs leading-relaxed text-zinc-400">
+              <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-zinc-700" />
+              <span>{item}</span>
+            </li>
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value?: string | number }) {
-  return (
-    <div>
-      <div className="text-[11px] text-zinc-500">{label}</div>
-      <div className="font-mono text-sm text-zinc-200">{value ?? "–"}</div>
     </div>
   );
 }

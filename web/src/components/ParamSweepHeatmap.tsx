@@ -1,4 +1,5 @@
 import type { ParamSweepResult } from "@/lib/api";
+import { Offline, Panel, Pill } from "./ui";
 
 function cellColor(expectancy: number | null, maxAbs: number): { bg: string; text: string } {
   if (expectancy == null || maxAbs === 0) return { bg: "rgba(113,113,122,0.15)", text: "#a1a1aa" };
@@ -9,14 +10,8 @@ function cellColor(expectancy: number | null, maxAbs: number): { bg: string; tex
   return { bg: `rgba(251,113,133,${0.12 + intensity * 0.55})`, text: "#ffe4e6" };
 }
 
-export function ParamSweepHeatmap({ result, live }: { result: ParamSweepResult | null; live: boolean }) {
-  if (!live || !result) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-500">
-        Parameter sweep unavailable — the backend API isn&apos;t reachable right now.
-      </div>
-    );
-  }
+export function ParamSweepHeatmap({ result }: { result: ParamSweepResult | null }) {
+  if (!result) return <Offline what="Parameter sweep" />;
 
   const emaSpans = [...new Set(result.grid.map((c) => c.ema_span))].sort((a, b) => a - b);
   const holdDaysOptions = [...new Set(result.grid.map((c) => c.hold_days))].sort((a, b) => a - b);
@@ -25,14 +20,14 @@ export function ParamSweepHeatmap({ result, live }: { result: ParamSweepResult |
   const maxAbs = Math.max(...result.grid.map((c) => Math.abs(c.expectancy_pct ?? 0)), 0.01);
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <Panel className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
         <div className="text-xs text-zinc-500">
           EMA Pullback robustness · expectancy per trade across {result.combinations_tested} combinations
         </div>
-        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+        <Pill tone="good">
           {result.combinations_with_positive_expectancy}/{result.combinations_tested} positive
-        </span>
+        </Pill>
       </div>
 
       <div className="overflow-x-auto">
@@ -81,6 +76,6 @@ export function ParamSweepHeatmap({ result, live }: { result: ParamSweepResult |
         Rows = holding period (trading days), columns = EMA length. Green everywhere means the edge holds up
         across nearby settings — not a fluke tuned to one exact number. Still exploratory, not validated.
       </p>
-    </div>
+    </Panel>
   );
 }
