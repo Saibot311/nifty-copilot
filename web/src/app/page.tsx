@@ -2,10 +2,10 @@ import { BacktestCard } from "@/components/BacktestCard";
 import { BriefingCard } from "@/components/BriefingCard";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
-import { OptionsAdvisorCard } from "@/components/OptionsAdvisorCard";
 import { OptionsStrikeSweep } from "@/components/OptionsStrikeSweep";
 import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
 import { PriceChart } from "@/components/PriceChart";
+import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { ValidationCard } from "@/components/ValidationCard";
@@ -15,9 +15,10 @@ import {
   fetchBriefing,
   fetchCandles,
   fetchIndicators,
-  fetchOptionsAdvisor,
+  fetchLiveQuote,
   fetchOptionsArchive,
   fetchParamSweep,
+  fetchRecommendation,
   fetchResearchCompare,
   fetchSnapshot,
   fetchStrikeSweep,
@@ -27,10 +28,11 @@ import {
 export default async function Home() {
   const [
     snapshot,
+    liveQuote,
+    recommendation,
     indicators,
     candles,
     briefing,
-    optionsAdvice,
     backtest,
     compare,
     paramSweep,
@@ -39,10 +41,11 @@ export default async function Home() {
     archive,
   ] = await Promise.all([
     fetchSnapshot(),
+    fetchLiveQuote(),
+    fetchRecommendation(),
     fetchIndicators(),
     fetchCandles(),
     fetchBriefing(),
-    fetchOptionsAdvisor(),
     fetchBacktest(),
     fetchResearchCompare(),
     fetchParamSweep(),
@@ -52,7 +55,13 @@ export default async function Home() {
   ]);
 
   const snap = snapshot.data;
-  const isUp = (snap?.change ?? 0) >= 0;
+  const live = liveQuote.data;
+  // Live NSE feed when reachable, daily close as the fallback — never a
+  // fabricated number, and the header says which one is showing.
+  const price = live?.last ?? snap?.price ?? null;
+  const change = live?.change ?? snap?.change ?? 0;
+  const changePct = live?.change_pct ?? snap?.change_pct ?? 0;
+  const isUp = change >= 0;
 
   return (
     <div className="min-h-full bg-zinc-950">
@@ -62,10 +71,10 @@ export default async function Home() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
               NIFTY 50
             </span>
-            {snap ? (
+            {price != null ? (
               <>
                 <span className="font-mono text-2xl font-semibold tracking-tight text-zinc-50 tabular-nums">
-                  {snap.price.toLocaleString("en-IN")}
+                  {price.toLocaleString("en-IN")}
                 </span>
                 <span
                   className={`font-mono text-sm font-medium tabular-nums ${
@@ -73,16 +82,37 @@ export default async function Home() {
                   }`}
                 >
                   {isUp ? "+" : ""}
-                  {snap.change.toFixed(2)} ({isUp ? "+" : ""}
-                  {snap.change_pct.toFixed(2)}%)
+                  {change.toFixed(2)} ({isUp ? "+" : ""}
+                  {changePct.toFixed(2)}%)
                 </span>
+                {live && (
+                  <span
+                    className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                      live.market.is_open ? "text-emerald-400" : "text-zinc-500"
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        live.market.is_open ? "animate-pulse bg-emerald-400" : "bg-zinc-600"
+                      }`}
+                    />
+                    {live.market.is_open ? "Live" : "Closed"}
+                  </span>
+                )}
               </>
             ) : (
               <span className="text-sm text-zinc-500">backend offline</span>
             )}
           </div>
           <div className="flex items-center gap-3">
-            {snap && <span className="text-[11px] text-zinc-600">{snap.as_of}</span>}
+            {live?.india_vix != null && (
+              <span className="font-mono text-[11px] text-zinc-500 tabular-nums">
+                VIX {live.india_vix}
+              </span>
+            )}
+            <span className="text-[11px] text-zinc-600">
+              {live ? live.market.trade_date : snap?.as_of}
+            </span>
             {snap && <RegimeBadge regime={snap.regime} />}
           </div>
         </div>
@@ -92,6 +122,11 @@ export default async function Home() {
         <DashboardTabs
           today={
             <>
+              <section>
+                <SectionLabel>Recommendation</SectionLabel>
+                <RecommendationCard rec={recommendation.data} />
+              </section>
+
               <section>
                 <SectionLabel hint={briefing.data?.as_of?.slice(0, 10)}>
                   Research briefing
@@ -109,11 +144,6 @@ export default async function Home() {
               <section>
                 <SectionLabel>Indicators</SectionLabel>
                 <IndicatorGrid indicators={indicators.data} />
-              </section>
-
-              <section>
-                <SectionLabel>Options helper</SectionLabel>
-                <OptionsAdvisorCard advice={optionsAdvice.data} />
               </section>
             </>
           }

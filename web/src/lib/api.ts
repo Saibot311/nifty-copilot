@@ -216,6 +216,43 @@ export interface StrikeSweepResult {
   cost_note: string;
 }
 
+export interface LiveQuote {
+  index: string;
+  last: number;
+  change: number;
+  change_pct: number;
+  open: number;
+  high: number;
+  low: number;
+  previous_close: number;
+  india_vix: number | null;
+  india_vix_change_pct: number | null;
+  market: { status: string | null; trade_date: string | null; is_open: boolean };
+}
+
+export interface RecommendationCandidate {
+  strategy: string;
+  label: string;
+  direction: string;
+  option_type: "CE" | "PE";
+  index_expectancy_pct: number | null;
+  index_trades: number;
+  qualifies: boolean;
+  why_not: string | null;
+}
+
+export interface Recommendation {
+  as_of: string;
+  regime: string;
+  action: "NO_TRADE" | "CONSIDER_CALL" | "CONSIDER_PUT";
+  headline: string;
+  reason: string;
+  candidates: RecommendationCandidate[];
+  warnings: string[];
+}
+
+export const fetchLiveQuote = () => get<LiveQuote>("/api/live");
+export const fetchRecommendation = () => get<Recommendation>("/api/recommendation");
 export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
 export const fetchIndicators = () => get<IndicatorReading[]>("/api/indicators");
 export const fetchCandles = (days = 140) =>

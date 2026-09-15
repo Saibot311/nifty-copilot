@@ -23,10 +23,14 @@ def run_all_strategies(symbol: str = "^NSEI", days: int = 7000, hold_days: int =
     for name, spec in STRATEGY_REGISTRY.items():
         entries = spec["fn"](df, regime_series, **spec["params"])
         trades = run_backtest(
-            df, entries, regime_series, direction="long", hold_days=hold_days, cost_model=cost_model
+            df, entries, regime_series,
+            direction=spec.get("direction", "long"),
+            hold_days=hold_days, cost_model=cost_model,
         )
         metrics = compute_metrics(trades)
         log_run(name, {**spec["params"], "hold_days": hold_days}, symbol, days, metrics)
+        metrics["direction"] = spec.get("direction", "long")
+        metrics["label"] = spec.get("label", name)
         results[name] = metrics
 
     return {

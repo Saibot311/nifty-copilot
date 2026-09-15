@@ -10,11 +10,12 @@ from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
 from backtest.options_research import run_options_strike_sweep
 from cache import cached
 from backtest.walkforward import evaluate_strategy
-from briefing import build_briefing
+from briefing import build_briefing, build_recommendation
 from options.advisor import translate_to_options
 from options.chain_analytics import live_chain_analytics
 from storage import archive_stats
 from market_data import Candle, CSVProvider, YFinanceProvider
+from market_data.live_quote import live_index_quote, market_status
 from quant import build_analysis
 
 app = FastAPI(title="NIFTY Copilot API")
@@ -307,3 +308,31 @@ def options_archive_status() -> dict:
         return archive_stats()
     except Exception as e:
         raise HTTPException(503, f"Archive status unavailable: {e}")
+
+
+@app.get("/api/live")
+def live_quote() -> dict:
+    """Current NIFTY price from NSE's live feed, plus whether the market is
+    actually open — a 'live' price outside session hours is just the last
+    close wearing a live label, so the caller needs to know which it is."""
+    try:
+        quote = live_index_quote()
+        quote["market"] = market_status()
+        return quote
+    except Exception as e:
+        raise HTTPException(503, f"Live quote unavailable: {e}")
+
+
+@app.get("/api/recommendation")
+def recommendation(symbol: str = Query("^NSEI")) -> dict:
+    """Today's call, put, or no-trade verdict across every tested strategy
+    in both directions. Will say NO_TRADE unless a signal clears a real
+    expectancy and sample-size bar — that is the intended behaviour."""
+    try:
+        return cached(
+            f"recommendation:{symbol}",
+            ttl_seconds=600,
+            producer=lambda: build_recommendation(symbol=symbol),
+        )
+    except Exception as e:
+        raise HTTPException(503, f"Recommendation failed: {e}")

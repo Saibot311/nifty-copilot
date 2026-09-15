@@ -66,11 +66,45 @@ def bollinger_reversion_signals(
     return was_below & reclaimed
 
 
+def ema_rejection_short_signals(
+    df: pd.DataFrame, regime_series: pd.Series, ema_span: int = 20
+) -> pd.Series:
+    """The exact mirror of EMA Pullback, for downtrends: the market is in
+    TREND_BEAR, price was above EMA20 yesterday, and has closed back below
+    it today — a bounce into the moving average that failed.
+
+    Expressed as a PUT, not a short index position. Every other strategy
+    here is long-only, which left the system mute on bearish days; this
+    gives it something to say when the trend is down."""
+    close = df["close"]
+    ema_line = ema(close, ema_span)
+    below_now = close < ema_line
+    below_prev = below_now.shift(1).fillna(False)
+    just_lost = below_now & ~below_prev
+    return just_lost & (regime_series == "TREND_BEAR")
+
+
 STRATEGY_REGISTRY = {
-    "ema_pullback": {"fn": ema_pullback_signals, "params": {"ema_span": 20}},
-    "rsi_reversal": {"fn": rsi_reversal_signals, "params": {"rsi_period": 14, "oversold": 30}},
-    "prev_day_breakout": {"fn": prev_day_breakout_signals, "params": {}},
-    "bollinger_reversion": {"fn": bollinger_reversion_signals, "params": {"window": 20, "num_std": 2}},
+    "ema_pullback": {
+        "fn": ema_pullback_signals, "params": {"ema_span": 20},
+        "direction": "long", "option_type": "CE", "label": "EMA Pullback (long)",
+    },
+    "ema_rejection_short": {
+        "fn": ema_rejection_short_signals, "params": {"ema_span": 20},
+        "direction": "short", "option_type": "PE", "label": "EMA Rejection (short)",
+    },
+    "rsi_reversal": {
+        "fn": rsi_reversal_signals, "params": {"rsi_period": 14, "oversold": 30},
+        "direction": "long", "option_type": "CE", "label": "RSI Oversold Reversal",
+    },
+    "prev_day_breakout": {
+        "fn": prev_day_breakout_signals, "params": {},
+        "direction": "long", "option_type": "CE", "label": "Prev-Day-High Breakout",
+    },
+    "bollinger_reversion": {
+        "fn": bollinger_reversion_signals, "params": {"window": 20, "num_std": 2},
+        "direction": "long", "option_type": "CE", "label": "Bollinger Band Reversion",
+    },
 }
 
 
