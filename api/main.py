@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from backtest import run_ema_pullback_backtest
 from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
 from backtest.walkforward import evaluate_strategy
+from options.advisor import translate_to_options
 from market_data import Candle, CSVProvider, YFinanceProvider
 from quant import build_analysis
 
@@ -219,3 +220,20 @@ def validate_ema_pullback(
         )
     except Exception as e:
         raise HTTPException(503, f"Validation run failed: {e}")
+
+
+@app.get("/api/options/advisor")
+def options_advisor(
+    symbol: str = Query("^NSEI"),
+    hold_days: int = Query(10, ge=1, le=60),
+) -> dict:
+    """Translates today's EMA Pullback signal (the only strategy with any
+    real edge, still CONDITIONAL not APPROVED) into options guidance --
+    strike/expiry heuristics only. No live premiums, IV, or Greeks: that
+    data isn't in this system, and inventing plausible numbers for it
+    would be exactly the kind of fabricated statistic this project exists
+    to avoid."""
+    try:
+        return translate_to_options(symbol=symbol, hold_days=hold_days)
+    except Exception as e:
+        raise HTTPException(503, f"Options advisor failed: {e}")

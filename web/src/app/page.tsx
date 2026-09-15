@@ -3,12 +3,14 @@ import { ChartPlaceholder } from "@/components/ChartPlaceholder";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
 import { RegimeBadge } from "@/components/RegimeBadge";
+import { OptionsAdvisorCard } from "@/components/OptionsAdvisorCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { ScenarioCard } from "@/components/ScenarioCard";
 import { ValidationCard } from "@/components/ValidationCard";
 import {
   fetchBacktest,
   fetchIndicators,
+  fetchOptionsAdvisor,
   fetchParamSweep,
   fetchResearchCompare,
   fetchSnapshot,
@@ -17,15 +19,23 @@ import {
 import { mockScenarios } from "@/lib/mock-data";
 
 export default async function Home() {
-  const [snapshotResult, indicatorsResult, backtestResult, compareResult, sweepResult, validationResult] =
-    await Promise.all([
-      fetchSnapshot(),
-      fetchIndicators(),
-      fetchBacktest(),
-      fetchResearchCompare(),
-      fetchParamSweep(),
-      fetchValidation(),
-    ]);
+  const [
+    snapshotResult,
+    indicatorsResult,
+    backtestResult,
+    compareResult,
+    sweepResult,
+    validationResult,
+    optionsResult,
+  ] = await Promise.all([
+    fetchSnapshot(),
+    fetchIndicators(),
+    fetchBacktest(),
+    fetchResearchCompare(),
+    fetchParamSweep(),
+    fetchValidation(),
+    fetchOptionsAdvisor(),
+  ]);
   const snapshot = snapshotResult.data;
   const indicators = indicatorsResult.data;
   const apiLive = snapshotResult.live && indicatorsResult.live;
@@ -102,6 +112,13 @@ export default async function Home() {
           Validation (Phase 8)
         </h2>
         <ValidationCard result={validationResult.data} live={validationResult.live} />
+      </section>
+
+      <section aria-labelledby="options-heading">
+        <h2 id="options-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Options Trade Helper
+        </h2>
+        <OptionsAdvisorCard advice={optionsResult.data} live={optionsResult.live} />
       </section>
 
       <section aria-labelledby="scenarios-heading">

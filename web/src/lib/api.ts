@@ -165,3 +165,26 @@ export async function fetchValidation(days = 7000): Promise<ApiResult<Validation
     return { data: null, live: false };
   }
 }
+
+export interface OptionsAdvice {
+  as_of: string;
+  actionable_today: boolean;
+  message?: string;
+  direction?: string;
+  rationale?: string;
+  strike_guidance?: string;
+  expiry_guidance?: string;
+  validation_status: string;
+  critical_warnings?: string[];
+  recent_signal_dates: string[];
+}
+
+export async function fetchOptionsAdvisor(): Promise<ApiResult<OptionsAdvice | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/options/advisor`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}
