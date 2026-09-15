@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from backtest import run_ema_pullback_backtest
 from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
+from backtest.walkforward import evaluate_strategy
 from market_data import Candle, CSVProvider, YFinanceProvider
 from quant import build_analysis
 
@@ -198,3 +199,23 @@ def research_param_sweep(
         return run_ema_pullback_param_sweep(symbol=symbol, days=days)
     except Exception as e:
         raise HTTPException(503, f"Parameter sweep failed: {e}")
+
+
+@app.get("/api/validation/ema_pullback")
+def validate_ema_pullback(
+    symbol: str = Query("^NSEI"),
+    days: int = Query(7000, ge=100, le=10000),
+    hold_days: int = Query(10, ge=1, le=60),
+    n_folds: int = Query(5, ge=2, le=10),
+    train_frac: float = Query(0.7, gt=0.3, lt=0.95),
+) -> dict:
+    """Phase 8: walk-forward folds + a development/holdout split, combined
+    into one honest APPROVED / CONDITIONAL / REJECTED verdict. Deliberately
+    stricter than either check alone — see the methodology_note in the
+    response for the real limitation in what this can and can't prove."""
+    try:
+        return evaluate_strategy(
+            symbol=symbol, days=days, hold_days=hold_days, n_folds=n_folds, train_frac=train_frac
+        )
+    except Exception as e:
+        raise HTTPException(503, f"Validation run failed: {e}")

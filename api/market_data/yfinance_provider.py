@@ -72,6 +72,16 @@ class YFinanceProvider:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
+            # Yahoo includes a placeholder row for the most recent session
+            # before it's actually settled: open/high/low present, but
+            # close=NaN and volume=0. Treating that as a real candle would
+            # be exactly the kind of "unfinished bar" data-integrity issue
+            # this project is built to avoid — drop it rather than pass a
+            # NaN price downstream.
+            df = df.dropna(subset=["Close"])
+            if df.empty:
+                return []
+
             candles = []
             for ts, row in df.iterrows():
                 candles.append(

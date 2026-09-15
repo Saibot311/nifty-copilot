@@ -1,0 +1,185 @@
+"""Phase 8: does EMA Pullback survive outside the data it was picked on?
+
+Two checks:
+1. Walk-forward folds — split the full history into chronological chunks
+   and look at performance fold by fold, to see if the edge is concentrated
+   in one lucky period or holds up broadly over time.
+2. Development/holdout split — a stricter, single train/test cut. The
+   strategy only earns APPROVED if it's positive in both halves with a
+   real sample size in the holdout.
+
+Important honesty note, not a footnote: EMA Pullback's parameters (ema_span,
+hold_days) were fixed by hand, not fit to data — there's no optimization
+step whose result could leak from a holdout back into the rule the way it
+would for a machine-learned model. So this *is* a genuine test of whether
+the rule's edge is stable over time. What it is NOT: a clean test of the
+*selection* process — Phase 7 already looked at the full history (holdout
+included) when picking EMA Pullback as the best of 4 candidates. A fully
+rigorous version would re-run strategy discovery using only the
+development period and confirm the same strategy gets picked before ever
+looking at the holdout. That's a real limitation of this first pass, kept
+visible rather than glossed over.
+"""
+
+from datetime import timedelta
+
+from .costs import CostModel
+from .engine import run_backtest
+from .hypothesis_log import log_run
+from .metrics import compute_metrics
+from .strategies import ema_pullback_signals, load_daily_data
+
+METHODOLOGY_NOTE = (
+    "EMA Pullback's parameters were fixed by hand, not fit to data, so there's no optimization "
+    "step whose result could leak from the holdout back into the rule — this is a genuine test "
+    "of the rule's stability over time. The real limitation: Phase 7 already looked at the FULL "
+    "history (holdout included) when picking EMA Pullback as the best of 4 candidates, so this "
+    "is not a perfectly clean test of that selection process. A fully rigorous version would "
+    "re-run strategy discovery using only the development period and confirm the same strategy "
+    "would have been chosen before ever looking at the holdout."
+)
+
+
+def _run_full_trades(symbol: str, days: int, hold_days: int, ema_span: int):
+    df, regime_series = load_daily_data(symbol, days)
+    entries = ema_pullback_signals(df, regime_series, ema_span=ema_span)
+    trades = run_backtest(
+        df, entries, regime_series, direction="long", hold_days=hold_days, cost_model=CostModel()
+    )
+    return df, trades
+
+
+def run_walk_forward(
+    symbol: str = "^NSEI", days: int = 7000, hold_days: int = 10, ema_span: int = 20, n_folds: int = 5
+) -> dict:
+    df, trades = _run_full_trades(symbol, days, hold_days, ema_span)
+
+    start_date = df.index[0].date()
+    end_date = df.index[-1].date()
+    total_days = (end_date - start_date).days
+    fold_len = total_days / n_folds
+
+    fold_bounds = []
+    for i in range(n_folds):
+        f_start = start_date + timedelta(days=int(i * fold_len))
+        f_end = end_date if i == n_folds - 1 else start_date + timedelta(days=int((i + 1) * fold_len))
+        fold_bounds.append((str(f_start), str(f_end)))
+
+    folds = []
+    for f_start, f_end in fold_bounds:
+        fold_trades = [t for t in trades if f_start <= t.entry_date <= f_end]
+        folds.append({"period": {"start": f_start, "end": f_end}, "metrics": compute_metrics(fold_trades)})
+
+    folds_with_trades = [f for f in folds if f["metrics"]["num_trades"] > 0]
+    positive_folds = sum(1 for f in folds_with_trades if (f["metrics"].get("expectancy_pct") or 0) > 0)
+
+    overall_metrics = compute_metrics(trades)
+    log_run(
+        "ema_pullback_walkforward", {"ema_span": ema_span, "hold_days": hold_days, "n_folds": n_folds},
+        symbol, days, overall_metrics,
+    )
+
+    return {
+        "strategy": "ema_pullback",
+        "symbol": symbol,
+        "period": {"start": str(start_date), "end": str(end_date)},
+        "n_folds": n_folds,
+        "folds": folds,
+        "folds_with_positive_expectancy": positive_folds,
+        "folds_with_any_trades": len(folds_with_trades),
+        "methodology_note": METHODOLOGY_NOTE,
+    }
+
+
+def evaluate_strategy(
+    symbol: str = "^NSEI", days: int = 7000, hold_days: int = 10, ema_span: int = 20,
+    n_folds: int = 5, train_frac: float = 0.7, min_holdout_trades: int = 15,
+    min_fold_win_share: float = 0.6,
+) -> dict:
+    """Combines both checks into one honest final verdict — deliberately
+    stricter than looking at either alone. A strategy that passes the
+    holdout split but is only positive in 2 of 5 chronological folds is NOT
+    "robust over time," even though the single train/test cut looks fine;
+    this function is what stops that from being overstated as APPROVED.
+    """
+    wf = run_walk_forward(symbol, days, hold_days, ema_span, n_folds)
+    ho = run_holdout_test(symbol, days, hold_days, ema_span, train_frac, min_holdout_trades)
+
+    fold_win_share = (
+        wf["folds_with_positive_expectancy"] / wf["folds_with_any_trades"]
+        if wf["folds_with_any_trades"] > 0 else 0
+    )
+    holdout_passes = ho["status"] == "APPROVED"
+    folds_pass = fold_win_share >= min_fold_win_share
+
+    if not holdout_passes:
+        final_status = ho["status"]  # REJECTED or CONDITIONAL, already explained
+        final_reason = ho["reason"]
+    elif not folds_pass:
+        final_status = "CONDITIONAL"
+        final_reason = (
+            f"Holdout split alone looks fine, but only {wf['folds_with_positive_expectancy']} of "
+            f"{wf['folds_with_any_trades']} chronological folds ({fold_win_share:.0%}) had positive "
+            f"expectancy — below the {min_fold_win_share:.0%} bar for calling this robust over time. "
+            "A single train/test split can look good by masking inconsistency the fold breakdown reveals."
+        )
+    else:
+        final_status = "APPROVED"
+        final_reason = (
+            f"Passes both checks: positive in development and holdout, and "
+            f"{wf['folds_with_positive_expectancy']}/{wf['folds_with_any_trades']} folds positive."
+        )
+
+    return {
+        "strategy": "ema_pullback",
+        "final_status": final_status,
+        "final_reason": final_reason,
+        "walk_forward": wf,
+        "holdout": ho,
+        "methodology_note": METHODOLOGY_NOTE,
+    }
+
+
+def run_holdout_test(
+    symbol: str = "^NSEI", days: int = 7000, hold_days: int = 10, ema_span: int = 20, train_frac: float = 0.7,
+    min_holdout_trades: int = 15,
+) -> dict:
+    df, trades = _run_full_trades(symbol, days, hold_days, ema_span)
+
+    start_date = df.index[0].date()
+    end_date = df.index[-1].date()
+    total_days = (end_date - start_date).days
+    split_date = str(start_date + timedelta(days=int(total_days * train_frac)))
+
+    dev_trades = [t for t in trades if t.entry_date < split_date]
+    holdout_trades = [t for t in trades if t.entry_date >= split_date]
+
+    dev_metrics = compute_metrics(dev_trades)
+    holdout_metrics = compute_metrics(holdout_trades)
+
+    dev_expectancy = dev_metrics.get("expectancy_pct") or 0
+    holdout_expectancy = holdout_metrics.get("expectancy_pct") or 0
+    holdout_n = holdout_metrics.get("num_trades") or 0
+
+    if dev_expectancy <= 0 or holdout_expectancy <= 0:
+        status, reason = "REJECTED", "Expectancy was non-positive in the development period, the holdout period, or both."
+    elif holdout_n < min_holdout_trades:
+        status, reason = "CONDITIONAL", f"Holdout expectancy is positive but only {holdout_n} trades occurred there — below the {min_holdout_trades}-trade bar for confidence."
+    else:
+        status, reason = "APPROVED", f"Positive expectancy in both development and holdout periods, with {holdout_n} holdout trades — clears the confirmatory bar."
+
+    log_run(
+        "ema_pullback_holdout", {"ema_span": ema_span, "hold_days": hold_days, "train_frac": train_frac},
+        symbol, days, holdout_metrics,
+    )
+
+    return {
+        "strategy": "ema_pullback",
+        "symbol": symbol,
+        "split_date": split_date,
+        "development": {"period": {"start": str(start_date), "end": split_date}, "metrics": dev_metrics},
+        "holdout": {"period": {"start": split_date, "end": str(end_date)}, "metrics": holdout_metrics},
+        "status": status,
+        "reason": reason,
+        "methodology_note": METHODOLOGY_NOTE,
+    }

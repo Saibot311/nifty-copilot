@@ -129,3 +129,39 @@ export async function fetchParamSweep(days = 7000): Promise<ApiResult<ParamSweep
     return { data: null, live: false };
   }
 }
+
+export interface WalkForwardFold {
+  period: { start: string; end: string };
+  metrics: BacktestMetrics;
+}
+
+export interface ValidationResult {
+  strategy: string;
+  final_status: "APPROVED" | "CONDITIONAL" | "REJECTED";
+  final_reason: string;
+  walk_forward: {
+    period: { start: string; end: string };
+    n_folds: number;
+    folds: WalkForwardFold[];
+    folds_with_positive_expectancy: number;
+    folds_with_any_trades: number;
+  };
+  holdout: {
+    split_date: string;
+    development: { period: { start: string; end: string }; metrics: BacktestMetrics };
+    holdout: { period: { start: string; end: string }; metrics: BacktestMetrics };
+    status: string;
+    reason: string;
+  };
+  methodology_note: string;
+}
+
+export async function fetchValidation(days = 7000): Promise<ApiResult<ValidationResult | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/validation/ema_pullback?days=${days}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}

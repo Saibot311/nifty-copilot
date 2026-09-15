@@ -5,23 +5,27 @@ import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { ScenarioCard } from "@/components/ScenarioCard";
+import { ValidationCard } from "@/components/ValidationCard";
 import {
   fetchBacktest,
   fetchIndicators,
   fetchParamSweep,
   fetchResearchCompare,
   fetchSnapshot,
+  fetchValidation,
 } from "@/lib/api";
 import { mockScenarios } from "@/lib/mock-data";
 
 export default async function Home() {
-  const [snapshotResult, indicatorsResult, backtestResult, compareResult, sweepResult] = await Promise.all([
-    fetchSnapshot(),
-    fetchIndicators(),
-    fetchBacktest(),
-    fetchResearchCompare(),
-    fetchParamSweep(),
-  ]);
+  const [snapshotResult, indicatorsResult, backtestResult, compareResult, sweepResult, validationResult] =
+    await Promise.all([
+      fetchSnapshot(),
+      fetchIndicators(),
+      fetchBacktest(),
+      fetchResearchCompare(),
+      fetchParamSweep(),
+      fetchValidation(),
+    ]);
   const snapshot = snapshotResult.data;
   const indicators = indicatorsResult.data;
   const apiLive = snapshotResult.live && indicatorsResult.live;
@@ -91,6 +95,13 @@ export default async function Home() {
           Research (Phase 7) — Parameter Robustness
         </h2>
         <ParamSweepHeatmap result={sweepResult.data} live={sweepResult.live} />
+      </section>
+
+      <section aria-labelledby="validation-heading">
+        <h2 id="validation-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Validation (Phase 8)
+        </h2>
+        <ValidationCard result={validationResult.data} live={validationResult.live} />
       </section>
 
       <section aria-labelledby="scenarios-heading">
