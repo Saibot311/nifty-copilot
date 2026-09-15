@@ -105,3 +105,53 @@ def session_vwap(intraday_df: pd.DataFrame) -> pd.Series:
     cum_pv = pv.groupby(session).cumsum()
     cum_vol = intraday_df["volume"].groupby(session).cumsum()
     return cum_pv / cum_vol
+
+
+def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> pd.DataFrame:
+    """Standard Supertrend: an ATR-band trend-follower that flips direction
+    when price closes through the opposite band. Returns the line and a
+    +1/-1 direction column; a direction change IS the trade signal in most
+    published Supertrend strategies, not a threshold crossing."""
+    hl2 = (df["high"] + df["low"]) / 2
+    atr_val = atr(df, period)
+    upper_basic = hl2 + multiplier * atr_val
+    lower_basic = hl2 - multiplier * atr_val
+
+    upper = upper_basic.copy()
+    lower = lower_basic.copy()
+    direction = pd.Series(1, index=df.index)
+    close = df["close"]
+
+    for i in range(1, len(df)):
+        upper.iloc[i] = (
+            upper_basic.iloc[i]
+            if upper_basic.iloc[i] < upper.iloc[i - 1] or close.iloc[i - 1] > upper.iloc[i - 1]
+            else upper.iloc[i - 1]
+        )
+        lower.iloc[i] = (
+            lower_basic.iloc[i]
+            if lower_basic.iloc[i] > lower.iloc[i - 1] or close.iloc[i - 1] < lower.iloc[i - 1]
+            else lower.iloc[i - 1]
+        )
+        if close.iloc[i] > upper.iloc[i - 1]:
+            direction.iloc[i] = 1
+        elif close.iloc[i] < lower.iloc[i - 1]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[i - 1]
+
+    line = pd.Series(
+        [lower.iloc[i] if direction.iloc[i] == 1 else upper.iloc[i] for i in range(len(df))],
+        index=df.index,
+    )
+    return pd.DataFrame({"line": line, "direction": direction})
+
+
+def stochastic(df: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> pd.DataFrame:
+    """Classic %K/%D stochastic oscillator over the close relative to the
+    period's high-low range."""
+    lowest_low = df["low"].rolling(k_period).min()
+    highest_high = df["high"].rolling(k_period).max()
+    percent_k = 100 * (df["close"] - lowest_low) / (highest_high - lowest_low)
+    percent_d = percent_k.rolling(d_period).mean()
+    return pd.DataFrame({"k": percent_k, "d": percent_d})

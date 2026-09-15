@@ -67,6 +67,10 @@ export interface BacktestMetrics {
   avg_holding_days?: number;
   sample_size_warning?: string | null;
   note?: string;
+  label?: string;
+  direction?: string;
+  option_type?: "CE" | "PE";
+  vs_baseline_pct?: number | null;
 }
 
 export interface BacktestResult {
@@ -82,6 +86,8 @@ export interface ResearchCompareResult {
   period: { start: string; end: string; bars: number };
   hold_days: number;
   results: Record<string, BacktestMetrics>;
+  buy_and_hold_baseline?: { num_trades: number; expectancy_pct: number | null; profit_factor: number | null };
+  baseline_note?: string;
   total_hypotheses_tested_all_time: number;
 }
 

@@ -108,6 +108,27 @@ STRATEGY_REGISTRY = {
 }
 
 
+from .strategies_v2 import STRATEGY_REGISTRY_V2
+
+STRATEGY_REGISTRY.update(STRATEGY_REGISTRY_V2)
+
+# PCR strategies are added lazily (only when the options archive actually
+# has data) rather than at import time, since pcr_signals.py queries
+# SQLite on every signal call and importing it up front would make a
+# fresh checkout fail before any backfill has run.
+def _register_pcr_strategies() -> None:
+    try:
+        from .pcr_signals import PCR_STRATEGY_REGISTRY
+        from storage import archive_stats
+        if archive_stats().get("option_bars", 0) > 0:
+            STRATEGY_REGISTRY.update(PCR_STRATEGY_REGISTRY)
+    except Exception:
+        pass  # archive not built yet, or unreachable -- skip silently, not fatal
+
+
+_register_pcr_strategies()
+
+
 def load_daily_data(symbol: str = "^NSEI", days: int = 7000) -> tuple[pd.DataFrame, pd.Series]:
     provider = YFinanceProvider()
     candles = provider.get_ohlc(symbol, "1d", date.today() - timedelta(days=days), date.today())

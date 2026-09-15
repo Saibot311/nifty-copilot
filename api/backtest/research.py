@@ -12,12 +12,35 @@ from .metrics import compute_metrics
 from .strategies import STRATEGY_REGISTRY, ema_pullback_signals, load_daily_data
 
 
+def _buy_and_hold_baseline(df, hold_days: int) -> dict:
+    """What holding long unconditionally, re-entering every `hold_days`,
+    would have returned over the same period. Necessary context: on an
+    index with strong secular drift, almost any long strategy looks
+    "good" and almost any short strategy looks "bad" for that reason
+    alone, not because of the specific entry logic. Comparing a
+    strategy's expectancy to this number is closer to isolating real
+    skill than looking at the raw expectancy in isolation."""
+    import pandas as pd
+
+    n = len(df)
+    always_on = pd.Series(True, index=df.index)
+    trades = run_backtest(df, always_on, pd.Series(["N/A"] * n, index=df.index),
+                           direction="long", hold_days=hold_days, cost_model=CostModel())
+    m = compute_metrics(trades)
+    return {
+        "num_trades": m["num_trades"],
+        "expectancy_pct": m.get("expectancy_pct"),
+        "profit_factor": m.get("profit_factor"),
+    }
+
+
 def run_all_strategies(symbol: str = "^NSEI", days: int = 7000, hold_days: int = 10) -> dict:
     """One pass of every strategy in the registry, same data, same costs,
     same holding period — a fair side-by-side comparison, not a search for
     whichever one looks best."""
     df, regime_series = load_daily_data(symbol, days)
     cost_model = CostModel()
+    baseline = _buy_and_hold_baseline(df, hold_days)
 
     results = {}
     for name, spec in STRATEGY_REGISTRY.items():
@@ -33,10 +56,25 @@ def run_all_strategies(symbol: str = "^NSEI", days: int = 7000, hold_days: int =
         metrics["label"] = spec.get("label", name)
         results[name] = metrics
 
+    for r in results.values():
+        r["vs_baseline_pct"] = (
+            round(r["expectancy_pct"] - baseline["expectancy_pct"], 3)
+            if r.get("expectancy_pct") is not None and baseline.get("expectancy_pct") is not None
+            else None
+        )
+
     return {
         "symbol": symbol,
         "period": {"start": str(df.index[0].date()), "end": str(df.index[-1].date()), "bars": len(df)},
         "hold_days": hold_days,
+        "buy_and_hold_baseline": baseline,
+        "baseline_note": (
+            "Expectancy of simply holding long, re-entered every hold period, over the same data. "
+            "NIFTY has a strong 19-year upward drift, so most long strategies beating this by a wide "
+            "margin is a weaker claim than it looks -- and most short strategies losing may be "
+            "fighting the drift rather than being genuinely bad setups. vs_baseline_pct on each "
+            "result is the more honest comparison than raw expectancy alone."
+        ),
         "results": results,
         "total_hypotheses_tested_all_time": total_hypotheses_tested(),
     }
