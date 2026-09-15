@@ -268,6 +268,21 @@ export interface Recommendation {
   evidence_bar?: EvidenceBar;
 }
 
+export interface PlaybookEntry {
+  id: number;
+  strategy: string;
+  label: string;
+  checked_at: string;
+  status: "APPROVED" | "CONDITIONAL" | "REJECTED";
+  reason: string;
+  num_trades: number | null;
+  expectancy_pct: number | null;
+  profit_factor: number | null;
+  folds_positive: number | null;
+  folds_total: number | null;
+}
+
+export const fetchPlaybook = () => get<{ strategies: PlaybookEntry[] }>("/api/strategies/playbook");
 export const fetchLiveQuote = () => get<LiveQuote>("/api/live");
 export const fetchRecommendation = () => get<Recommendation>("/api/recommendation");
 export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");

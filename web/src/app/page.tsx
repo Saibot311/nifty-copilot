@@ -4,6 +4,7 @@ import { DashboardTabs } from "@/components/DashboardTabs";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { OptionsStrikeSweep } from "@/components/OptionsStrikeSweep";
 import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
+import { PlaybookCard } from "@/components/PlaybookCard";
 import { PriceChart } from "@/components/PriceChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
@@ -18,6 +19,7 @@ import {
   fetchLiveQuote,
   fetchOptionsArchive,
   fetchParamSweep,
+  fetchPlaybook,
   fetchRecommendation,
   fetchResearchCompare,
   fetchSnapshot,
@@ -39,6 +41,7 @@ export default async function Home() {
     validation,
     strikeSweep,
     archive,
+    playbook,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -52,6 +55,7 @@ export default async function Home() {
     fetchValidation(),
     fetchStrikeSweep(),
     fetchOptionsArchive(),
+    fetchPlaybook(),
   ]);
 
   const snap = snapshot.data;
@@ -157,8 +161,13 @@ export default async function Home() {
               </section>
 
               <section>
-                <SectionLabel hint="the verdict that matters">Walk-forward validation</SectionLabel>
+                <SectionLabel hint="the verdict that matters">Walk-forward validation — EMA Pullback</SectionLabel>
                 <ValidationCard result={validation.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="Phase 9 — persistent, not recomputed">Strategy Playbook</SectionLabel>
+                <PlaybookCard entries={playbook.data?.strategies ?? null} />
               </section>
 
               <section>
