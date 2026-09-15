@@ -13,7 +13,7 @@ from backtest.walkforward import evaluate_strategy
 from briefing import build_briefing, build_recommendation
 from options.advisor import translate_to_options
 from options.chain_analytics import live_chain_analytics
-from storage import archive_stats
+from storage import archive_stats, record_strategy_evaluation, strategy_history, strategy_playbook
 from market_data import Candle, CSVProvider, YFinanceProvider
 from market_data.live_quote import live_index_quote, market_status
 from quant import build_analysis
@@ -208,24 +208,64 @@ def research_param_sweep(
         raise HTTPException(503, f"Parameter sweep failed: {e}")
 
 
-@app.get("/api/validation/ema_pullback")
-def validate_ema_pullback(
+@app.get("/api/validation/{strategy_name}")
+def validate_strategy(
+    strategy_name: str,
     symbol: str = Query("^NSEI"),
     days: int = Query(7000, ge=100, le=10000),
     hold_days: int = Query(10, ge=1, le=60),
     n_folds: int = Query(5, ge=2, le=10),
     train_frac: float = Query(0.7, gt=0.3, lt=0.95),
+    persist: bool = Query(True, description="Record this verdict to the Phase 9 strategy playbook"),
 ) -> dict:
     """Phase 8: walk-forward folds + a development/holdout split, combined
-    into one honest APPROVED / CONDITIONAL / REJECTED verdict. Deliberately
-    stricter than either check alone — see the methodology_note in the
-    response for the real limitation in what this can and can't prove."""
+    into one honest APPROVED / CONDITIONAL / REJECTED verdict, for any
+    strategy in the registry (originally hardcoded to EMA Pullback only).
+    Deliberately stricter than either check alone — see the
+    methodology_note for the real limitation in what this can and can't
+    prove. Persists the verdict to the strategy playbook by default."""
     try:
-        return evaluate_strategy(
-            symbol=symbol, days=days, hold_days=hold_days, n_folds=n_folds, train_frac=train_frac
+        result = evaluate_strategy(
+            strategy_name=strategy_name, symbol=symbol, days=days,
+            hold_days=hold_days, n_folds=n_folds, train_frac=train_frac,
         )
+    except ValueError as e:
+        raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(503, f"Validation run failed: {e}")
+
+    if persist:
+        try:
+            record_strategy_evaluation(
+                result, params={"symbol": symbol, "days": days, "hold_days": hold_days, "n_folds": n_folds, "train_frac": train_frac}
+            )
+        except Exception:
+            pass  # persistence failure shouldn't break the response the caller is waiting on
+
+    return result
+
+
+@app.get("/api/strategies/playbook")
+def strategies_playbook() -> dict:
+    """The Strategy Playbook: the latest known validation status for every
+    strategy that has ever been evaluated -- a persistent record, not a
+    live recomputation. Ranked by expectancy, but status (APPROVED /
+    CONDITIONAL / REJECTED) is what actually matters."""
+    try:
+        return {"strategies": strategy_playbook()}
+    except Exception as e:
+        raise HTTPException(503, f"Playbook unavailable: {e}")
+
+
+@app.get("/api/strategies/{strategy_name}/history")
+def strategy_history_endpoint(strategy_name: str, limit: int = Query(50, ge=1, le=500)) -> dict:
+    """Every recorded validation verdict for one strategy over time, most
+    recent first -- lets you see whether a status has been stable or
+    drifting, which a single live-recomputed check can never show."""
+    try:
+        return {"strategy": strategy_name, "history": strategy_history(strategy_name, limit=limit)}
+    except Exception as e:
+        raise HTTPException(503, f"History unavailable: {e}")
 
 
 @app.get("/api/options/advisor")
