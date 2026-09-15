@@ -14,14 +14,18 @@ not failing. Manufacturing a recommendation to fill the space is the
 failure mode this is built to avoid.
 """
 
+from backtest.hypothesis_log import total_hypotheses_tested
 from backtest.strategies import STRATEGY_REGISTRY, load_daily_data
+from stats.multiple_comparisons import required_bar
 
-# A positive number is not an edge. Index round-trip costs are ~0.2% and
-# option costs far more, so an expectancy of a few thousandths of a
-# percent is indistinguishable from noise — it must clear a bar that
-# actually means something, on a sample large enough to trust.
-MIN_EXPECTANCY_PCT = 0.25
-MIN_TRADES = 30
+# Base bar before any multiple-comparisons adjustment. Index round-trip
+# costs are ~0.2% and option costs far more, so an expectancy of a few
+# thousandths of a percent is indistinguishable from noise even before
+# accounting for how many strategies have been tried against the same
+# data. The actual bar used is scaled up from these by required_bar()
+# below, based on the running hypothesis count.
+BASE_MIN_EXPECTANCY_PCT = 0.25
+BASE_MIN_TRADES = 30
 
 
 def _firing_today(symbol: str, days: int = 800) -> tuple[list[dict], str, str]:
@@ -48,18 +52,24 @@ def build_recommendation(symbol: str = "^NSEI", days: int = 3200) -> dict:
     firing, as_of, regime = _firing_today(symbol)
     track_record = run_all_strategies(symbol=symbol, days=7000)["results"]
 
+    bar = required_bar(
+        num_hypotheses_tested=total_hypotheses_tested(),
+        base_expectancy_pct=BASE_MIN_EXPECTANCY_PCT,
+        base_trades=BASE_MIN_TRADES,
+    )
+
     candidates = []
     for f in firing:
         rec = track_record.get(f["strategy"], {})
         expectancy = rec.get("expectancy_pct")
         trades = rec.get("num_trades") or 0
-        qualifies = (expectancy or 0) >= MIN_EXPECTANCY_PCT and trades >= MIN_TRADES
+        qualifies = (expectancy or 0) >= bar.min_expectancy_pct and trades >= bar.min_trades
         if qualifies:
             why_not = None
-        elif (expectancy or 0) < MIN_EXPECTANCY_PCT:
-            why_not = f"expectancy {expectancy}% is below the {MIN_EXPECTANCY_PCT}% bar"
+        elif (expectancy or 0) < bar.min_expectancy_pct:
+            why_not = f"expectancy {expectancy}% is below the {bar.min_expectancy_pct}% bar"
         else:
-            why_not = f"only {trades} trades, below the {MIN_TRADES}-trade bar"
+            why_not = f"only {trades} trades, below the {bar.min_trades}-trade bar"
         candidates.append({
             **f,
             "index_expectancy_pct": expectancy,
@@ -70,6 +80,14 @@ def build_recommendation(symbol: str = "^NSEI", days: int = 3200) -> dict:
 
     qualified = [c for c in candidates if c["qualifies"]]
     qualified.sort(key=lambda c: c["index_expectancy_pct"] or 0, reverse=True)
+
+    bar_info = {
+        "min_expectancy_pct": bar.min_expectancy_pct,
+        "min_trades": bar.min_trades,
+        "num_hypotheses_tested": bar.num_hypotheses_tested,
+        "scale_factor": bar.scale_factor,
+        "methodology_note": bar.methodology_note,
+    }
 
     if not firing:
         return {
@@ -83,6 +101,7 @@ def build_recommendation(symbol: str = "^NSEI", days: int = 3200) -> dict:
             ),
             "candidates": [],
             "warnings": [],
+            "evidence_bar": bar_info,
         }
 
     if not qualified:
@@ -94,11 +113,15 @@ def build_recommendation(symbol: str = "^NSEI", days: int = 3200) -> dict:
             "headline": "Setups are firing, but none clears the evidence bar.",
             "reason": (
                 f"Signalling today: {detail}. A signal firing is not the same as a signal worth "
-                f"trading — each must show at least {MIN_EXPECTANCY_PCT}% historical expectancy over "
-                f"{MIN_TRADES}+ trades before it earns a recommendation."
+                f"trading — each must show at least {bar.min_expectancy_pct}% historical expectancy "
+                f"over {bar.min_trades}+ trades before it earns a recommendation (this bar is scaled "
+                f"up from a {BASE_MIN_EXPECTANCY_PCT}%/{BASE_MIN_TRADES}-trade base by "
+                f"{bar.scale_factor}x, reflecting the {bar.num_hypotheses_tested} hypotheses tested "
+                "against this data so far)."
             ),
             "candidates": candidates,
             "warnings": [],
+            "evidence_bar": bar_info,
         }
 
     best = qualified[0]
@@ -119,4 +142,5 @@ def build_recommendation(symbol: str = "^NSEI", days: int = 3200) -> dict:
             "No strategy here is APPROVED; the best is CONDITIONAL. Treat this as an idea to "
             "evaluate, not an instruction.",
         ],
+        "evidence_bar": bar_info,
     }

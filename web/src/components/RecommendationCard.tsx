@@ -107,6 +107,19 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
           </ul>
         </div>
       )}
+
+      {rec.evidence_bar && (
+        <details className="border-t border-zinc-800/70 px-5 py-3">
+          <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-400">
+            Evidence bar: {rec.evidence_bar.min_expectancy_pct}% expectancy / {rec.evidence_bar.min_trades}+
+            trades (scaled {rec.evidence_bar.scale_factor}x for {rec.evidence_bar.num_hypotheses_tested}{" "}
+            hypotheses tested)
+          </summary>
+          <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
+            {rec.evidence_bar.methodology_note}
+          </p>
+        </details>
+      )}
     </Panel>
   );
 }

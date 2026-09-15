@@ -249,6 +249,14 @@ export interface RecommendationCandidate {
   why_not: string | null;
 }
 
+export interface EvidenceBar {
+  min_expectancy_pct: number;
+  min_trades: number;
+  num_hypotheses_tested: number;
+  scale_factor: number;
+  methodology_note: string;
+}
+
 export interface Recommendation {
   as_of: string;
   regime: string;
@@ -257,6 +265,7 @@ export interface Recommendation {
   reason: string;
   candidates: RecommendationCandidate[];
   warnings: string[];
+  evidence_bar?: EvidenceBar;
 }
 
 export const fetchLiveQuote = () => get<LiveQuote>("/api/live");
