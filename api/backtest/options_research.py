@@ -41,11 +41,30 @@ def _as_index_trades(option_trades) -> list[Trade]:
     ]
 
 
-def _signal_context(symbol: str, days: int, ema_span: int):
+def _signal_context(symbol: str, days: int, ema_span: int, hold_days: int):
+    """Signal dates are taken NON-OVERLAPPING — after one fires, the next
+    is only accepted once the previous position would have closed.
+
+    This matters statistically, not just cosmetically: the raw rule fires
+    on consecutive days during a single move, and counting each as its own
+    trade would turn one market event into several near-identical
+    "observations," inflating the sample and making the results look far
+    more independent than they are. It also matches how the index engine
+    behaves, so the two are comparable.
+    """
     df, regime_series = load_daily_data(symbol, days)
     entries = ema_pullback_signals(df, regime_series, ema_span=ema_span)
     trading_days = [str(d.date()) for d in df.index]
-    signal_dates = [str(df.index[i].date()) for i in range(len(df)) if bool(entries.iloc[i])]
+
+    signal_dates = []
+    i = 0
+    while i < len(df):
+        if bool(entries.iloc[i]):
+            signal_dates.append(str(df.index[i].date()))
+            i += hold_days + 1  # skip past the life of this position
+        else:
+            i += 1
+
     spot_series = pd.Series(df["close"].values, index=trading_days)
     return signal_dates, spot_series, trading_days
 
@@ -62,7 +81,7 @@ def run_options_strike_sweep(
     strike_offsets = strike_offsets if strike_offsets is not None else [-300, -150, 0, 150, 300, 500]
     expiry_windows = expiry_windows if expiry_windows is not None else [20, 30, 45]
 
-    signal_dates, spot_series, trading_days = _signal_context(symbol, days, ema_span)
+    signal_dates, spot_series, trading_days = _signal_context(symbol, days, ema_span, hold_days)
     cost_model = OptionsCostModel()
 
     grid = []
