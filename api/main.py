@@ -7,8 +7,12 @@ from pydantic import BaseModel
 
 from backtest import run_ema_pullback_backtest
 from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
+from backtest.options_research import run_options_strike_sweep
 from backtest.walkforward import evaluate_strategy
+from briefing import build_briefing
 from options.advisor import translate_to_options
+from options.chain_analytics import live_chain_analytics
+from storage import archive_stats
 from market_data import Candle, CSVProvider, YFinanceProvider
 from quant import build_analysis
 
@@ -237,3 +241,58 @@ def options_advisor(
         return translate_to_options(symbol=symbol, hold_days=hold_days)
     except Exception as e:
         raise HTTPException(503, f"Options advisor failed: {e}")
+
+
+@app.get("/api/briefing")
+def research_briefing(
+    symbol: str = Query("^NSEI"),
+    include_live_chain: bool = Query(True),
+) -> dict:
+    """Everything the system knows, assembled: market state, indicator
+    readings, rule-based evidence for and against, confirmation and
+    invalidation levels, signal status with its honest validation record,
+    and live option-chain measurements. Every figure is computed by Python;
+    nothing here is estimated."""
+    try:
+        return build_briefing(symbol=symbol, include_live_chain=include_live_chain)
+    except Exception as e:
+        raise HTTPException(503, f"Briefing failed: {e}")
+
+
+@app.get("/api/options/chain")
+def options_chain(
+    symbol: str = Query("NIFTY"),
+    expiry: str | None = Query(None, description="e.g. 22-Sep-2026; defaults to nearest"),
+) -> dict:
+    """Live NIFTY option chain analytics from NSE — PCR, open-interest
+    concentrations, ATM implied volatility. Measurements, not signals:
+    none of these have been backtested on NIFTY yet."""
+    try:
+        return live_chain_analytics(symbol=symbol, expiry=expiry)
+    except Exception as e:
+        raise HTTPException(503, f"Live option chain unavailable: {e}")
+
+
+@app.get("/api/options/strike_sweep")
+def options_strike_sweep(
+    symbol: str = Query("^NSEI"),
+    days: int = Query(3000, ge=200, le=10000),
+    hold_days: int = Query(10, ge=1, le=60),
+) -> dict:
+    """Sweeps strike offset against expiry distance to measure which
+    contract choice actually performed best when the signal fired —
+    returns are on PREMIUM, including theta decay and modeled costs.
+    Reports how many combinations were tested alongside the results."""
+    try:
+        return run_options_strike_sweep(symbol=symbol, days=days, hold_days=hold_days)
+    except Exception as e:
+        raise HTTPException(503, f"Strike sweep failed: {e}")
+
+
+@app.get("/api/options/archive")
+def options_archive_status() -> dict:
+    """How much of the local NSE options archive has been backfilled."""
+    try:
+        return archive_stats()
+    except Exception as e:
+        raise HTTPException(503, f"Archive status unavailable: {e}")
