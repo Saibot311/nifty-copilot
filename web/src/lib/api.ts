@@ -188,3 +188,55 @@ export async function fetchOptionsAdvisor(): Promise<ApiResult<OptionsAdvice | n
     return { data: null, live: false };
   }
 }
+
+export interface LiveChain {
+  as_of?: string;
+  underlying_value?: number;
+  expiry?: string;
+  atm_strike?: number;
+  atm_iv?: { call: number | null; put: number | null };
+  open_interest?: {
+    total_call: number;
+    total_put: number;
+    pcr: number | null;
+    max_call_oi_strike: number | null;
+    max_put_oi_strike: number | null;
+  };
+  strikes_analysed?: number;
+  interpretation_caveat?: string;
+  unavailable?: string;
+}
+
+export interface Briefing {
+  as_of: string;
+  symbol: string;
+  market_state: { price: number; change: number; change_pct: number; regime: string };
+  evidence: {
+    bullish: string[];
+    bearish: string[];
+    neutral_or_context: string[];
+    net_read: string;
+    counts: { bullish: number; bearish: number };
+  };
+  levels: { confirmation_would_be: string[]; invalidation_would_be: string[] };
+  signal?: {
+    strategy?: string;
+    active_today?: boolean;
+    recent_signal_dates?: string[];
+    validation_status?: string;
+    validation_reason?: string;
+    unavailable?: string;
+  };
+  live_option_chain?: LiveChain;
+  how_to_read_this: string;
+}
+
+export async function fetchBriefing(): Promise<ApiResult<Briefing | null>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/briefing`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return { data: await res.json(), live: true };
+  } catch {
+    return { data: null, live: false };
+  }
+}

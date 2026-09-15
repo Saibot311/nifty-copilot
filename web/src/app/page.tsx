@@ -3,12 +3,14 @@ import { ChartPlaceholder } from "@/components/ChartPlaceholder";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
 import { RegimeBadge } from "@/components/RegimeBadge";
+import { BriefingCard } from "@/components/BriefingCard";
 import { OptionsAdvisorCard } from "@/components/OptionsAdvisorCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { ScenarioCard } from "@/components/ScenarioCard";
 import { ValidationCard } from "@/components/ValidationCard";
 import {
   fetchBacktest,
+  fetchBriefing,
   fetchIndicators,
   fetchOptionsAdvisor,
   fetchParamSweep,
@@ -27,6 +29,7 @@ export default async function Home() {
     sweepResult,
     validationResult,
     optionsResult,
+    briefingResult,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchIndicators(),
@@ -35,6 +38,7 @@ export default async function Home() {
     fetchParamSweep(),
     fetchValidation(),
     fetchOptionsAdvisor(),
+    fetchBriefing(),
   ]);
   const snapshot = snapshotResult.data;
   const indicators = indicatorsResult.data;
@@ -71,6 +75,13 @@ export default async function Home() {
         </div>
         <RegimeBadge regime={snapshot.regime} />
       </header>
+
+      <section aria-labelledby="briefing-heading">
+        <h2 id="briefing-heading" className="mb-3 text-sm font-medium text-zinc-400">
+          Research Briefing
+        </h2>
+        <BriefingCard briefing={briefingResult.data} live={briefingResult.live} />
+      </section>
 
       <section aria-labelledby="chart-heading">
         <h2 id="chart-heading" className="mb-3 text-sm font-medium text-zinc-400">
