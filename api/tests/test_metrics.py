@@ -124,4 +124,24 @@ def test_hypothesis_log_survives_concurrent_writes(tmp_path, monkeypatch):
     # corruption, no silently dropped writes.
     data = json.loads(log_path.read_text())
     assert len(data) == 30
-    assert total_hypotheses_tested() == 30
+    assert total_hypotheses_tested() == 30  # 30 distinct strategies here
+
+
+def test_repeated_runs_of_same_strategy_count_as_one_hypothesis(tmp_path, monkeypatch):
+    """The multiple-comparisons bar must scale with how many *distinct*
+    things were tried, not how many times they were recomputed. Every
+    dashboard load re-runs the same backtests; counting those as new
+    hypotheses inflated the required expectancy with no new research
+    behind it (6,342 logged runs were only 86 real hypotheses)."""
+    import backtest.hypothesis_log as hl
+
+    monkeypatch.setattr(hl, "LOG_PATH", tmp_path / "hypothesis_log.json")
+    dummy_metrics = {"num_trades": 1, "expectancy_pct": 0.1, "profit_factor": 1.0, "max_drawdown_pct": -1.0}
+
+    for _ in range(50):
+        log_run("ema_pullback", {"ema_span": 20}, "^NSEI", 7000, dummy_metrics)
+    log_run("ema_pullback", {"ema_span": 50}, "^NSEI", 7000, dummy_metrics)  # different params = new hypothesis
+    log_run("rsi_reversal", {"rsi_period": 14}, "^NSEI", 7000, dummy_metrics)
+
+    assert hl.total_runs_logged() == 52
+    assert total_hypotheses_tested() == 3

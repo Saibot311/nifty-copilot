@@ -43,8 +43,29 @@ def log_run(strategy_name: str, params: dict, symbol: str, days: int, metrics: d
         LOG_PATH.write_text(json.dumps(existing, indent=2))
 
 
+def _read() -> list[dict]:
+    if not LOG_PATH.exists():
+        return []
+    return json.loads(LOG_PATH.read_text())
+
+
 def total_hypotheses_tested() -> int:
+    """Number of *distinct* strategy+parameter combinations ever tested.
+
+    Deliberately not the raw row count. Every dashboard load re-runs several
+    backtests, and each one appends a row — but re-measuring a strategy that
+    was already tested is not a new hypothesis, and counting it as one made
+    the multiple-comparisons bar climb purely from using the app (6,342
+    logged runs were only 86 distinct hypotheses; the bar had inflated from
+    ~0.49% to 0.725% expectancy with no new research behind it).
+    """
     with _LOCK:
-        if not LOG_PATH.exists():
-            return 0
-        return len(json.loads(LOG_PATH.read_text()))
+        entries = _read()
+    return len({(e.get("strategy"), json.dumps(e.get("params"), sort_keys=True)) for e in entries})
+
+
+def total_runs_logged() -> int:
+    """Raw row count, including repeats — kept for transparency so the
+    distinct-vs-total gap is inspectable rather than hidden."""
+    with _LOCK:
+        return len(_read())
