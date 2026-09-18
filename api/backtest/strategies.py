@@ -29,7 +29,10 @@ def ema_pullback_signals(df: pd.DataFrame, regime_series: pd.Series, ema_span: i
     close = df["close"]
     ema_line = ema(close, ema_span)
     above_now = close > ema_line
-    above_prev = above_now.shift(1).fillna(False)
+    above_prev = above_now.shift(1, fill_value=False)
+    # fill_value keeps this boolean. .shift(1).fillna(False) produced object dtype in
+    # pandas 3, and ~ on objects is integer bit-flip (~True == -2, still truthy), which
+    # silently turned "just reclaimed" into "is above" — firing every day of the trend.
     just_reclaimed = above_now & ~above_prev
     return just_reclaimed & (regime_series == "TREND_BULL")
 
@@ -79,7 +82,7 @@ def ema_rejection_short_signals(
     close = df["close"]
     ema_line = ema(close, ema_span)
     below_now = close < ema_line
-    below_prev = below_now.shift(1).fillna(False)
+    below_prev = below_now.shift(1, fill_value=False)
     just_lost = below_now & ~below_prev
     return just_lost & (regime_series == "TREND_BEAR")
 

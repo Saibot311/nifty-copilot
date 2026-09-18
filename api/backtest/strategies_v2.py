@@ -141,19 +141,24 @@ def squeeze_breakout_down_signals(df: pd.DataFrame, regime_series: pd.Series, wi
 # any documented edge — used bare, they're closer to noise.
 # ---------------------------------------------------------------------------
 
+# Trailing windows only. These were originally rolling(center=True), which
+# at bar i looks at bars i+1 and i+2 — a candle was only called "at a swing
+# low" once the backtest already knew price didn't go lower over the next
+# two days. That's look-ahead (I1). Now: the bar's low is the lowest of the
+# last `window` bars, which a trader can actually know at that close.
 def _is_swing_low(df: pd.DataFrame, window: int = 5) -> pd.Series:
-    return df["low"] == df["low"].rolling(window, center=True).min()
+    return df["low"] == df["low"].rolling(window).min()
 
 
 def _is_swing_high(df: pd.DataFrame, window: int = 5) -> pd.Series:
-    return df["high"] == df["high"].rolling(window, center=True).max()
+    return df["high"] == df["high"].rolling(window).max()
 
 
 def bullish_engulfing_signals(df: pd.DataFrame, regime_series: pd.Series) -> pd.Series:
     prev_red = df["close"].shift(1) < df["open"].shift(1)
     curr_green = df["close"] > df["open"]
     engulfs = (df["open"] <= df["close"].shift(1)) & (df["close"] >= df["open"].shift(1))
-    at_swing = _is_swing_low(df).shift(1).fillna(False)  # swing formed on the prior bar
+    at_swing = _is_swing_low(df).shift(1, fill_value=False)  # swing formed on the prior bar
     return (prev_red & curr_green & engulfs & at_swing).fillna(False)
 
 
@@ -161,7 +166,7 @@ def bearish_engulfing_signals(df: pd.DataFrame, regime_series: pd.Series) -> pd.
     prev_green = df["close"].shift(1) > df["open"].shift(1)
     curr_red = df["close"] < df["open"]
     engulfs = (df["open"] >= df["close"].shift(1)) & (df["close"] <= df["open"].shift(1))
-    at_swing = _is_swing_high(df).shift(1).fillna(False)
+    at_swing = _is_swing_high(df).shift(1, fill_value=False)
     return (prev_green & curr_red & engulfs & at_swing).fillna(False)
 
 
