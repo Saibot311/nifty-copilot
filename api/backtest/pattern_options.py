@@ -25,8 +25,10 @@ closing premium (the archive holds one price per contract per day) and sold
 at the close `hold` trading days later. Costs are applied on premium.
 """
 
+import json
 import statistics
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 
@@ -49,6 +51,13 @@ MIN_HOLDOUT_TRADES = 15
 # It has changed over the years; rupee figures use today's size so they
 # answer "what would one lot make now", not what it made historically.
 LOT_SIZE = 65
+
+RESEARCH_PATH = Path(__file__).parent.parent / "data" / "pattern_options.json"
+
+
+def load_research() -> dict | None:
+    """The saved output of scripts/pattern_options.py, or None if never run."""
+    return json.loads(RESEARCH_PATH.read_text()) if RESEARCH_PATH.exists() else None
 
 
 def moneyness_label(m: float) -> str:

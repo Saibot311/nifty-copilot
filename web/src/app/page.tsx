@@ -1,35 +1,28 @@
-import { BacktestCard } from "@/components/BacktestCard";
 import { BriefingCard } from "@/components/BriefingCard";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
-import { OptionsStrikeSweep } from "@/components/OptionsStrikeSweep";
-import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
+import { LivePatternsCard } from "@/components/LivePatternsCard";
 import { PatternOptionsTable, PatternsTodayCard } from "@/components/PatternCards";
 import { PlaybookCard } from "@/components/PlaybookCard";
 import { PriceChart } from "@/components/PriceChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { ResearchCompare } from "@/components/ResearchCompare";
-import { ValidationCard } from "@/components/ValidationCard";
 import { SectionLabel } from "@/components/ui";
 import {
-  fetchBacktest,
   fetchBriefing,
   fetchCandles,
   fetchForwardLog,
   fetchIndicators,
+  fetchLivePatterns,
   fetchLiveQuote,
-  fetchOptionsArchive,
-  fetchParamSweep,
   fetchPatternOptions,
   fetchPatternsToday,
   fetchPlaybook,
   fetchRecommendation,
   fetchResearchCompare,
   fetchSnapshot,
-  fetchStrikeSweep,
-  fetchValidation,
 } from "@/lib/api";
 
 export default async function Home() {
@@ -40,16 +33,12 @@ export default async function Home() {
     indicators,
     candles,
     briefing,
-    backtest,
     compare,
-    paramSweep,
-    validation,
-    strikeSweep,
-    archive,
     playbook,
     forwardLog,
     patternsToday,
     patternOptions,
+    livePatterns,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -57,16 +46,12 @@ export default async function Home() {
     fetchIndicators(),
     fetchCandles(),
     fetchBriefing(),
-    fetchBacktest(),
     fetchResearchCompare(),
-    fetchParamSweep(),
-    fetchValidation(),
-    fetchStrikeSweep(),
-    fetchOptionsArchive(),
     fetchPlaybook(),
     fetchForwardLog(),
     fetchPatternsToday(),
     fetchPatternOptions(),
+    fetchLivePatterns(),
   ]);
 
   const snap = snapshot.data;
@@ -137,6 +122,13 @@ export default async function Home() {
         <DashboardTabs
           today={
             <>
+              {livePatterns.data?.candle && (
+                <section>
+                  <SectionLabel hint="updates every 15-minute close">Live — during the session</SectionLabel>
+                  <LivePatternsCard initial={livePatterns.data} />
+                </section>
+              )}
+
               <section>
                 <SectionLabel>Recommendation</SectionLabel>
                 <RecommendationCard rec={recommendation.data} />
@@ -164,7 +156,7 @@ export default async function Home() {
               </section>
 
               <section>
-                <SectionLabel hint="EMA20 and EMA50 are the lines the strategy reads">
+                <SectionLabel hint="with 20- and 50-day EMAs">
                   Price
                 </SectionLabel>
                 <PriceChart candles={candles.data?.candles ?? null} />
@@ -186,19 +178,7 @@ export default async function Home() {
               </section>
 
               <section>
-                <SectionLabel hint="returns on premium, not index">
-                  Which option to buy
-                </SectionLabel>
-                <OptionsStrikeSweep sweep={strikeSweep.data} archive={archive.data} />
-              </section>
-
-              <section>
-                <SectionLabel hint="the verdict that matters">Walk-forward validation — EMA Pullback</SectionLabel>
-                <ValidationCard result={validation.data} />
-              </section>
-
-              <section>
-                <SectionLabel hint="Phase 9 — persistent, not recomputed">Strategy Playbook</SectionLabel>
+                <SectionLabel hint="index-return verdicts, stored as history">Strategy Playbook</SectionLabel>
                 <PlaybookCard entries={playbook.data?.strategies ?? null} />
               </section>
 
@@ -207,17 +187,6 @@ export default async function Home() {
                 <ResearchCompare result={compare.data} />
               </section>
 
-              <section>
-                <SectionLabel hint="does the edge survive nearby settings?">
-                  Parameter robustness
-                </SectionLabel>
-                <ParamSweepHeatmap result={paramSweep.data} />
-              </section>
-
-              <section>
-                <SectionLabel>EMA Pullback backtest detail</SectionLabel>
-                <BacktestCard result={backtest.data} />
-              </section>
             </>
           }
         />

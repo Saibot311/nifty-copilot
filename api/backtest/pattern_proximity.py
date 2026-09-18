@@ -27,7 +27,9 @@ from quant.regime import classify_regime_series
 from .pattern_info import PATTERN_INFO
 from .strategies import STRATEGY_REGISTRY, load_daily_data
 
-RETURNS = np.round(np.arange(-3.0, 3.001, 0.25), 2)
+STEP = 0.25
+RETURNS = np.round(np.arange(-3.0, 3.001, STEP), 2)
+BISECT_STEPS = 7  # 0.25% / 2^7 ≈ 0.002% ≈ half a point
 GAPS = {"gap down": -0.4, "flat open": 0.0, "gap up": 0.4}
 SHAPES = ("ordinary", "long lower wick", "long upper wick")
 HISTORY_DAYS = 750
@@ -105,6 +107,22 @@ def pattern_proximity(symbol: str = "^NSEI", now: datetime | None = None) -> dic
         k: bool(v["fn"](window, regime_now, **v["params"]).astype(bool).iloc[-1]) for k, v in price_patterns.items()
     }
 
+    def fires(k: str, r: float, gap: float, shape: str) -> bool:
+        row = pd.DataFrame([_candidate(prev_close, r, gap, shape, wick)], index=[next_day])
+        ext = pd.concat([window, row])
+        v = price_patterns[k]
+        return bool(v["fn"](ext, classify_regime_series(ext), **v["params"]).astype(bool).iloc[-1])
+
+    def fires_every_way(k: str, r: float) -> bool:
+        return all(fires(k, r, g, sh) for g in GAPS.values() for sh in SHAPES)
+
+    def edge(k: str, inside: float, outside: float) -> float:
+        """Bisect between a close that surely triggers and one that doesn't."""
+        for _ in range(BISECT_STEPS):
+            mid = (inside + outside) / 2
+            inside, outside = (mid, outside) if fires_every_way(k, mid) else (inside, mid)
+        return inside
+
     triggers: dict[str, list[tuple]] = {k: [] for k in price_patterns}
     for gap_name, gap in GAPS.items():
         for shape in SHAPES:
@@ -148,10 +166,18 @@ def pattern_proximity(symbol: str = "^NSEI", now: datetime | None = None) -> dic
             def levels(rs):
                 return [[round(prev_close * (1 + a / 100)), round(prev_close * (1 + b / 100))] for a, b in _ranges(rs)]
 
+            # The grid is 0.25% (~58 pts) wide; pin each edge of a sure range to
+            # within a point so the level shown is one you could act on.
+            sure_pct = []
+            for a, b in _ranges(certain):
+                lo = edge(k, a, a - STEP) if a > RETURNS[0] else a
+                hi = edge(k, b, b + STEP) if b < RETURNS[-1] else b
+                sure_pct.append([round(lo, 3), round(hi, 3)])
+
             trigger = {
                 # closes that trigger it whatever the open and wicks look like
-                "close_ranges_pct": [list(x) for x in _ranges(certain)],
-                "close_ranges_level": levels(certain),
+                "close_ranges_pct": sure_pct,
+                "close_ranges_level": [[round(prev_close * (1 + a / 100)), round(prev_close * (1 + b / 100))] for a, b in sure_pct],
                 # closes that trigger it only with some opens/candle shapes
                 "partial_ranges_level": levels(partial),
                 "needs": needs,
@@ -162,6 +188,7 @@ def pattern_proximity(symbol: str = "^NSEI", now: datetime | None = None) -> dic
     patterns.sort(key=lambda p: (not p.get("formed_today"), -(p.get("probability_next") or 0)))
     return {
         "as_of": as_of,
+        "regime": str(regime_now.iloc[-1]),
         "last_close": round(prev_close, 2),
         "patterns": patterns,
         "method_note": (

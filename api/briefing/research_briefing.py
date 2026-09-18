@@ -1,6 +1,5 @@
 """Assembles everything the system knows into one structured briefing:
-market state, indicator readings, signal status, the strategy's honest
-track record, and live option-chain measurements.
+market state, indicator readings, and live option-chain measurements.
 
 Every figure here is computed by Python elsewhere in the project and
 passed through unchanged. The evidence lists are built by explicit rules
@@ -111,23 +110,6 @@ def build_briefing(symbol: str = "^NSEI", include_live_chain: bool = True) -> di
         "evidence": _evidence(analysis),
         "levels": _levels(analysis),
     }
-
-    # Signal status + the strategy's honest track record.
-    try:
-        from options.advisor import get_signal_status
-        from backtest.walkforward import evaluate_strategy
-
-        signal = get_signal_status("ema_pullback", symbol)
-        validation = evaluate_strategy(symbol=symbol)
-        briefing["signal"] = {
-            "strategy": "ema_pullback",
-            "active_today": signal["signal_active_today"],
-            "recent_signal_dates": signal["recent_signal_dates"],
-            "validation_status": validation["final_status"],
-            "validation_reason": validation["final_reason"],
-        }
-    except Exception as e:
-        briefing["signal"] = {"unavailable": f"{type(e).__name__}: {e}"}
 
     if include_live_chain:
         try:

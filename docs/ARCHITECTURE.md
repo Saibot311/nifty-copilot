@@ -19,7 +19,7 @@ worth trusting at all. A change that breaks one of these is a bug even if every 
 | **I2** | **Every number shown is computed by deterministic Python.** No LLM ever produces a statistic. If it isn't computed, the UI says "not available" — it does not guess. | Whole `quant/` + `backtest/` stack; `lib/api.ts` has no mock fallbacks by design |
 | **I3** | **Costs are always applied.** Gross return is never presented as a result. Index and options have separate, realistic cost models. | `backtest/costs.py`, `backtest/options_engine.py`; locked by `tests/test_costs.py` |
 | **I4** | **Nothing is "validated" from a single split, or from drift.** A strategy must survive walk-forward folds *and* an untouched holdout, and in both periods beat simply being in the market in the same direction (same mechanics, same costs), with the holdout edge at t ≥ 2. | `backtest/walkforward.py` (`holdout_verdict`); locked by `tests/test_validation_verdict.py` |
-| **I5** | **The bar rises with the number of hypotheses tested.** Testing 26 strategies against one dataset means some will look good by luck; the required edge scales accordingly. | `stats/multiple_comparisons.py` + `backtest/hypothesis_log.py` |
+| **I5** | **The bar rises with the number of hypotheses tested.** 26 patterns each get one holdout test, so one clearing t = 2 by luck is likely. A trade needs t above the Bonferroni line for that count (≈2.8–2.9), not just 2. | `stats/multiple_comparisons.py` (`required_t`), `briefing/recommendation.py`; `backtest/hypothesis_log.py` keeps the full audit trail |
 
 **And one product rule:** this is a decision-support tool, not a trading system. There is no
 broker execution path, and there never will be. The user makes every decision.
@@ -94,7 +94,7 @@ NSE / Yahoo ──▶ market_data/ ──▶ DataFrame (OHLCV)
                             └────────────────────────┴────────────────────────┘
                                                      ▼
                                        briefing/recommendation.py
-                                       Gate: expectancy > scaled bar?
+                                       Gate: option APPROVED and t > Bonferroni?
                                                      ▼
                                           CALL / PUT / NO_TRADE
 ```
@@ -105,7 +105,7 @@ Two things to notice, because they're load-bearing:
   long strategy looks profitable in raw terms. `research.py` reports `vs_baseline_pct` —
   alpha, not drift. Ranking on raw expectancy is how you fool yourself.
 - **The recommendation gate is the last thing, not the first.** A strategy firing today means
-  nothing on its own; it has to clear the scaled evidence bar (I5) to surface as actionable.
+  nothing on its own; its option must be APPROVED with t above the Bonferroni bar (I5) to surface.
 
 ---
 
@@ -129,7 +129,7 @@ This is the core framework. A strategy climbs a ladder; **it can never skip a ru
   ⑤ RECORDED      Written to strategy_status_history. Permanent, timestamped,
        │          never overwritten — so drift is visible as history.
        ▼
-  ⑥ ACTIONABLE    Fires today AND clears the scaled evidence bar (I5).
+  ⑥ ACTIONABLE    Forms today AND its option clears the Bonferroni bar (I5).
                   Only now does it reach the user as CALL or PUT.
 ```
 
@@ -185,7 +185,8 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `stats/multiple_comparisons.py` | Scaled evidence bar | Strategy logic |
 | `backtest/pattern_info.py` | What each pattern checks and the idea behind it | Evidence — the numbers are elsewhere |
 | `backtest/pattern_options.py` | Pattern → option choice on dev data → profit on holdout | Picking the option on holdout data |
-| `backtest/pattern_proximity.py` | Formed today / could form next close, trigger levels, base rate | Forecasts — it's a base rate |
+| `backtest/pattern_proximity.py` | Formed today / could form next close, trigger levels (bisected to ~1 pt), base rate | Forecasts — it's a base rate |
+| `backtest/live_patterns.py` | Phase 10: today's candle from 15-min closes → which patterns would form now | Anything final before 15:30 |
 | `storage/options_db.py` | Options archive (655 MB, 4.5 M rows) | Strategy verdicts |
 | `storage/strategy_status_db.py` | The Playbook — verdict history | Live recomputation |
 | `briefing/research_briefing.py` | Rule-based evidence for/against | Verdicts |
@@ -235,6 +236,10 @@ smoke test — health checks must never mutate the record.
 
 **Add a check** → a new `section` block in `scripts/check_all.sh` calling `ok`/`bad`.
 
+**Add a daily task** → a step in `api/scripts/daily_job.py`. Each step is independent and must be
+safe to re-run. The LaunchAgent (`scripts/install_daily_job.sh`, weekdays 19:30) picks it up;
+`--remove` uninstalls it. Log: `api/data/daily_job.log`.
+
 ---
 
 ## 8. Quality gates
@@ -255,15 +260,15 @@ rather than decorative.
 
 ## 9. Status and known gaps
 
-**Phases 1–9 complete.** Phase 10+ (live analysis, similarity engine, LLM copilot, journal,
+**Phases 1–10 complete.** Phase 10 is live trigger tracking: during the session, today's candle
+is built from completed 15-minute bars (Kite) and every pattern is run on it — "would form if
+today closed now", provisional until 15:30. Phase 11+ (similarity engine, LLM copilot, journal,
 paper observation, deployment) not started.
 
 Gaps, stated rather than hidden:
 
-- **The forward log only records when the dashboard (or `/api/recommendation`) is hit** after a
-  close. A day nobody opens it is a day with no record — there's no scheduler.
-- **Research tab's `vs_baseline_pct` compares short strategies to always-*long*** — validation
-  now uses a direction-matched baseline, the research ranking doesn't yet.
+- **The daily job needs the Mac on (or waking) that evening,** and Kite bars only top up on days
+  you logged in — the options archive and forward log don't need a login.
 - **No revalidation cadence.** A verdict from last month is still shown as current; the schema
   records history but nothing re-checks on a schedule.
 - **Phase 7 selection saw the full history.** Validation tests each *rule's* stability, not the

@@ -22,7 +22,8 @@ export function ResearchCompare({ result }: { result: ResearchCompareResult | nu
       {baseline && (
         <div className="mb-3 rounded-lg bg-zinc-950/60 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
           <span className="text-zinc-400">
-            Buy-and-hold baseline: {baseline.expectancy_pct}% expectancy over {baseline.num_trades} re-entries.
+            Baselines: always-long {baseline.expectancy_pct}%, always-short{" "}
+            {result.always_short_baseline?.expectancy_pct ?? "–"}% per trade.
           </span>{" "}
           {result.baseline_note}
         </div>

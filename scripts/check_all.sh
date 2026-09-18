@@ -108,9 +108,7 @@ if ! $FAST; then
         api/snapshot
         api/indicators
         api/candles
-        api/backtest/ema_pullback
         api/research/compare
-        api/research/param_sweep
         api/strategies/playbook
         api/briefing
         api/options/chain
@@ -122,6 +120,7 @@ if ! $FAST; then
         api/forward_log
         api/patterns/options
         api/patterns/today
+        api/live/patterns
         "api/candles?provider=archive&timeframe=15m&days=10"
     )
     if curl -s -o /dev/null --max-time 3 http://localhost:8000/health; then

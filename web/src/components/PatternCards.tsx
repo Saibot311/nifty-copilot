@@ -1,7 +1,7 @@
 import type { OptionPeriodStats, PatternOptionsResearch, PatternToday, PatternsToday, SuggestedOption, Verdict } from "@/lib/api";
 import { Offline, Panel, Pill, fmtPct } from "./ui";
 
-const VERDICT_TONE: Record<Verdict, "good" | "warn" | "bad"> = {
+export const VERDICT_TONE: Record<Verdict, "good" | "warn" | "bad"> = {
   APPROVED: "good",
   CONDITIONAL: "warn",
   REJECTED: "bad",
@@ -12,18 +12,18 @@ function rupees(v: number | undefined) {
   return `${v >= 0 ? "+" : "−"}₹${Math.abs(v).toLocaleString("en-IN")}`;
 }
 
-function OptionPill({ type }: { type: "CE" | "PE" }) {
+export function OptionPill({ type }: { type: "CE" | "PE" }) {
   return <Pill tone={type === "CE" ? "good" : "bad"}>{type === "CE" ? "CALL" : "PUT"}</Pill>;
 }
 
 /** One line: what the suggested option did on data its choice never saw. */
-function TrackRecord({
+export function TrackRecord({
   option,
   holdout,
   baselineRs,
   t,
 }: {
-  option?: SuggestedOption | null;
+  option?: Pick<SuggestedOption, "description"> | null;
   holdout?: OptionPeriodStats | null;
   baselineRs?: number | null;
   t?: number | null;

@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -7,15 +6,14 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from backtest import run_ema_pullback_backtest
-from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
-from backtest.options_research import run_options_strike_sweep
+from backtest.research import run_all_strategies
 from cache import cached
 from backtest.walkforward import evaluate_strategy
+from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
+from backtest.live_patterns import live_patterns, merge_live
 from briefing import build_briefing, build_recommendation
 from briefing.forward_log import forward_report, record_if_final
-from options.advisor import translate_to_options
 from options.chain_analytics import live_chain_analytics
 from storage import archive_stats, record_strategy_evaluation, strategy_history, strategy_playbook
 from market_data import Candle, CSVProvider, YFinanceProvider, ZerodhaProvider
@@ -173,23 +171,6 @@ def get_candles(
     }
 
 
-@app.get("/api/backtest/ema_pullback")
-def backtest_ema_pullback(
-    symbol: str = Query("^NSEI"),
-    days: int = Query(7000, ge=100, le=10000, description="Free Yahoo Finance daily data goes back to 2007-09-17 for NIFTY (~7000 days)"),
-    hold_days: int = Query(10, ge=1, le=60),
-) -> dict:
-    """Runs the EMA-pullback example strategy over real historical NIFTY
-    data and returns every metric the project plan asked for — expectancy,
-    profit factor, drawdown, Sharpe/Sortino, and breakdowns by year and by
-    regime. This is Phase 6 (prove the engine works), not Phase 8
-    (walk-forward validation) — treat results as exploratory."""
-    try:
-        return run_ema_pullback_backtest(symbol=symbol, days=days, hold_days=hold_days)
-    except Exception as e:
-        raise HTTPException(503, f"Backtest failed: {e}")
-
-
 @app.get("/api/research/compare")
 def research_compare(
     symbol: str = Query("^NSEI"),
@@ -204,21 +185,6 @@ def research_compare(
         return run_all_strategies(symbol=symbol, days=days, hold_days=hold_days)
     except Exception as e:
         raise HTTPException(503, f"Research run failed: {e}")
-
-
-@app.get("/api/research/param_sweep")
-def research_param_sweep(
-    symbol: str = Query("^NSEI"),
-    days: int = Query(7000, ge=100, le=10000),
-) -> dict:
-    """Parameter-robustness check for the EMA Pullback strategy: sweeps
-    ema_span and hold_days across nearby values. A strategy that only
-    "works" at one exact setting and collapses one step either side is a
-    sign of overfitting, not a real effect."""
-    try:
-        return run_ema_pullback_param_sweep(symbol=symbol, days=days)
-    except Exception as e:
-        raise HTTPException(503, f"Parameter sweep failed: {e}")
 
 
 @app.get("/api/validation/{strategy_name}")
@@ -281,23 +247,6 @@ def strategy_history_endpoint(strategy_name: str, limit: int = Query(50, ge=1, l
         raise HTTPException(503, f"History unavailable: {e}")
 
 
-@app.get("/api/options/advisor")
-def options_advisor(
-    symbol: str = Query("^NSEI"),
-    hold_days: int = Query(10, ge=1, le=60),
-) -> dict:
-    """Translates today's EMA Pullback signal (the only strategy with any
-    real edge, still CONDITIONAL not APPROVED) into options guidance --
-    strike/expiry heuristics only. No live premiums, IV, or Greeks: that
-    data isn't in this system, and inventing plausible numbers for it
-    would be exactly the kind of fabricated statistic this project exists
-    to avoid."""
-    try:
-        return translate_to_options(symbol=symbol, hold_days=hold_days)
-    except Exception as e:
-        raise HTTPException(503, f"Options advisor failed: {e}")
-
-
 @app.get("/api/briefing")
 def research_briefing(
     symbol: str = Query("^NSEI"),
@@ -326,32 +275,6 @@ def options_chain(
         return live_chain_analytics(symbol=symbol, expiry=expiry)
     except Exception as e:
         raise HTTPException(503, f"Live option chain unavailable: {e}")
-
-
-@app.get("/api/options/strike_sweep")
-def options_strike_sweep(
-    symbol: str = Query("^NSEI"),
-    days: int = Query(3000, ge=200, le=10000),
-    hold_days: int = Query(10, ge=1, le=60),
-) -> dict:
-    """Sweeps strike offset against expiry distance to measure which
-    contract choice actually performed best when the signal fired —
-    returns are on PREMIUM, including theta decay and modeled costs.
-    Reports how many combinations were tested alongside the results.
-
-    Cached briefly: each grid cell is a full backtest against the options
-    archive, too slow to recompute per page load, but short enough a TTL
-    that results refresh as the archive backfills."""
-    try:
-        return cached(
-            f"strike_sweep:{symbol}:{days}:{hold_days}",
-            ttl_seconds=900,
-            producer=lambda: run_options_strike_sweep(
-                symbol=symbol, days=days, hold_days=hold_days
-            ),
-        )
-    except Exception as e:
-        raise HTTPException(503, f"Strike sweep failed: {e}")
 
 
 @app.get("/api/options/archive")
@@ -444,13 +367,11 @@ def zerodha_callback(request_token: str | None = None, status: str | None = None
     return RedirectResponse("http://localhost:3000/?zerodha=connected")
 
 
-PATTERN_OPTIONS_PATH = Path(__file__).parent / "data" / "pattern_options.json"
-
-
 def _pattern_options() -> dict:
-    if not PATTERN_OPTIONS_PATH.exists():
+    research = load_research()
+    if research is None:
         raise HTTPException(503, "Pattern-option research not computed yet — run: python scripts/pattern_options.py")
-    return json.loads(PATTERN_OPTIONS_PATH.read_text())
+    return research
 
 
 @app.get("/api/patterns/options")
@@ -477,3 +398,15 @@ def patterns_today(symbol: str = Query("^NSEI")) -> dict:
     keep = ("suggested_option", "holdout", "baseline", "holdout_t_stat", "status", "reason", "forms_per_year")
     patterns = [{**p, **{k: research.get(p["strategy"], {}).get(k) for k in keep}} for p in prox["patterns"]]
     return {**prox, "patterns": patterns, "option_research_computed_at": computed_at}
+
+
+@app.get("/api/live/patterns")
+def live_patterns_endpoint(symbol: str = Query("^NSEI")) -> dict:
+    """Phase 10: during market hours, which patterns would form if today
+    closed at the current level — provisional until 15:30."""
+    try:
+        live = cached("live_patterns", ttl_seconds=60, producer=live_patterns)
+        prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
+    except Exception as e:
+        raise HTTPException(503, f"Live pattern tracking failed: {e}")
+    return {**live, "patterns": merge_live(live, prox, load_research())}

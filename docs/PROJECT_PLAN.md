@@ -6,6 +6,16 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 
 Current status: **Phases 1-9 done**, plus options integration built out of phase order on request.
 
+**Phase 10 done — live trigger tracking (2026-09-18):** during market hours the dashboard builds
+today's candle from completed 15-minute bars and runs every pattern on it: which would form if the
+day closed now, and how many points the rest are from their trigger. Provisional until 15:30;
+changes only on a 15-minute close. Before it: the recommendation now comes from option verdicts
+with a Bonferroni bar (t ≥ ~2.8 across patterns judged), stale EMA-Pullback cards/endpoints were
+removed, and a weekday 19:30 LaunchAgent records the forward log and tops up all archives.
+Found along the way: a cache deadlock (one global lock held while computing; nested cached calls
+hung the recommendation) — now per-key locks; and "could form" levels were only accurate to the
+0.25% grid (~58 pts) — edges now bisected to ~1 pt, verified against the real prior-day high/low.
+
 **Option choice switched to ₹ per lot (2026-09-18):** choosing each pattern's option by average
 % return favoured ₹20-50 far-OTM weeklies — huge percentages, little money. Now chosen and judged
 by rupee profit per lot. Picks moved to ITM options; Supertrend Flip (bull), the % leader, is

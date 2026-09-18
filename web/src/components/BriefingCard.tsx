@@ -6,7 +6,6 @@ export function BriefingCard({ briefing }: { briefing: Briefing | null }) {
 
   const ev = briefing.evidence;
   const chain = briefing.live_option_chain;
-  const signal = briefing.signal;
 
   const bullish = ev.net_read.includes("bullish");
   const bearish = ev.net_read.includes("bearish");
@@ -47,27 +46,6 @@ export function BriefingCard({ briefing }: { briefing: Briefing | null }) {
           tone="muted"
         />
       </div>
-
-      {signal && !signal.unavailable && (
-        <div className="border-t border-zinc-800/70 bg-zinc-950/40 px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-zinc-400">
-              EMA Pullback signal ·{" "}
-              <span className={signal.active_today ? "text-emerald-400" : "text-zinc-500"}>
-                {signal.active_today ? "ACTIVE today" : "not active today"}
-              </span>
-            </span>
-            <Pill tone={signal.validation_status === "APPROVED" ? "good" : "warn"}>
-              {signal.validation_status}
-            </Pill>
-          </div>
-          {signal.validation_reason && (
-            <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-              {signal.validation_reason}
-            </p>
-          )}
-        </div>
-      )}
 
       {chain && !chain.unavailable && (
         <div className="border-t border-zinc-800/70 px-5 py-4">

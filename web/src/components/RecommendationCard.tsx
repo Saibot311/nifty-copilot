@@ -54,41 +54,35 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
       {rec.candidates.length > 0 && (
         <div className="border-t border-zinc-800/70 px-5 py-4">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
-            Signals firing today
+            Formed on the last close
           </div>
           <div className="flex flex-col gap-1.5">
             {rec.candidates.map((c) => (
-              <div
-                key={c.strategy}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-950/60 px-3 py-2"
-              >
-                <span className="flex items-center gap-2 text-xs text-zinc-300">
-                  <span
-                    className={`font-mono text-[10px] font-bold ${
-                      c.option_type === "CE" ? "text-emerald-400" : "text-rose-400"
-                    }`}
-                  >
-                    {c.option_type}
+              <div key={c.strategy} className="rounded-lg bg-zinc-950/60 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-xs text-zinc-300">
+                    <span
+                      className={`font-mono text-[10px] font-bold ${
+                        c.option_type === "CE" ? "text-emerald-400" : "text-rose-400"
+                      }`}
+                    >
+                      {c.option_type}
+                    </span>
+                    {c.label}
                   </span>
-                  {c.label}
-                </span>
-                <span className="flex items-center gap-3 text-[11px]">
-                  <span
-                    className={`font-mono tabular-nums ${
-                      (c.index_expectancy_pct ?? 0) > 0 ? "text-emerald-400" : "text-rose-400"
-                    }`}
-                  >
-                    {c.index_expectancy_pct != null
-                      ? `${c.index_expectancy_pct > 0 ? "+" : ""}${c.index_expectancy_pct}%`
+                  <Pill tone={c.qualifies ? "good" : c.status === "CONDITIONAL" ? "warn" : "bad"}>
+                    {c.qualifies ? "clears bar" : c.status}
+                  </Pill>
+                </div>
+                {c.suggested_option && (
+                  <p className="mt-1 font-mono text-[11px] tabular-nums text-zinc-500">
+                    {c.suggested_option} · 2024–26: {c.holdout_trades} trades,{" "}
+                    {c.holdout_avg_profit_per_lot_rs != null
+                      ? `${c.holdout_avg_profit_per_lot_rs >= 0 ? "+" : "−"}₹${Math.abs(c.holdout_avg_profit_per_lot_rs).toLocaleString("en-IN")}/lot`
                       : "–"}
-                  </span>
-                  <span className="text-zinc-600">{c.index_trades} trades</span>
-                  {c.qualifies ? (
-                    <Pill tone="good">clears bar</Pill>
-                  ) : (
-                    <span className="text-zinc-600">{c.why_not}</span>
-                  )}
-                </span>
+                    , t {c.holdout_t_stat ?? "–"}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -111,9 +105,8 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
       {rec.evidence_bar && (
         <details className="border-t border-zinc-800/70 px-5 py-3">
           <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-400">
-            Evidence bar: {rec.evidence_bar.min_expectancy_pct}% expectancy / {rec.evidence_bar.min_trades}+
-            trades (scaled {rec.evidence_bar.scale_factor}x for {rec.evidence_bar.num_hypotheses_tested}{" "}
-            hypotheses tested)
+            Evidence bar: option verdict APPROVED and t ≥ {rec.evidence_bar.min_t} ({rec.evidence_bar.patterns_judged}{" "}
+            patterns judged)
           </summary>
           <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
             {rec.evidence_bar.methodology_note}

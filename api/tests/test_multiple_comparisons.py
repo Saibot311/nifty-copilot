@@ -1,23 +1,14 @@
-from stats.multiple_comparisons import required_bar
+from stats.multiple_comparisons import required_t
 
 
-def test_bar_never_drops_below_base_even_with_few_hypotheses():
-    r = required_bar(num_hypotheses_tested=1, base_expectancy_pct=0.25, base_trades=30)
-    assert r.min_expectancy_pct >= 0.25
-    assert r.min_trades >= 30
+def test_single_test_uses_the_ordinary_one_sided_5pct_line():
+    assert required_t(1) == 1.64
 
 
-def test_bar_rises_as_hypothesis_count_grows():
-    low = required_bar(num_hypotheses_tested=10)
-    high = required_bar(num_hypotheses_tested=1000)
-    assert high.min_expectancy_pct > low.min_expectancy_pct
-    assert high.min_trades > low.min_trades
+def test_bar_rises_with_the_number_of_patterns_judged():
+    assert required_t(1) < required_t(10) < required_t(26) < required_t(100)
 
 
-def test_growth_is_sublinear_not_linear():
-    """1000x more hypotheses must not demand anywhere near 1000x the
-    effect size -- log-scaling should keep the bar climbable."""
-    r10 = required_bar(num_hypotheses_tested=10)
-    r10000 = required_bar(num_hypotheses_tested=10_000)
-    ratio = r10000.min_expectancy_pct / r10.min_expectancy_pct
-    assert ratio < 3  # nowhere close to the 1000x hypothesis-count ratio
+def test_26_patterns_needs_roughly_t_2_9():
+    # Bonferroni: one-sided 5% / 26 = 0.19% per test.
+    assert 2.8 < required_t(26) < 3.0

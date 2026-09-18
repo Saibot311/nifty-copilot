@@ -11,7 +11,7 @@ export interface ApiResult<T> {
  *  unreachable. This project's core rule is that no displayed number is
  *  invented — a plausible-looking placeholder price would break that even
  *  with a warning banner attached. */
-async function get<T>(path: string): Promise<ApiResult<T>> {
+export async function get<T>(path: string): Promise<ApiResult<T>> {
   try {
     const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`API returned ${res.status}`);
@@ -74,78 +74,15 @@ export interface BacktestMetrics {
   vs_baseline_pct?: number | null;
 }
 
-export interface BacktestResult {
-  strategy: string;
-  params: Record<string, number>;
-  symbol: string;
-  period: { start: string; end: string; bars: number };
-  metrics: BacktestMetrics;
-}
-
 export interface ResearchCompareResult {
   symbol: string;
   period: { start: string; end: string; bars: number };
   hold_days: number;
   results: Record<string, BacktestMetrics>;
   buy_and_hold_baseline?: { num_trades: number; expectancy_pct: number | null; profit_factor: number | null };
+  always_short_baseline?: { num_trades: number; expectancy_pct: number | null; profit_factor: number | null };
   baseline_note?: string;
   total_hypotheses_tested_all_time: number;
-}
-
-export interface ParamSweepCell {
-  ema_span: number;
-  hold_days: number;
-  num_trades: number;
-  expectancy_pct: number | null;
-  profit_factor: number | null;
-  max_drawdown_pct: number | null;
-}
-
-export interface ParamSweepResult {
-  symbol: string;
-  period: { start: string; end: string; bars: number };
-  grid: ParamSweepCell[];
-  combinations_tested: number;
-  combinations_with_positive_expectancy: number;
-}
-
-export interface WalkForwardFold {
-  period: { start: string; end: string };
-  metrics: BacktestMetrics;
-}
-
-export interface ValidationResult {
-  strategy: string;
-  final_status: "APPROVED" | "CONDITIONAL" | "REJECTED";
-  final_reason: string;
-  walk_forward: {
-    period: { start: string; end: string };
-    n_folds: number;
-    folds: WalkForwardFold[];
-    folds_with_positive_expectancy: number;
-    folds_with_any_trades: number;
-  };
-  holdout: {
-    split_date: string;
-    development: { period: { start: string; end: string }; metrics: BacktestMetrics };
-    holdout: { period: { start: string; end: string }; metrics: BacktestMetrics };
-    status: string;
-    reason: string;
-  };
-  methodology_note: string;
-}
-
-export interface OptionsAdvice {
-  as_of: string;
-  actionable_today: boolean;
-  message?: string;
-  direction?: string;
-  rationale?: string;
-  strike_guidance?: string;
-  expiry_guidance?: string;
-  validation_status: string;
-  critical_warnings?: string[];
-  recent_signal_dates: string[];
 }
 
 export interface LiveChain {
@@ -178,51 +115,8 @@ export interface Briefing {
     counts: { bullish: number; bearish: number };
   };
   levels: { confirmation_would_be: string[]; invalidation_would_be: string[] };
-  signal?: {
-    strategy?: string;
-    active_today?: boolean;
-    recent_signal_dates?: string[];
-    validation_status?: string;
-    validation_reason?: string;
-    unavailable?: string;
-  };
   live_option_chain?: LiveChain;
   how_to_read_this: string;
-}
-
-export interface OptionsArchive {
-  option_bars: number;
-  trading_days_with_data: number;
-  days_checked: number;
-  first_date: string | null;
-  last_date: string | null;
-}
-
-export interface StrikeSweepCell {
-  strike_offset_pts: number;
-  moneyness: string;
-  min_days_to_expiry: number;
-  num_trades: number;
-  win_rate: number | null;
-  expectancy_pct: number | null;
-  profit_factor: number | null;
-  max_drawdown_pct: number | null;
-  max_drawdown_full_reinvestment_pct?: number | null;
-  sample_size_warning: string | null;
-}
-
-export interface StrikeSweepResult {
-  strategy: string;
-  signal_count: number;
-  hold_days: number;
-  grid: StrikeSweepCell[];
-  combinations_tested: number;
-  combinations_with_trades: number;
-  combinations_with_positive_expectancy: number;
-  best_cell: StrikeSweepCell | null;
-  multiple_comparisons_note: string;
-  cost_note: string;
-  position_sizing_note?: string;
 }
 
 export interface LiveQuote {
@@ -242,19 +136,21 @@ export interface LiveQuote {
 export interface RecommendationCandidate {
   strategy: string;
   label: string;
-  direction: string;
+  direction: "long" | "short";
   option_type: "CE" | "PE";
-  index_expectancy_pct: number | null;
-  index_trades: number;
+  status: Verdict;
+  verdict_reason: string | null;
+  suggested_option: string | null;
+  holdout_trades: number;
+  holdout_avg_profit_per_lot_rs: number | null;
+  holdout_t_stat: number | null;
   qualifies: boolean;
   why_not: string | null;
 }
 
 export interface EvidenceBar {
-  min_expectancy_pct: number;
-  min_trades: number;
-  num_hypotheses_tested: number;
-  scale_factor: number;
+  min_t: number;
+  patterns_judged: number;
   methodology_note: string;
 }
 
@@ -322,18 +218,9 @@ export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
 export const fetchIndicators = () => get<IndicatorReading[]>("/api/indicators");
 export const fetchCandles = (days = 140) =>
   get<CandleResponse>(`/api/candles?provider=yfinance&days=${days}`);
-export const fetchBacktest = (days = 7000) =>
-  get<BacktestResult>(`/api/backtest/ema_pullback?days=${days}`);
 export const fetchResearchCompare = (days = 7000) =>
   get<ResearchCompareResult>(`/api/research/compare?days=${days}`);
-export const fetchParamSweep = (days = 7000) =>
-  get<ParamSweepResult>(`/api/research/param_sweep?days=${days}`);
-export const fetchValidation = (days = 7000) =>
-  get<ValidationResult>(`/api/validation/ema_pullback?days=${days}`);
-export const fetchOptionsAdvisor = () => get<OptionsAdvice>("/api/options/advisor");
 export const fetchBriefing = () => get<Briefing>("/api/briefing");
-export const fetchOptionsArchive = () => get<OptionsArchive>("/api/options/archive");
-export const fetchStrikeSweep = () => get<StrikeSweepResult>("/api/options/strike_sweep");
 
 export type Verdict = "APPROVED" | "CONDITIONAL" | "REJECTED";
 
@@ -426,3 +313,33 @@ export interface PatternsToday {
 
 export const fetchPatternOptions = () => get<PatternOptionsResearch>("/api/patterns/options");
 export const fetchPatternsToday = () => get<PatternsToday>("/api/patterns/today");
+
+export interface LivePatternRow {
+  strategy: string;
+  label: string;
+  option_type: "CE" | "PE";
+  would_form_now: boolean;
+  trigger_ranges_level: [number, number][];
+  points_to_trigger: number | null;
+  pct_to_trigger: number | null;
+  status: Verdict | null;
+  suggested_option: string | null;
+  holdout: OptionPeriodStats | null;
+  baseline_rs: number | null;
+  holdout_t_stat: number | null;
+}
+
+export interface LivePatterns {
+  market_open: boolean;
+  message?: string;
+  provisional?: boolean;
+  as_of?: string;
+  basis?: string;
+  previous_close?: number;
+  candle?: { open: number; high: number; low: number; close: number };
+  change_pct?: number;
+  note?: string;
+  patterns: LivePatternRow[];
+}
+
+export const fetchLivePatterns = () => get<LivePatterns>("/api/live/patterns");
