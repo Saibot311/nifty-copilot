@@ -11,6 +11,9 @@ class Candle(BaseModel):
     low: float
     close: float
     volume: float | None = None
+    # True while the bar's time window hasn't closed yet: its high/low/close
+    # can still change. Signals and backtests must never use a provisional bar.
+    provisional: bool = False
 
 
 class MarketDataProvider(Protocol):

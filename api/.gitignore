@@ -7,3 +7,6 @@ backtest/hypothesis_log.json
 # public bhavcopy. Regenerate with scripts/backfill_options.py rather than
 # committing it.
 data/
+
+# Secrets: Kite API secret lives here. Never commit.
+.env

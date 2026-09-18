@@ -1,6 +1,33 @@
 # NIFTY COPILOT — Project Plan
 
-Living document. Update it as phases complete or decisions change. Current status: **Phases 1-8 done, plus an early Options Trade Helper (out of phase order, built on request).**
+Living document — the *chronological* record of what was decided and when. For how the
+system is structured (layers, invariants, the strategy lifecycle, how to extend it), see
+**[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+Current status: **Phases 1-9 done**, plus options integration built out of phase order on request.
+
+**Zerodha connected; Phase 0 question answered (2026-09-18):** Kite Connect (₹500/month, approved)
+is live. Kite's 15-minute NIFTY history starts **2015-01-09** — ~11.7 years, past the original
+10-year target (Yahoo's free intraday reaches ~60 days). Daily goes back to 1990 (pre-1996-04-22 is
+back-calculated). All of it is now in a local archive (`api/data/nifty_bars.db`: 72,094 15-min bars
+over 2,896 days, 8,804 daily bars) so backtests don't need a login. Bars still forming are flagged
+`provisional` and never archived; found and fixed a bug in that logic where Diwali Muhurat
+bars (which start at 18:15, after the normal close) would have been treated as final the moment they opened.
+
+**Multiple-comparisons counting fixed (2026-09-17):** `total_hypotheses_tested()` was counting
+every *logged run* rather than every *distinct* strategy+parameter combination. Because each
+dashboard load re-runs several backtests, the count had reached 6,342 when only 86 genuine
+hypotheses had ever been tested — inflating the required evidence bar from ~0.49% to 0.725%
+expectancy with no new research behind it, and climbing further every time anyone opened the
+app. Now counts distinct combinations; `total_runs_logged()` keeps the raw count visible for
+transparency. Regression test added.
+
+**Phase 9 done (2026-09-16):** persistent strategy playbook in SQLite (`strategy_status_history`) —
+verdicts are a timestamped historical record, not a live recomputation that silently drifts.
+26 strategies registered (13 symmetric call/put pairs); 4 validated so far, 0 APPROVED,
+2 CONDITIONAL, 2 REJECTED. Of the three best baseline-adjusted candidates run through full
+walk-forward validation, two were rejected outright — the multiple-comparisons concern proving
+real rather than theoretical.
 
 **Options Trade Helper (2026-09-15):** you asked for daily NIFTY options trading help. Clarified this meant swing-style options ideas (buy a call/put off a directional signal, hold ~1-2 weeks) rather than intraday options day-trading. Built `api/options/advisor.py`: checks whether EMA Pullback (the only strategy with any real edge, still CONDITIONAL) is signaling as of today's close, and if so, translates that into strike guidance (ATM/ITM, not OTM) and expiry guidance (buffer well beyond the hold period) — with the CONDITIONAL status and a list of critical warnings (no live premiums/IV/Greeks, options can lose money even on a correct directional call due to theta decay) always shown alongside. Deliberately does not fetch or invent real option prices — that data isn't in the system, and this project's whole premise is not fabricating numbers that aren't actually computed. Options chain data (strikes, premiums, OI, IV, Greeks) remains a real future data-sourcing decision, same budget considerations as everything else.
 

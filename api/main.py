@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -14,7 +15,9 @@ from briefing import build_briefing, build_recommendation
 from options.advisor import translate_to_options
 from options.chain_analytics import live_chain_analytics
 from storage import archive_stats, record_strategy_evaluation, strategy_history, strategy_playbook
-from market_data import Candle, CSVProvider, YFinanceProvider
+from market_data import Candle, CSVProvider, YFinanceProvider, ZerodhaProvider
+from market_data import kite_session
+from market_data.bar_archive import ArchiveProvider, archive_summary
 from market_data.live_quote import live_index_quote, market_status
 from quant import build_analysis
 
@@ -25,6 +28,8 @@ SAMPLE_CSV = Path(__file__).parent / "market_data" / "sample_data" / "nifty_synt
 PROVIDERS = {
     "csv": CSVProvider(SAMPLE_CSV),
     "yfinance": YFinanceProvider(),
+    "zerodha": ZerodhaProvider(),
+    "archive": ArchiveProvider(),
 }
 
 # Phase 3: only the Next.js dev server needs access, and only during local development.
@@ -136,7 +141,7 @@ def get_indicators() -> list[Indicator]:
 
 @app.get("/api/candles")
 def get_candles(
-    provider: str = Query("yfinance", description="csv | yfinance"),
+    provider: str = Query("yfinance", description="csv | yfinance | zerodha | archive"),
     symbol: str = Query("^NSEI"),
     timeframe: str = Query("1d", description="1d | 1h | 15m | 5m (csv provider ignores this)"),
     days: int = Query(30, ge=1, le=3650),
@@ -149,7 +154,12 @@ def get_candles(
 
     end = date.today()
     start = end - timedelta(days=days)
-    candles: list[Candle] = PROVIDERS[provider].get_ohlc(symbol, timeframe, start, end)
+    try:
+        candles: list[Candle] = PROVIDERS[provider].get_ohlc(symbol, timeframe, start, end)
+    except kite_session.KiteNotConfigured as e:
+        raise HTTPException(503, str(e))
+    except kite_session.KiteNotLoggedIn as e:
+        raise HTTPException(401, f"Zerodha session not active: {e}. Visit /api/zerodha/login.")
 
     return {
         "provider": provider,
@@ -376,3 +386,36 @@ def recommendation(symbol: str = Query("^NSEI")) -> dict:
         )
     except Exception as e:
         raise HTTPException(503, f"Recommendation failed: {e}")
+
+
+@app.get("/api/bars/archive")
+def bars_archive() -> dict:
+    """What's in the local index-bar archive (filled by scripts/backfill_bars.py)."""
+    return {"series": archive_summary()}
+
+
+@app.get("/api/zerodha/status")
+def zerodha_status() -> dict:
+    return kite_session.session_status()
+
+
+@app.get("/api/zerodha/login")
+def zerodha_login() -> RedirectResponse:
+    try:
+        return RedirectResponse(kite_session.login_url())
+    except kite_session.KiteNotConfigured as e:
+        raise HTTPException(503, str(e))
+
+
+@app.get("/api/zerodha/callback")
+def zerodha_callback(request_token: str | None = None, status: str | None = None) -> RedirectResponse:
+    """Kite redirects here after the user logs in on zerodha.com."""
+    if status != "success" or not request_token:
+        raise HTTPException(400, f"Kite login did not succeed (status={status}).")
+    try:
+        kite_session.complete_login(request_token)
+    except kite_session.KiteNotConfigured as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Token exchange with Kite failed: {e}")
+    return RedirectResponse("http://localhost:3000/?zerodha=connected")
