@@ -1,9 +1,11 @@
 import { BacktestCard } from "@/components/BacktestCard";
 import { BriefingCard } from "@/components/BriefingCard";
 import { DashboardTabs } from "@/components/DashboardTabs";
+import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { OptionsStrikeSweep } from "@/components/OptionsStrikeSweep";
 import { ParamSweepHeatmap } from "@/components/ParamSweepHeatmap";
+import { PatternOptionsTable, PatternsTodayCard } from "@/components/PatternCards";
 import { PlaybookCard } from "@/components/PlaybookCard";
 import { PriceChart } from "@/components/PriceChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
@@ -15,10 +17,13 @@ import {
   fetchBacktest,
   fetchBriefing,
   fetchCandles,
+  fetchForwardLog,
   fetchIndicators,
   fetchLiveQuote,
   fetchOptionsArchive,
   fetchParamSweep,
+  fetchPatternOptions,
+  fetchPatternsToday,
   fetchPlaybook,
   fetchRecommendation,
   fetchResearchCompare,
@@ -42,6 +47,9 @@ export default async function Home() {
     strikeSweep,
     archive,
     playbook,
+    forwardLog,
+    patternsToday,
+    patternOptions,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -56,6 +64,9 @@ export default async function Home() {
     fetchStrikeSweep(),
     fetchOptionsArchive(),
     fetchPlaybook(),
+    fetchForwardLog(),
+    fetchPatternsToday(),
+    fetchPatternOptions(),
   ]);
 
   const snap = snapshot.data;
@@ -132,6 +143,20 @@ export default async function Home() {
               </section>
 
               <section>
+                <SectionLabel hint="each with the option it points to and what that option made">
+                  Patterns
+                </SectionLabel>
+                <PatternsTodayCard data={patternsToday.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="recorded before the outcome existed — never edited">
+                  Forward track record
+                </SectionLabel>
+                <ForwardLogCard log={forwardLog.data} />
+              </section>
+
+              <section>
                 <SectionLabel hint={briefing.data?.as_of?.slice(0, 10)}>
                   Research briefing
                 </SectionLabel>
@@ -153,6 +178,13 @@ export default async function Home() {
           }
           research={
             <>
+              <section>
+                <SectionLabel hint="ranked by real option profit on unseen data">
+                  Pattern → option
+                </SectionLabel>
+                <PatternOptionsTable data={patternOptions.data} />
+              </section>
+
               <section>
                 <SectionLabel hint="returns on premium, not index">
                   Which option to buy

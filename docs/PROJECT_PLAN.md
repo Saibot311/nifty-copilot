@@ -6,6 +6,40 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 
 Current status: **Phases 1-9 done**, plus options integration built out of phase order on request.
 
+**Goal reframed: patterns ranked by option profit (2026-09-18):** the target is not "does a
+strategy beat the index" but "which pattern is forming, why, which option it points to, and how
+much that option made." Built: per-pattern option research on real NSE premiums (option chosen on
+2018–2023, judged on 2024–26), a generic "could form on the next close" engine with trigger levels
+and base rates, and plain-language rationale for all 26 patterns. Result: 0 APPROVED, 2 CONDITIONAL.
+
+**Two pattern bugs found and fixed along the way — both inflated earlier results:**
+1. *Look-ahead in the candlestick patterns.* The swing-high/low filter used a centered rolling
+   window, so Hammer, Shooting Star and both Engulfings saw two bars into the future. Hammer and
+   Shooting Star were the only CONDITIONAL strategies; without the leak both are REJECTED
+   (Hammer's holdout went from +0.69% to −0.46%).
+2. *EMA Pullback/Rejection fired every day of a trend, not on the reclaim.* In pandas 3,
+   `bool_series.shift(1).fillna(False)` is object dtype and `~` on it is integer bit-flip
+   (`~True == -2`, truthy), so "just reclaimed" meant "is above". Every EMA Pullback number in
+   the Phase 6–8 entries below came from that broken rule; the genuine pattern forms ~2×/year.
+Both are now locked by generic tests over every pattern (truncation for look-ahead; "transition
+patterns never fire two days running").
+
+**All 26 strategies validated; forward log started (2026-09-18):** ran walk-forward validation on
+the 22 never-validated strategies. The first pass returned two APPROVED at +0.043% and +0.062% per
+trade in the holdout, less than simply being long, because the verdict only asked "positive?".
+Tightened (and stated here because the criteria changed after seeing results — in the stricter
+direction): a strategy must now beat a direction-matched buy-and-hold baseline, same mechanics and
+costs, in both development and holdout. Re-validated all 26: **1 APPROVED, 3 CONDITIONAL, 22
+REJECTED.** The one APPROVED (MACD Bullish Crossover) clears its baseline by 0.07%/trade, t ≈ 0.18 —
+noise; the recommendation gate still blocks it. Honest read: no daily-bar strategy here has a
+demonstrated edge.
+
+Then, with approval, added a significance requirement (holdout edge over baseline must reach
+t ≥ 2). Final: **0 APPROVED, 2 CONDITIONAL (thin samples), 24 REJECTED.**
+
+Started the forward log: every day's recommendation is recorded once its bar is final, write-once,
+never backfilled, and scored later from the next open. First entry: 2026-09-17, NO_TRADE.
+
 **Zerodha connected; Phase 0 question answered (2026-09-18):** Kite Connect (₹500/month, approved)
 is live. Kite's 15-minute NIFTY history starts **2015-01-09** — ~11.7 years, past the original
 10-year target (Yahoo's free intraday reaches ~60 days). Daily goes back to 1990 (pre-1996-04-22 is

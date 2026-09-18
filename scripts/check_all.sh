@@ -119,6 +119,9 @@ if ! $FAST; then
         api/recommendation
         api/zerodha/status
         api/bars/archive
+        api/forward_log
+        api/patterns/options
+        api/patterns/today
         "api/candles?provider=archive&timeframe=15m&days=10"
     )
     if curl -s -o /dev/null --max-time 3 http://localhost:8000/health; then

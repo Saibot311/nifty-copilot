@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -11,7 +12,9 @@ from backtest.research import run_all_strategies, run_ema_pullback_param_sweep
 from backtest.options_research import run_options_strike_sweep
 from cache import cached
 from backtest.walkforward import evaluate_strategy
+from backtest.pattern_proximity import pattern_proximity
 from briefing import build_briefing, build_recommendation
+from briefing.forward_log import forward_report, record_if_final
 from options.advisor import translate_to_options
 from options.chain_analytics import live_chain_analytics
 from storage import archive_stats, record_strategy_evaluation, strategy_history, strategy_playbook
@@ -382,10 +385,30 @@ def recommendation(symbol: str = Query("^NSEI")) -> dict:
         return cached(
             f"recommendation:{symbol}",
             ttl_seconds=600,
-            producer=lambda: build_recommendation(symbol=symbol),
+            producer=lambda: _build_and_log_recommendation(symbol),
         )
     except Exception as e:
         raise HTTPException(503, f"Recommendation failed: {e}")
+
+
+def _build_and_log_recommendation(symbol: str) -> dict:
+    rec = build_recommendation(symbol=symbol)
+    try:
+        rec["forward_logged"] = record_if_final(rec, symbol)
+    except Exception as e:
+        rec["forward_logged"] = False
+        rec["forward_log_error"] = str(e)
+    return rec
+
+
+@app.get("/api/forward_log")
+def forward_log(symbol: str = Query("^NSEI")) -> dict:
+    """Every recommendation recorded before its outcome existed, scored
+    against what the index actually did next."""
+    try:
+        return forward_report(symbol)
+    except Exception as e:
+        raise HTTPException(503, f"Forward log failed: {e}")
 
 
 @app.get("/api/bars/archive")
@@ -419,3 +442,38 @@ def zerodha_callback(request_token: str | None = None, status: str | None = None
     except Exception as e:
         raise HTTPException(502, f"Token exchange with Kite failed: {e}")
     return RedirectResponse("http://localhost:3000/?zerodha=connected")
+
+
+PATTERN_OPTIONS_PATH = Path(__file__).parent / "data" / "pattern_options.json"
+
+
+def _pattern_options() -> dict:
+    if not PATTERN_OPTIONS_PATH.exists():
+        raise HTTPException(503, "Pattern-option research not computed yet — run: python scripts/pattern_options.py")
+    return json.loads(PATTERN_OPTIONS_PATH.read_text())
+
+
+@app.get("/api/patterns/options")
+def patterns_options() -> dict:
+    """Every pattern ranked by what its suggested option actually made on
+    real NSE premiums, judged only on data the choice never saw."""
+    return _pattern_options()
+
+
+@app.get("/api/patterns/today")
+def patterns_today(symbol: str = Query("^NSEI")) -> dict:
+    """Patterns that formed on the last close or could form on the next one,
+    each with the option it points to and that option's track record."""
+    try:
+        prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
+    except Exception as e:
+        raise HTTPException(503, f"Pattern proximity failed: {e}")
+    try:
+        research = {p["strategy"]: p for p in _pattern_options()["patterns"]}
+        computed_at = _pattern_options()["computed_at"]
+    except HTTPException:
+        research, computed_at = {}, None
+
+    keep = ("suggested_option", "holdout", "baseline", "holdout_t_stat", "status", "reason", "forms_per_year")
+    patterns = [{**p, **{k: research.get(p["strategy"], {}).get(k) for k in keep}} for p in prox["patterns"]]
+    return {**prox, "patterns": patterns, "option_research_computed_at": computed_at}

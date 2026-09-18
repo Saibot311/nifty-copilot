@@ -125,10 +125,15 @@ def run_options_backtest(
     hold_days: int = 10,
     min_open_interest: float = 1000,
     cost_model: OptionsCostModel | None = None,
+    strike_offset_pct: float | None = None,
 ) -> list[OptionTrade]:
     """For each signal date, buy one option and hold it `hold_days` trading
     days. Entry executes on the bar AFTER the signal — same no-lookahead
-    rule as the index engine."""
+    rule as the index engine.
+
+    `strike_offset_pct`, if given, overrides `strike_offset_pts` with a
+    per-trade offset of that % of spot, so "1% OTM" means the same thing in
+    2018 (spot ~10k) as in 2026 (spot ~23k)."""
     cost_model = cost_model or OptionsCostModel()
     cost_fraction = cost_model.round_trip_cost_fraction()
     day_index = {d: i for i, d in enumerate(trading_days)}
@@ -150,8 +155,9 @@ def run_options_backtest(
             if spot is None or pd.isna(spot):
                 continue
 
+            offset = float(spot) * strike_offset_pct / 100 if strike_offset_pct is not None else strike_offset_pts
             picked = select_contract(
-                entry_date, float(spot), option_type, strike_offset_pts,
+                entry_date, float(spot), option_type, offset,
                 min_days_to_expiry, exit_date, min_open_interest, conn,
             )
             if picked is None:

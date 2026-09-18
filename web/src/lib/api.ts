@@ -284,6 +284,38 @@ export interface PlaybookEntry {
 }
 
 export const fetchPlaybook = () => get<{ strategies: PlaybookEntry[] }>("/api/strategies/playbook");
+
+export interface ForwardOutcome {
+  index_move_pct: number;
+  trade_return_pct: number | null;
+}
+
+export interface ForwardEntry {
+  as_of: string;
+  recorded_at: string;
+  action: Recommendation["action"];
+  regime: string;
+  close_as_of: number;
+  headline: string;
+  entry_date?: string;
+  entry_open?: number;
+  outcomes: Partial<Record<"1d" | "5d" | "10d", ForwardOutcome>>;
+}
+
+export interface ForwardLog {
+  entries: ForwardEntry[];
+  summary: {
+    days_logged: number;
+    logging_since: string | null;
+    by_action: Record<Recommendation["action"], number>;
+    completed_trades_10d: number;
+    hit_rate_10d: number | null;
+    avg_return_10d_pct: number | null;
+  };
+  note: string;
+}
+
+export const fetchForwardLog = () => get<ForwardLog>("/api/forward_log");
 export const fetchLiveQuote = () => get<LiveQuote>("/api/live");
 export const fetchRecommendation = () => get<Recommendation>("/api/recommendation");
 export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
@@ -302,3 +334,90 @@ export const fetchOptionsAdvisor = () => get<OptionsAdvice>("/api/options/adviso
 export const fetchBriefing = () => get<Briefing>("/api/briefing");
 export const fetchOptionsArchive = () => get<OptionsArchive>("/api/options/archive");
 export const fetchStrikeSweep = () => get<StrikeSweepResult>("/api/options/strike_sweep");
+
+export type Verdict = "APPROVED" | "CONDITIONAL" | "REJECTED";
+
+export interface SuggestedOption {
+  type: "CE" | "PE";
+  moneyness: string;
+  moneyness_pct: number;
+  min_days_to_expiry: number;
+  hold_days: number;
+  description: string;
+}
+
+export interface OptionPeriodStats {
+  num_trades: number;
+  win_rate?: number;
+  avg_return_pct?: number;
+  median_return_pct?: number;
+  worst_return_pct?: number;
+  best_return_pct?: number;
+  avg_premium?: number;
+  avg_profit_per_lot_rs?: number;
+  total_profit_per_lot_rs?: number;
+}
+
+export interface PatternOptionResult {
+  strategy: string;
+  label: string;
+  direction: "long" | "short";
+  option_type: "CE" | "PE";
+  forms_when?: string;
+  why?: string;
+  forms_per_year: number;
+  forms_per_year_since_2018: number;
+  configs_tested: number;
+  suggested_option?: SuggestedOption;
+  development?: OptionPeriodStats;
+  holdout?: OptionPeriodStats;
+  baseline?: { development_avg_return_pct: number; holdout_avg_return_pct: number };
+  holdout_t_stat?: number | null;
+  status: Verdict;
+  reason: string;
+}
+
+export interface PatternOptionsResearch {
+  computed_at: string;
+  options_period: { start: string; split: string; end: string };
+  lot_size: number;
+  configs_tested_total: number;
+  patterns: PatternOptionResult[];
+  method_note: string;
+}
+
+export interface PatternToday {
+  strategy: string;
+  label: string;
+  direction: "long" | "short";
+  option_type: "CE" | "PE";
+  forms_when?: string;
+  why?: string;
+  formed_today: boolean | null;
+  probability_next: number | null;
+  trigger: {
+    close_ranges_pct: [number, number][];
+    close_ranges_level: [number, number][];
+    partial_ranges_level: [number, number][];
+    needs: string[];
+  } | null;
+  note?: string;
+  suggested_option?: SuggestedOption | null;
+  holdout?: OptionPeriodStats | null;
+  baseline?: { holdout_avg_return_pct: number } | null;
+  holdout_t_stat?: number | null;
+  status?: Verdict | null;
+  reason?: string | null;
+  forms_per_year?: number | null;
+}
+
+export interface PatternsToday {
+  as_of: string;
+  last_close: number;
+  patterns: PatternToday[];
+  method_note: string;
+  option_research_computed_at: string | null;
+}
+
+export const fetchPatternOptions = () => get<PatternOptionsResearch>("/api/patterns/options");
+export const fetchPatternsToday = () => get<PatternsToday>("/api/patterns/today");
