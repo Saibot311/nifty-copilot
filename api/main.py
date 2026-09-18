@@ -12,6 +12,7 @@ from backtest.walkforward import evaluate_strategy
 from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.live_patterns import live_patterns, merge_live
+from backtest.similarity import run_similarity
 from briefing import build_briefing, build_recommendation
 from briefing.forward_log import forward_report, record_if_final
 from options.chain_analytics import live_chain_analytics
@@ -410,3 +411,13 @@ def live_patterns_endpoint(symbol: str = Query("^NSEI")) -> dict:
     except Exception as e:
         raise HTTPException(503, f"Live pattern tracking failed: {e}")
     return {**live, "patterns": merge_live(live, prox, load_research())}
+
+
+@app.get("/api/similarity")
+def similarity(symbol: str = Query("^NSEI")) -> dict:
+    """Phase 11: past days most like today and what followed, next to the
+    base rate and a walk-forward test of whether analogs predict anything."""
+    try:
+        return cached(f"similarity:{symbol}", ttl_seconds=1800, producer=lambda: run_similarity(symbol))
+    except Exception as e:
+        raise HTTPException(503, f"Similarity failed: {e}")

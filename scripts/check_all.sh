@@ -121,6 +121,7 @@ if ! $FAST; then
         api/patterns/options
         api/patterns/today
         api/live/patterns
+        api/similarity
         "api/candles?provider=archive&timeframe=15m&days=10"
     )
     if curl -s -o /dev/null --max-time 3 http://localhost:8000/health; then

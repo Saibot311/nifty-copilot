@@ -8,6 +8,7 @@ import { PlaybookCard } from "@/components/PlaybookCard";
 import { PriceChart } from "@/components/PriceChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
+import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
 import {
@@ -22,6 +23,7 @@ import {
   fetchPlaybook,
   fetchRecommendation,
   fetchResearchCompare,
+  fetchSimilarity,
   fetchSnapshot,
 } from "@/lib/api";
 
@@ -39,6 +41,7 @@ export default async function Home() {
     patternsToday,
     patternOptions,
     livePatterns,
+    similarity,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -52,6 +55,7 @@ export default async function Home() {
     fetchPatternsToday(),
     fetchPatternOptions(),
     fetchLivePatterns(),
+    fetchSimilarity(),
   ]);
 
   const snap = snapshot.data;
@@ -139,6 +143,13 @@ export default async function Home() {
                   Patterns
                 </SectionLabel>
                 <PatternsTodayCard data={patternsToday.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="past markets that looked like this one, and what followed">
+                  Similar past days
+                </SectionLabel>
+                <SimilarityCard data={similarity.data} />
               </section>
 
               <section>

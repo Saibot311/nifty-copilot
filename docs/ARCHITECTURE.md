@@ -186,6 +186,7 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `backtest/pattern_info.py` | What each pattern checks and the idea behind it | Evidence — the numbers are elsewhere |
 | `backtest/pattern_options.py` | Pattern → option choice on dev data → profit on holdout | Picking the option on holdout data |
 | `backtest/pattern_proximity.py` | Formed today / could form next close, trigger levels (bisected to ~1 pt), base rate | Forecasts — it's a base rate |
+| `backtest/similarity.py` | Phase 11: 5-feature nearest-neighbour analogs + walk-forward test | More features without evidence they help |
 | `backtest/live_patterns.py` | Phase 10: today's candle from 15-min closes → which patterns would form now | Anything final before 15:30 |
 | `storage/options_db.py` | Options archive (655 MB, 4.5 M rows) | Strategy verdicts |
 | `storage/strategy_status_db.py` | The Playbook — verdict history | Live recomputation |
@@ -260,10 +261,12 @@ rather than decorative.
 
 ## 9. Status and known gaps
 
-**Phases 1–10 complete.** Phase 10 is live trigger tracking: during the session, today's candle
+**Phases 1–11 complete.** Phase 10 is live trigger tracking: during the session, today's candle
 is built from completed 15-minute bars (Kite) and every pattern is run on it — "would form if
-today closed now", provisional until 15:30. Phase 11+ (similarity engine, LLM copilot, journal,
-paper observation, deployment) not started.
+today closed now", provisional until 15:30. Phase 12+ (LLM copilot, journal,
+paper observation, deployment) not started. Phase 11, historical similarity: 20 past days nearest
+to today on 5 features, shown against the base rate, with a walk-forward test of whether analogs
+predict anything (currently: no — t 0.03 over 410 tests; shown as context, not a forecast).
 
 Gaps, stated rather than hidden:
 

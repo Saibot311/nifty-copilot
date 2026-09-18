@@ -6,6 +6,15 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 
 Current status: **Phases 1-9 done**, plus options integration built out of phase order on request.
 
+**Phase 11 done — historical similarity (2026-09-18):** kept to the plan's "3-5 features, hard
+stop": 20-day return, distance from EMA50, RSI(14), 20-day realised vol, distance below the 52-week
+high; 20 nearest past days, spaced ≥5 days apart, each old enough that its outcome was known.
+Outcomes always shown beside the all-days base rate, plus ATM call/put ₹/lot on analog days since
+2018. Tested walk-forward (410 non-overlapping points since 2010): rank correlation 0.001, t 0.03,
+51% direction hit rate — no predictive value, so the card leads with "context, not a forecast".
+Instructive on day one: today's analogs look bullish (70% higher after 5 days vs 56% base; ATM
+call +₹4,802/lot) — exactly the kind of read the walk-forward test shows is noise.
+
 **Phase 10 done — live trigger tracking (2026-09-18):** during market hours the dashboard builds
 today's candle from completed 15-minute bars and runs every pattern on it: which would form if the
 day closed now, and how many points the rest are from their trigger. Provisional until 15:30;

@@ -343,3 +343,48 @@ export interface LivePatterns {
 }
 
 export const fetchLivePatterns = () => get<LivePatterns>("/api/live/patterns");
+
+export interface SimilarityAnalog {
+  date: string;
+  distance: number;
+  close: number;
+  ret20: number;
+  vs_ema50: number;
+  rsi14: number;
+  vol20: number;
+  off_high: number;
+  fwd_1d: number;
+  fwd_5d: number;
+  fwd_10d: number;
+}
+
+interface OutcomeStats {
+  pct_higher: number;
+  median_pct: number;
+}
+
+interface AnalogOptionSide {
+  trades: number;
+  win_rate: number | null;
+  avg_profit_per_lot_rs: number | null;
+}
+
+export interface Similarity {
+  as_of: string;
+  today: Record<string, number>;
+  feature_labels: Record<string, string>;
+  analogs: SimilarityAnalog[];
+  outcomes: { analogs: Record<"1d" | "5d" | "10d", OutcomeStats>; all_days: Record<"1d" | "5d" | "10d", OutcomeStats> };
+  options_on_analog_days: { hold_days: number; option: string; CE: AnalogOptionSide; PE: AnalogOptionSide } | null;
+  walk_forward: {
+    test_points: number;
+    period_start?: string;
+    rank_correlation?: number;
+    t_stat?: number;
+    direction_hit_rate?: number;
+    verdict: string;
+  };
+  method_note: string;
+}
+
+export const fetchSimilarity = () => get<Similarity>("/api/similarity");
