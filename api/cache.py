@@ -1,13 +1,12 @@
-"""Tiny TTL cache for expensive research endpoints.
+"""Tiny in-process TTL cache for expensive computations (research runs,
+pattern proximity, the recommendation).
 
-The options strike sweep runs a full backtest per grid cell against the
-SQLite archive — far too slow to recompute on every dashboard page load,
-but it's historical analysis that doesn't change minute to minute. Cache
-it briefly rather than making every page view pay for it.
-
-Deliberately short TTLs: the options archive is still being backfilled, so
-results legitimately change as more history lands. A long cache would
-quietly serve stale conclusions.
+One lock per key, held while that key's value is computed: ten concurrent
+dashboard loads asking for the same thing trigger one computation, not ten.
+It used to be a single global lock, which (a) made every cached endpoint
+wait on every other one, and (b) deadlocked as soon as one cached producer
+called cached() for a different key — the recommendation caching the
+proximity result — because the thread was waiting on a lock it already held.
 """
 
 import threading
@@ -15,14 +14,17 @@ import time
 from typing import Any, Callable
 
 _CACHE: dict[str, tuple[float, Any]] = {}
-_LOCK = threading.Lock()
+_KEY_LOCKS: dict[str, threading.Lock] = {}
+_REGISTRY_LOCK = threading.Lock()
+
+
+def _lock_for(key: str) -> threading.Lock:
+    with _REGISTRY_LOCK:
+        return _KEY_LOCKS.setdefault(key, threading.Lock())
 
 
 def cached(key: str, ttl_seconds: int, producer: Callable[[], Any]) -> Any:
-    """Returns a cached value or computes it. The lock is held across the
-    computation so ten concurrent dashboard loads trigger one run, not ten
-    — the same cache-stampede problem the market-data provider hit."""
-    with _LOCK:
+    with _lock_for(key):
         hit = _CACHE.get(key)
         if hit and (time.monotonic() - hit[0]) < ttl_seconds:
             return hit[1]
@@ -32,7 +34,7 @@ def cached(key: str, ttl_seconds: int, producer: Callable[[], Any]) -> Any:
 
 
 def invalidate(key: str | None = None) -> None:
-    with _LOCK:
+    with _REGISTRY_LOCK:
         if key is None:
             _CACHE.clear()
         else:
