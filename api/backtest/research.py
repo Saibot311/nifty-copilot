@@ -12,7 +12,7 @@ from .metrics import compute_metrics
 from .strategies import STRATEGY_REGISTRY, ema_pullback_signals, load_daily_data
 
 
-def _buy_and_hold_baseline(df, hold_days: int) -> dict:
+def _buy_and_hold_baseline(df, hold_days: int, direction: str = "long") -> dict:
     """What holding long unconditionally, re-entering every `hold_days`,
     would have returned over the same period. Necessary context: on an
     index with strong secular drift, almost any long strategy looks
@@ -25,7 +25,7 @@ def _buy_and_hold_baseline(df, hold_days: int) -> dict:
     n = len(df)
     always_on = pd.Series(True, index=df.index)
     trades = run_backtest(df, always_on, pd.Series(["N/A"] * n, index=df.index),
-                           direction="long", hold_days=hold_days, cost_model=CostModel())
+                           direction=direction, hold_days=hold_days, cost_model=CostModel())
     m = compute_metrics(trades)
     return {
         "num_trades": m["num_trades"],

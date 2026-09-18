@@ -9,8 +9,9 @@ Two checks:
    and look at performance fold by fold, to see if the edge is concentrated
    in one lucky period or holds up broadly over time.
 2. Development/holdout split — a stricter, single train/test cut. The
-   strategy only earns APPROVED if it's positive in both halves with a
-   real sample size in the holdout.
+   strategy only earns APPROVED if, in both halves, it is profitable and
+   beats being in the market unconditionally in the same direction, with
+   a real sample size in the holdout.
 
 Important honesty note, not a footnote: every strategy in the registry has
 hand-fixed parameters, not fit to data — there's no optimization step
@@ -25,12 +26,15 @@ looking at the holdout. That's a real limitation of this pass, kept
 visible rather than glossed over.
 """
 
+import math
+import statistics
 from datetime import timedelta
 
 from .costs import CostModel
 from .engine import run_backtest
 from .hypothesis_log import log_run
 from .metrics import compute_metrics
+from .research import _buy_and_hold_baseline
 from .strategies import STRATEGY_REGISTRY, load_daily_data
 
 
@@ -132,12 +136,15 @@ def run_holdout_test(
     holdout_expectancy = holdout_metrics.get("expectancy_pct") or 0
     holdout_n = holdout_metrics.get("num_trades") or 0
 
-    if dev_expectancy <= 0 or holdout_expectancy <= 0:
-        status, reason = "REJECTED", "Expectancy was non-positive in the development period, the holdout period, or both."
-    elif holdout_n < min_holdout_trades:
-        status, reason = "CONDITIONAL", f"Holdout expectancy is positive but only {holdout_n} trades occurred there — below the {min_holdout_trades}-trade bar for confidence."
-    else:
-        status, reason = "APPROVED", f"Positive expectancy in both development and holdout periods, with {holdout_n} holdout trades — clears the confirmatory bar."
+    direction = spec.get("direction", "long")
+    dev_baseline = _buy_and_hold_baseline(df[df.index < split_date], hold_days, direction).get("expectancy_pct") or 0
+    holdout_baseline = _buy_and_hold_baseline(df[df.index >= split_date], hold_days, direction).get("expectancy_pct") or 0
+
+    holdout_t = excess_t_stat([t.net_return_pct for t in holdout_trades], holdout_baseline)
+    status, reason = holdout_verdict(
+        dev_expectancy, holdout_expectancy, dev_baseline, holdout_baseline,
+        holdout_n, min_holdout_trades, direction, holdout_t,
+    )
 
     log_run(
         f"{strategy_name}_holdout", {"hold_days": hold_days, "train_frac": train_frac},
@@ -151,10 +158,61 @@ def run_holdout_test(
         "split_date": split_date,
         "development": {"period": {"start": str(start_date), "end": split_date}, "metrics": dev_metrics},
         "holdout": {"period": {"start": split_date, "end": str(end_date)}, "metrics": holdout_metrics},
+        "baseline": {"direction": direction, "development_expectancy_pct": dev_baseline, "holdout_expectancy_pct": holdout_baseline},
+        "holdout_excess_t_stat": holdout_t,
         "status": status,
         "reason": reason,
         "methodology_note": _methodology_note(label),
     }
+
+
+MIN_T_STAT = 2.0
+
+
+def excess_t_stat(returns: list[float], baseline: float) -> float | None:
+    """t-statistic of mean per-trade return over the baseline. ~2 is the
+    conventional line where an edge stops looking like luck."""
+    if len(returns) < 2:
+        return None
+    sd = statistics.stdev(returns)
+    if sd == 0:
+        return None
+    return round((statistics.mean(returns) - baseline) / (sd / math.sqrt(len(returns))), 2)
+
+
+def holdout_verdict(
+    dev_exp: float, holdout_exp: float, dev_baseline: float, holdout_baseline: float,
+    holdout_n: int, min_holdout_trades: int, direction: str = "long",
+    holdout_t: float | None = None, min_t: float = MIN_T_STAT, baseline_label: str | None = None,
+) -> tuple[str, str]:
+    """A strategy must make money AND beat simply being in the market in the
+    same direction, in both periods. "Positive" alone isn't enough: NIFTY's
+    drift made two long strategies APPROVED at +0.04% and +0.06% per trade
+    while always-long earned more over the same holdout."""
+    side = baseline_label or ("always-long" if direction == "long" else "always-short")
+    if dev_exp <= 0 or holdout_exp <= 0:
+        return "REJECTED", "Expectancy was non-positive in the development period, the holdout period, or both."
+    if dev_exp <= dev_baseline or holdout_exp <= holdout_baseline:
+        return "REJECTED", (
+            f"Profitable, but no better than being {side} unconditionally: development {dev_exp}% vs "
+            f"{dev_baseline}% baseline, holdout {holdout_exp}% vs {holdout_baseline}% baseline. "
+            "The return comes from market drift, not the entry rule."
+        )
+    if holdout_n < min_holdout_trades:
+        return "CONDITIONAL", (
+            f"Beats the {side} baseline in both periods, but only {holdout_n} holdout trades — "
+            f"below the {min_holdout_trades}-trade bar for confidence."
+        )
+    if holdout_t is None or holdout_t < min_t:
+        return "REJECTED", (
+            f"Beats the {side} baseline, but by too little to tell from luck: holdout edge "
+            f"{round(holdout_exp - holdout_baseline, 3)}%/trade over {holdout_n} trades, t = {holdout_t} "
+            f"(needs t >= {min_t})."
+        )
+    return "APPROVED", (
+        f"Beats the {side} baseline in both development ({dev_exp}% vs {dev_baseline}%) and holdout "
+        f"({holdout_exp}% vs {holdout_baseline}%), with {holdout_n} holdout trades and t = {holdout_t}."
+    )
 
 
 def evaluate_strategy(
