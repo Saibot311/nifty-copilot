@@ -184,34 +184,39 @@ def holdout_verdict(
     dev_exp: float, holdout_exp: float, dev_baseline: float, holdout_baseline: float,
     holdout_n: int, min_holdout_trades: int, direction: str = "long",
     holdout_t: float | None = None, min_t: float = MIN_T_STAT, baseline_label: str | None = None,
+    unit: str = "%",
 ) -> tuple[str, str]:
     """A strategy must make money AND beat simply being in the market in the
     same direction, in both periods. "Positive" alone isn't enough: NIFTY's
     drift made two long strategies APPROVED at +0.04% and +0.06% per trade
     while always-long earned more over the same holdout."""
     side = baseline_label or ("always-long" if direction == "long" else "always-short")
+
+    def f(v: float) -> str:
+        return f"₹{round(v):,}" if unit == "₹" else f"{v}%"
+
     if dev_exp <= 0 or holdout_exp <= 0:
-        return "REJECTED", "Expectancy was non-positive in the development period, the holdout period, or both."
+        return "REJECTED", "Lost money in the development period, the holdout period, or both."
     if dev_exp <= dev_baseline or holdout_exp <= holdout_baseline:
         return "REJECTED", (
-            f"Profitable, but no better than being {side} unconditionally: development {dev_exp}% vs "
-            f"{dev_baseline}% baseline, holdout {holdout_exp}% vs {holdout_baseline}% baseline. "
-            "The return comes from market drift, not the entry rule."
+            f"Profitable, but no better than {side}: development {f(dev_exp)} vs "
+            f"{f(dev_baseline)}, holdout {f(holdout_exp)} vs {f(holdout_baseline)} per trade. "
+            "The return comes from the market, not the pattern."
         )
     if holdout_n < min_holdout_trades:
         return "CONDITIONAL", (
-            f"Beats the {side} baseline in both periods, but only {holdout_n} holdout trades — "
+            f"Beats {side} in both periods, but only {holdout_n} holdout trades — "
             f"below the {min_holdout_trades}-trade bar for confidence."
         )
     if holdout_t is None or holdout_t < min_t:
         return "REJECTED", (
-            f"Beats the {side} baseline, but by too little to tell from luck: holdout edge "
-            f"{round(holdout_exp - holdout_baseline, 3)}%/trade over {holdout_n} trades, t = {holdout_t} "
+            f"Beats {side}, but by too little to tell from luck: holdout edge "
+            f"{f(round(holdout_exp - holdout_baseline, 3))} per trade over {holdout_n} trades, t = {holdout_t} "
             f"(needs t >= {min_t})."
         )
     return "APPROVED", (
-        f"Beats the {side} baseline in both development ({dev_exp}% vs {dev_baseline}%) and holdout "
-        f"({holdout_exp}% vs {holdout_baseline}%), with {holdout_n} holdout trades and t = {holdout_t}."
+        f"Beats {side} in both development ({f(dev_exp)} vs {f(dev_baseline)}) and holdout "
+        f"({f(holdout_exp)} vs {f(holdout_baseline)}), with {holdout_n} holdout trades and t = {holdout_t}."
     )
 
 

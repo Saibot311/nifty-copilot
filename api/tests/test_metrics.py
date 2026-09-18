@@ -106,7 +106,7 @@ def test_hypothesis_log_survives_concurrent_writes(tmp_path, monkeypatch):
     and confirm the file stays valid JSON with every entry present."""
     import backtest.hypothesis_log as hl
 
-    log_path = tmp_path / "hypothesis_log.json"
+    log_path = tmp_path / "hypothesis_log.jsonl"
     monkeypatch.setattr(hl, "LOG_PATH", log_path)
 
     dummy_metrics = {"num_trades": 1, "expectancy_pct": 0.1, "profit_factor": 1.0, "max_drawdown_pct": -1.0}
@@ -122,7 +122,7 @@ def test_hypothesis_log_survives_concurrent_writes(tmp_path, monkeypatch):
 
     # Must parse as valid JSON with exactly one entry per thread -- no
     # corruption, no silently dropped writes.
-    data = json.loads(log_path.read_text())
+    data = [json.loads(line) for line in log_path.read_text().splitlines()]
     assert len(data) == 30
     assert total_hypotheses_tested() == 30  # 30 distinct strategies here
 
@@ -135,7 +135,7 @@ def test_repeated_runs_of_same_strategy_count_as_one_hypothesis(tmp_path, monkey
     behind it (6,342 logged runs were only 86 real hypotheses)."""
     import backtest.hypothesis_log as hl
 
-    monkeypatch.setattr(hl, "LOG_PATH", tmp_path / "hypothesis_log.json")
+    monkeypatch.setattr(hl, "LOG_PATH", tmp_path / "hypothesis_log.jsonl")
     dummy_metrics = {"num_trades": 1, "expectancy_pct": 0.1, "profit_factor": 1.0, "max_drawdown_pct": -1.0}
 
     for _ in range(50):
@@ -145,3 +145,37 @@ def test_repeated_runs_of_same_strategy_count_as_one_hypothesis(tmp_path, monkey
 
     assert hl.total_runs_logged() == 52
     assert total_hypotheses_tested() == 3
+
+
+def _write_from_process(path: str, worker: int, n: int) -> None:
+    import backtest.hypothesis_log as hl
+    from pathlib import Path
+
+    hl.LOG_PATH = Path(path)
+    for i in range(n):
+        hl.log_run(f"proc{worker}", {"i": i}, "^NSEI", 0, {"num_trades": 1})
+
+
+def test_hypothesis_log_survives_concurrent_processes(tmp_path, monkeypatch):
+    """The second bug in this file: the API server and a research script, as
+    separate processes, both rewriting the log. A thread lock can't see across
+    processes, so one read the file in the instant the other had emptied it.
+    Several processes append at once while this one keeps reading."""
+    import multiprocessing as mp
+
+    import backtest.hypothesis_log as hl
+
+    log_path = tmp_path / "hypothesis_log.jsonl"
+    monkeypatch.setattr(hl, "LOG_PATH", log_path)
+    ctx = mp.get_context("spawn")
+    procs = [ctx.Process(target=_write_from_process, args=(str(log_path), w, 200)) for w in range(4)]
+    for p in procs:
+        p.start()
+    while any(p.is_alive() for p in procs):
+        hl.total_runs_logged()  # must never raise on a half-written file
+    for p in procs:
+        p.join()
+        assert p.exitcode == 0
+
+    assert hl.total_runs_logged() == 800
+    assert total_hypotheses_tested() == 800

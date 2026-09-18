@@ -28,4 +28,4 @@ if __name__ == "__main__":
         print(f"{p['status']:11s} {p['label']:40s} {p['forms_per_year']:5.1f}/yr  {opt}")
         if h:
             print(f"{'':12s}holdout: {h.get('num_trades')} trades, win {h.get('win_rate')}, avg {h.get('avg_return_pct')}% "
-                  f"(Rs {h.get('avg_profit_per_lot_rs')}/lot) vs no-signal {p['baseline']['holdout_avg_return_pct']}%, t={p.get('holdout_t_stat')}")
+                  f"(Rs {h.get('avg_profit_per_lot_rs')}/lot) vs no-signal Rs {p['baseline']['holdout_avg_profit_per_lot_rs']}/lot, t={p.get('holdout_t_stat')}")

@@ -20,12 +20,12 @@ function OptionPill({ type }: { type: "CE" | "PE" }) {
 function TrackRecord({
   option,
   holdout,
-  baselinePct,
+  baselineRs,
   t,
 }: {
   option?: SuggestedOption | null;
   holdout?: OptionPeriodStats | null;
-  baselinePct?: number | null;
+  baselineRs?: number | null;
   t?: number | null;
 }) {
   if (!option) return <p className="text-[11px] text-zinc-600">Too rare to test on options.</p>;
@@ -35,10 +35,10 @@ function TrackRecord({
       {holdout && holdout.num_trades > 0 ? (
         <p className="font-mono text-[11px] tabular-nums text-zinc-500">
           2024–26: {holdout.num_trades} trades · win {((holdout.win_rate ?? 0) * 100).toFixed(0)}% · avg{" "}
-          <span className={(holdout.avg_return_pct ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}>
-            {fmtPct(holdout.avg_return_pct, 1)}
+          <span className={(holdout.avg_profit_per_lot_rs ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}>
+            {rupees(holdout.avg_profit_per_lot_rs)}/lot
           </span>{" "}
-          ({rupees(holdout.avg_profit_per_lot_rs)}/lot) · no signal {fmtPct(baselinePct, 1)} · t {t ?? "–"}
+          ({fmtPct(holdout.avg_return_pct, 1)}) · no signal {rupees(baselineRs ?? undefined)}/lot · t {t ?? "–"}
         </p>
       ) : (
         <p className="text-[11px] text-zinc-600">No trades in 2024–26 to judge it on.</p>
@@ -106,7 +106,7 @@ function TodayRow({ p, lastClose }: { p: PatternToday; lastClose: number }) {
         </div>
       )}
       <div className="mt-2">
-        <TrackRecord option={p.suggested_option} holdout={p.holdout} baselinePct={p.baseline?.holdout_avg_return_pct} t={p.holdout_t_stat} />
+        <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} />
       </div>
       <Why p={p} />
     </div>
@@ -164,7 +164,7 @@ export function PatternOptionsTable({ data }: { data: PatternOptionsResearch | n
               <Pill tone={VERDICT_TONE[p.status]}>{p.status}</Pill>
             </div>
             <div className="mt-2">
-              <TrackRecord option={p.suggested_option} holdout={p.holdout} baselinePct={p.baseline?.holdout_avg_return_pct} t={p.holdout_t_stat} />
+              <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} />
             </div>
             <Why p={p} />
           </div>

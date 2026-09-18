@@ -371,7 +371,12 @@ export interface PatternOptionResult {
   suggested_option?: SuggestedOption;
   development?: OptionPeriodStats;
   holdout?: OptionPeriodStats;
-  baseline?: { development_avg_return_pct: number; holdout_avg_return_pct: number };
+  baseline?: {
+    development_avg_return_pct: number;
+    holdout_avg_return_pct: number;
+    development_avg_profit_per_lot_rs: number;
+    holdout_avg_profit_per_lot_rs: number;
+  };
   holdout_t_stat?: number | null;
   status: Verdict;
   reason: string;
@@ -404,7 +409,7 @@ export interface PatternToday {
   note?: string;
   suggested_option?: SuggestedOption | null;
   holdout?: OptionPeriodStats | null;
-  baseline?: { holdout_avg_return_pct: number } | null;
+  baseline?: { holdout_avg_return_pct: number; holdout_avg_profit_per_lot_rs: number } | null;
   holdout_t_stat?: number | null;
   status?: Verdict | null;
   reason?: string | null;

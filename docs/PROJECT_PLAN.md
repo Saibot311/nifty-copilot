@@ -6,6 +6,12 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 
 Current status: **Phases 1-9 done**, plus options integration built out of phase order on request.
 
+**Option choice switched to ₹ per lot (2026-09-18):** choosing each pattern's option by average
+% return favoured ₹20-50 far-OTM weeklies — huge percentages, little money. Now chosen and judged
+by rupee profit per lot. Picks moved to ITM options; Supertrend Flip (bull), the % leader, is
+REJECTED in rupees. Also fixed a cross-process race in the hypothesis log (API server and a
+research script both rewriting it) by moving to append-only JSON Lines under an OS file lock.
+
 **Goal reframed: patterns ranked by option profit (2026-09-18):** the target is not "does a
 strategy beat the index" but "which pattern is forming, why, which option it points to, and how
 much that option made." Built: per-pattern option research on real NSE premiums (option chosen on

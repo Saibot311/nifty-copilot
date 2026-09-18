@@ -8,6 +8,11 @@ prices (options archive, 2018 onward):
     min expiry    7 / 14 / 30 calendar days out
     hold          3 / 5 / 10 trading days
 
+The yardstick is rupees per lot — what a trader buying one lot per signal
+actually makes. (Average % return was used first, and it steered almost
+every pattern to the cheapest far-OTM weekly option, where a tiny premium
+turns small moves into huge percentages without much money changing hands.)
+
 Picking the best of 45 choices per pattern (1,170 in total) and reporting
 its result would mostly report luck. So the option is chosen using the
 DEVELOPMENT period only, and the profit that's reported as evidence comes
@@ -77,7 +82,7 @@ def _summarise(trades) -> dict:
     if not trades:
         return {"num_trades": 0}
     rets = [t.net_return_pct for t in trades]
-    rupees = [t.entry_premium * t.net_return_pct / 100 * LOT_SIZE for t in trades]
+    rupees = [_rupees(t) for t in trades]
     return {
         "num_trades": len(trades),
         "win_rate": round(sum(r > 0 for r in rets) / len(rets), 3),
@@ -99,11 +104,20 @@ def _run(dates, ctx, option_type, m, dte, hold):
     )
 
 
-def _baseline(ctx, period_dates: list[str], option_type, m, dte, hold) -> float:
+def _rupees(t) -> float:
+    return t.entry_premium * t.net_return_pct / 100 * LOT_SIZE
+
+
+def _baseline(ctx, period_dates: list[str], option_type, m, dte, hold) -> dict:
     """Buying the same option on a fixed schedule with no signal at all."""
     dates = period_dates[:: hold + 1]
     trades = _run(dates, ctx, option_type, m, dte, hold)
-    return round(statistics.mean(t.net_return_pct for t in trades), 2) if trades else 0.0
+    if not trades:
+        return {"avg_return_pct": 0.0, "avg_profit_per_lot_rs": 0}
+    return {
+        "avg_return_pct": round(statistics.mean(t.net_return_pct for t in trades), 2),
+        "avg_profit_per_lot_rs": round(statistics.mean(_rupees(t) for t in trades)),
+    }
 
 
 def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
@@ -144,7 +158,7 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
         result.update(status="REJECTED", reason=f"Fewer than {MIN_DEV_TRADES} option trades in the development period for every choice — too rare to judge.")
         return result
 
-    best = max(eligible, key=lambda g: g["dev"]["avg_return_pct"])
+    best = max(eligible, key=lambda g: g["dev"]["avg_profit_per_lot_rs"])
     m, dte, hold = best["m"], best["dte"], best["hold"]
     all_days = [d for d in td if d >= OPTIONS_START]
     dev_days = [d for d in all_days if d < SPLIT_DATE]
@@ -152,12 +166,13 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
     dev_base = _baseline(ctx, dev_days, option_type, m, dte, hold)
     hol_base = _baseline(ctx, hol_days, option_type, m, dte, hold)
 
-    hol_rets = [t.net_return_pct for t in best["_holdout_trades"]]
-    t_stat = excess_t_stat(hol_rets, hol_base)
+    hol_rs = [_rupees(t) for t in best["_holdout_trades"]]
+    t_stat = excess_t_stat(hol_rs, hol_base["avg_profit_per_lot_rs"])
     status, reason = holdout_verdict(
-        best["dev"]["avg_return_pct"], best["holdout"].get("avg_return_pct") or 0, dev_base, hol_base,
+        best["dev"]["avg_profit_per_lot_rs"], best["holdout"].get("avg_profit_per_lot_rs") or 0,
+        dev_base["avg_profit_per_lot_rs"], hol_base["avg_profit_per_lot_rs"],
         best["holdout"]["num_trades"], MIN_HOLDOUT_TRADES, spec["direction"], t_stat,
-        baseline_label=f"buying this {option_type} with no signal",
+        baseline_label=f"buying this {option_type} with no signal", unit="₹",
     )
 
     result.update(
@@ -171,7 +186,12 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
         },
         development=best["dev"],
         holdout=best["holdout"],
-        baseline={"development_avg_return_pct": dev_base, "holdout_avg_return_pct": hol_base},
+        baseline={
+            "development_avg_return_pct": dev_base["avg_return_pct"],
+            "holdout_avg_return_pct": hol_base["avg_return_pct"],
+            "development_avg_profit_per_lot_rs": dev_base["avg_profit_per_lot_rs"],
+            "holdout_avg_profit_per_lot_rs": hol_base["avg_profit_per_lot_rs"],
+        },
         holdout_t_stat=t_stat,
         status=status,
         reason=reason,
@@ -196,9 +216,9 @@ def run_pattern_options(symbol: str = "^NSEI") -> dict:
         "configs_tested_total": sum(p.get("configs_tested", 0) for p in patterns),
         "patterns": patterns,
         "method_note": (
-            "Each pattern's option was chosen on 2018-2023 data only; the profit shown as evidence is from "
-            "2024 onward, which played no part in the choice. APPROVED requires that holdout profit to beat "
-            "buying the same option with no signal, with t >= 2. Premiums are real NSE closing prices; bought at "
+            "Each pattern's option was chosen by average rupee profit per lot on 2018-2023 data only; the "
+            "profit shown as evidence is from 2024 onward, which played no part in the choice. APPROVED requires "
+            "that holdout profit per lot to beat buying the same option with no signal, with t >= 2. Premiums are real NSE closing prices; bought at "
             "the close the day after the signal. Rupee figures use today's lot size of "
             f"{LOT_SIZE}."
         ),

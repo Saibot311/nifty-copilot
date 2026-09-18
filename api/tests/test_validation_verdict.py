@@ -51,3 +51,9 @@ def test_t_stat_matches_hand_calculation():
     # mean 2, baseline 0, sample sd 1.1547, n 4 -> t = 2 / (1.1547 / 2) ≈ 3.46
     assert excess_t_stat([1.0, 3.0, 1.0, 3.0], 0.0) == round(2 / (1.1547005383792515 / 2), 2)
     assert excess_t_stat([1.0], 0.0) is None
+
+
+def test_rupee_unit_formats_reasons_in_rupees():
+    status, reason = holdout_verdict(900, 50, 1200, -100, 40, 15, "long", 0.4, unit="₹",
+                                     baseline_label="buying this CE with no signal")
+    assert status == "REJECTED" and "₹900 vs ₹1,200" in reason
