@@ -13,6 +13,9 @@ from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.live_patterns import live_patterns, merge_live
 from backtest.similarity import run_similarity
+from copilot import assistant as copilot
+from copilot.llm_client import LLMError, LLMNotConfigured, config as llm_config
+from copilot.prediction_guard import available as prediction_guard_available
 from briefing import build_briefing, build_recommendation
 from briefing.forward_log import forward_report, record_if_final
 from options.chain_analytics import live_chain_analytics
@@ -38,7 +41,7 @@ PROVIDERS = {
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -421,3 +424,46 @@ def similarity(symbol: str = Query("^NSEI")) -> dict:
         return cached(f"similarity:{symbol}", ttl_seconds=1800, producer=lambda: run_similarity(symbol))
     except Exception as e:
         raise HTTPException(503, f"Similarity failed: {e}")
+
+
+class CopilotQuestion(BaseModel):
+    question: str
+
+
+def _live_or_none() -> dict | None:
+    try:
+        live = cached("live_patterns", ttl_seconds=60, producer=live_patterns)
+        prox = cached("proximity:^NSEI", ttl_seconds=1800, producer=lambda: pattern_proximity("^NSEI"))
+        return {**live, "patterns": merge_live(live, prox, load_research())}
+    except Exception:
+        return None
+
+
+def _copilot_call(fn):
+    try:
+        return fn()
+    except LLMNotConfigured as e:
+        raise HTTPException(503, str(e))
+    except LLMError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/copilot/status")
+def copilot_status() -> dict:
+    cfg = llm_config()
+    return {"configured": cfg["has_key"], "provider": cfg["provider"], "model": cfg["model"],
+            "prediction_guard": prediction_guard_available()}
+
+
+@app.get("/api/copilot/explain")
+def copilot_explain() -> dict:
+    """Phase 12: today's dashboard in plain language. Saved once per trading
+    day. Any number not found in the computed data gets the answer withheld."""
+    return _copilot_call(copilot.explain_today)
+
+
+@app.post("/api/copilot/ask")
+def copilot_ask(body: CopilotQuestion) -> dict:
+    if not body.question.strip():
+        raise HTTPException(400, "Empty question.")
+    return _copilot_call(lambda: copilot.ask(body.question, live=_live_or_none()))

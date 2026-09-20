@@ -1,4 +1,5 @@
 import { BriefingCard } from "@/components/BriefingCard";
+import { CopilotCard } from "@/components/CopilotCard";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
@@ -14,6 +15,7 @@ import { SectionLabel } from "@/components/ui";
 import {
   fetchBriefing,
   fetchCandles,
+  fetchCopilotStatus,
   fetchForwardLog,
   fetchIndicators,
   fetchLivePatterns,
@@ -42,6 +44,7 @@ export default async function Home() {
     patternOptions,
     livePatterns,
     similarity,
+    copilotStatus,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -56,6 +59,7 @@ export default async function Home() {
     fetchPatternOptions(),
     fetchLivePatterns(),
     fetchSimilarity(),
+    fetchCopilotStatus(),
   ]);
 
   const snap = snapshot.data;
@@ -136,6 +140,11 @@ export default async function Home() {
               <section>
                 <SectionLabel>Recommendation</SectionLabel>
                 <RecommendationCard rec={recommendation.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="explains the numbers above; never makes its own">Copilot</SectionLabel>
+                <CopilotCard status={copilotStatus.data} />
               </section>
 
               <section>

@@ -388,3 +388,36 @@ export interface Similarity {
 }
 
 export const fetchSimilarity = () => get<Similarity>("/api/similarity");
+
+export interface CopilotStatus {
+  configured: boolean;
+  provider: string;
+  model: string | null;
+  prediction_guard: boolean;
+}
+
+export interface CopilotAnswer {
+  ok: boolean;
+  answer: string | null;
+  reason?: string;
+  provider: string;
+  model: string;
+  as_of_close: string;
+  cached?: boolean;
+  prediction_check?: { checked: boolean; blocked: boolean; scores: Record<string, number>; reason: string };
+}
+
+export const fetchCopilotStatus = () => get<CopilotStatus>("/api/copilot/status");
+
+/** Browser-side calls: these hit a rate-limited free tier, so only on click. */
+export async function copilotRequest(path: string, question?: string): Promise<{ data?: CopilotAnswer; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, question
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }
+      : { cache: "no-store" });
+    const body = await res.json();
+    return res.ok ? { data: body as CopilotAnswer } : { error: body.detail ?? `HTTP ${res.status}` };
+  } catch {
+    return { error: "Backend not reachable." };
+  }
+}

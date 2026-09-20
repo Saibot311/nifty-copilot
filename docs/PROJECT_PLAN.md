@@ -4,7 +4,39 @@ Living document — the *chronological* record of what was decided and when. For
 system is structured (layers, invariants, the strategy lifecycle, how to extend it), see
 **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
-Current status: **Phases 1-9 done**, plus options integration built out of phase order on request.
+Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
+integration and the pattern → option reframe built out of phase order on request.
+
+**Phase 12 verified live (2026-09-21):** both keys added; copilot works end to end. Two things the
+live run taught us. (1) `gemini-2.5-flash` is closed to new keys — default is now `gemini-3.6-flash`,
+the model Google's own error names. (2) Gemini 3.x are reasoning models: they spend tokens thinking
+before any visible text, so a small `max_tokens` returns an empty message with finish_reason
+"length" and no error status. Budget is now 4000 and the client raises a clear error on empty text.
+Guard tuning against the real model: the first wording blocked "the system recommends a CALL
+because…" at 0.64 — a false positive on the copilot's own job. Rewritten around *whose* claim it is
+(writer's forecast vs reporting a computed verdict), with examples: 9/9 labelled cases now correct,
+kept as scripts/check_prediction_guard.py. Asked directly for a prediction and a buy signal, the
+copilot refuses and reports the verdict instead.
+
+**Copilot gains a forecast guard via TypeSafe Jev (2026-09-21):** the number guard can't catch
+"this looks set to rise" — a prediction with no figures in it. That judgment is semantic, so it
+goes to Jev (TypeSafe's System One model), which returns typed probabilities rather than prose:
+two noul questions asked together — does the text predict the market, does it tell the reader to
+trade — with criteria that explicitly allow *reporting* the system's own verdict. Blocks above 0.3,
+deliberately low because letting a forecast through breaks the product's promise while a withheld
+explanation costs one click. Optional and fails open: no key or a service outage marks the answer
+"forecast check skipped" rather than blocking. ~$0.042/M input tokens, output free.
+
+**Phase 12 built — LLM copilot on a free tier (2026-09-18):** you chose a free hosted API over
+paid Anthropic (~$0.35-19/month depending on model) and a local model (8 GB M2 too small for good
+ones). Provider-agnostic client for any OpenAI-compatible endpoint (Gemini free tier recommended;
+Groq preset too), so switching — including to a paid provider later — is a config change.
+"Explain today" (saved once per trading day) and "Ask". I2 enforced in code, not just the prompt:
+every number in an answer must match the computed data it was given (display rounding allowed),
+else one retry, then the answer is withheld. Guard bugs caught while building: the "30" in "15:30"
+could vouch for an invented ₹3,000 (x100 reading now fractions-only), and 3-decimal values like
+0.452 failed their own check. Free-tier caveat, shown in the UI: questions and market figures sent
+to the provider may be used to improve its models. Verified live on 2026-09-21 (see above).
 
 **Phase 11 done — historical similarity (2026-09-18):** kept to the plan's "3-5 features, hard
 stop": 20-day return, distance from EMA50, RSI(14), 20-day realised vol, distance below the 52-week

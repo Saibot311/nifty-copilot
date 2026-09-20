@@ -5,3 +5,4 @@ yfinance==1.7.0
 numpy==2.5.3
 jugaad-data==0.35.5
 kiteconnect==5.2.2
+requests==2.34.2
