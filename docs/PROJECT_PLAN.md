@@ -7,6 +7,36 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Copilot: how to improve Jev and its pairing with Gemini (2026-09-21, planned not built).**
+Jev cannot be fine-tuned — it is a hosted judgment model. "Training" it here means improving the
+questions, the state it sees, and the thresholds, measured against labelled cases:
+
+1. *Questions and criteria are the biggest lever.* Rewriting one question around whose claim it is
+   moved a false positive from 0.64 to 0.05. Worked examples in the criteria did most of that.
+2. *Grow the labelled set.* `scripts/check_prediction_guard.py` holds 9 cases. Every answer the
+   guard gets wrong in real use should be added, with the right label, and the script re-run after
+   any wording change — the unit tests mock the service, so only this measures the real model.
+3. *Tune the threshold on those cases,* not by taste. 0.3 today, chosen because a missed forecast
+   is worse than a withheld explanation.
+4. *Give it more state.* It currently sees only the answer text. Passing the computed verdict
+   alongside would let it check "is this claim attributed to the system, and does the system
+   actually say that", rather than judging tone alone.
+
+Pairing with Gemini (Gemini writes, Jev judges — each doing what it is built for):
+
+- **Verify claims, not just numbers.** A noul per sentence: "is this supported by DATA?" — the
+  citation-check pattern. Catches unsupported non-numeric claims the current guards miss.
+- **Pick the best of N drafts.** Gemini's free tier makes 2-3 drafts cheap; a Jev *choice* selects
+  the clearest one, or a *score* rates it and anything below the bar is regenerated.
+- **Route questions before answering.** A *choice* over the question ("about today / about a
+  pattern's record / about method / off-topic") decides which slice of context to send — smaller
+  prompts, better answers, and off-topic questions answered without a model call.
+- **Grade the copilot daily.** Score each saved explanation for honesty and clarity; track it over
+  time so prompt changes can be judged instead of guessed at.
+
+All of this is cheap (~$0.042/M input tokens, output free) and none of it may put model output into
+the decision path: Jev gates or selects text, never produces a number the dashboard shows.
+
 **Phase 12 verified live (2026-09-21):** both keys added; copilot works end to end. Two things the
 live run taught us. (1) `gemini-2.5-flash` is closed to new keys — default is now `gemini-3.6-flash`,
 the model Google's own error names. (2) Gemini 3.x are reasoning models: they spend tokens thinking
