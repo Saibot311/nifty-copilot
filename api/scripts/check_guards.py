@@ -234,7 +234,10 @@ def check_routes() -> int:
         labelled.append((expected == "off_topic", off))
         ok = r["route"] == expected
         wrong += not ok
-        print(f"{'ok ' if ok else 'WRONG'}  {r['route']:15} expected {expected:15} {question[:40]:42} {r['probabilities']}")
+        # scope is the route only when the model is sure enough to narrow
+        # the context on it; "full" means everything is sent.
+        print(f"{'ok ' if ok else 'WRONG'}  {r['route']:15} scope={r['scope'] or 'full':15} "
+              f"expected {expected:15} {question[:38]:40} {r['probabilities']}")
     print(f"\n{len(ROUTE_CASES) - wrong}/{len(ROUTE_CASES)} as expected")
     _sweep("off_topic", labelled, OFF_TOPIC_ABOVE)
     return wrong

@@ -22,7 +22,7 @@ test now, and it needs calendar time.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 26 checks, 162 tests — run before and after changes
+./scripts/check_all.sh          # 26 checks, 176 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ```
 
@@ -93,6 +93,10 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
   writer advising, and a sentence about what formed presupposed patterns the data says
   did not form. Real flagged answers make better labelled cases than invented ones —
   `/api/copilot/record` lists them.
+- **An answer can be wrong with every number right.** Asked which pattern had the
+  best option record, the copilot named one that lost ₹1,170 per lot — the three
+  better ones had not formed that day, so they were not in its context at all. Check
+  what the context *contains* before blaming the model.
 - **When a guard misfires, fix the question, not the threshold.** Two false alarms
   went from 0.32 and 0.31 to 0.15 and 0.07 on one added criterion; moving the
   threshold would have hidden them and blinded the guard elsewhere.
@@ -109,10 +113,9 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
    new hypothesis family that raises the Bonferroni bar for the daily patterns, and it
    can only be measured in index points, never in option money. Decide that trade-off
    before starting.
-4. **Copilot: slice context per route.** `router.py` already classifies every
-   question and records the route; acting on it (sending only the relevant part of
-   the digest) needs its own labelled cases, because a narrower context also
-   narrows what the answer is allowed to mention.
+4. **Copilot: nothing outstanding.** Guards, grades, the answer log and route-scoped
+   context are all built. The next useful thing is real usage: `/api/copilot/record`
+   lists every withheld answer, and each is a candidate case for `check_guards.py`.
 
 ## Ground rules that must not slip
 

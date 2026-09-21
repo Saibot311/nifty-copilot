@@ -7,6 +7,33 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Copilot: the context follows the question (2026-09-21).** Route-scoped context, the last
+unbuilt item — and it turned out not to be the token-saving exercise it was written up as.
+
+The default digest carries the patterns that formed on the last close plus those near firing. Asked
+"which pattern has the best option record?", the copilot answered from those four and named
+Stochastic Oversold Reversal, which **lost ₹1,170 per lot**. The three best records — Bollinger
+Upper Rejection at +₹9,266, Bollinger Band Reversion at +₹3,667, RSI Overbought Reversal at +₹915 —
+were not formed that day, so they were not in the context at all. Every figure in that answer was
+real and checked. The answer was still wrong, and no guard could have caught it: the guards verify
+what an answer says against the context, and the context was the thing at fault.
+
+`build_context(scope=...)` now serves three views. `today` is the dashboard as it stands and is what
+the daily explanation still gets, unchanged. `pattern_record` carries all 26 researched patterns
+ranked by measured record, with unmeasured ones kept and marked — "not measured" is a different
+answer from "did badly" — and skips the analog search entirely, so it is also faster. `method`
+carries the system's own rules and the analog test's verdict, and drops the pattern lists and live
+data. The rules themselves are now written down in `HOW_IT_DECIDES`, including what development and
+holdout mean, after the copilot honestly answered "the word holdout is not explicitly in the data".
+
+The scope is applied only when the router is sure (>0.7 on the chosen route); below that, and on any
+router outage, the full context goes, which is what happened before routing existed. A wrong slice
+removes the very facts an answer needs, so uncertainty has to fall back, not guess.
+
+Re-asked afterwards, the copilot named Bollinger Upper Rejection, explained that its t of 1.48 still
+leaves it REJECTED against a bar of 2.79, said no pattern is APPROVED, and listed both CONDITIONAL
+ones. Graded 1.93 honest, 1.47 clear.
+
 **Copilot: grades, drafts and a record (2026-09-21).** The rest of the planned Jev/Gemini pairing,
 built. The theme is the same one the whole project runs on — measure it rather than assert it.
 

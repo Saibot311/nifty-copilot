@@ -3,7 +3,8 @@ explains; it never produces a number (I2).
 
 Guards, cheapest first:
   router.py   before anything, on a user question: refuse what this
-              dashboard has no data for, without calling the model
+              dashboard has no data for without calling the model, and
+              choose which view of the system the answer is built from
   guard.py    local, deterministic — every number must be in DATA
   review.py   one Jev call — no forecast, no trade advice, every sentence
               backed by DATA, and two grades that never block
@@ -176,6 +177,8 @@ def ask(question: str, symbol: str = "^NSEI", live: dict | None = None) -> dict:
         _log(result, kind="ask", question=question, route="off_topic", as_of=None,
              bad_numbers=[], review={}, outcome="declined")
         return result
-    data = build_context(symbol, live=live)
+    # The route decides which view of the system the answer is built from;
+    # an unsure classification means scope is None and everything is sent.
+    data = build_context(symbol, live=live, scope=routed.get("scope"))
     return {**_answer(question, data, kind="ask", route=routed.get("route")),
             "as_of_close": data["as_of_close"], "route": routed}

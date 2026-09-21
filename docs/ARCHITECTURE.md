@@ -193,9 +193,10 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `copilot/prediction_guard.py` | The two forecast/advice questions and their threshold | Raising `BLOCK_ABOVE` to fix a wording problem — fix the criteria instead |
 | `copilot/claim_guard.py` | One choice question per sentence: does the data support it? | Judging a whole block as one claim — a false sentence averages out |
 | `copilot/review.py` | Both guards in one Jev call over shared state | Splitting them into two calls; they judge the same evidence |
+| `copilot/context.py` | The digest the copilot may talk about, in three route-scoped views | Adding a view that drops a fact its questions need |
 | `copilot/grading.py` | Two 0-2 scores on every answer: honesty about weak evidence, and clarity | Letting a grade block an answer — only the guards block |
 | `storage/copilot_log_db.py` | Every answer and what the guards made of it | Treating it as evidence; it holds the user's own questions and may be deleted |
-| `copilot/router.py` | Classifies a question before the model is called; refuses off-topic ones in code | Slicing context per route without labelled cases first |
+| `copilot/router.py` | Classifies a question before the model is called: refuses off-topic ones in code, picks the context scope | Narrowing the context on an unsure classification — it falls back to everything |
 | `copilot/context.py` · `assistant.py` | Compact digest of computed results → explain/ask | Computing anything new |
 | `backtest/similarity.py` | Phase 11: 5-feature nearest-neighbour analogs + walk-forward test | More features without evidence they help |
 | `backtest/live_patterns.py` | Phase 10: today's candle from 15-min closes → which patterns would form now | Anything final before 15:30 |

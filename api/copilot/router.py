@@ -6,10 +6,15 @@ is not a general chatbot, and a question it has no data for should be turned
 down by code rather than answered by a model that will improvise. That
 refusal costs no Gemini call and cannot invent anything.
 
-The other three routes are recorded but not yet acted on. Sending only the
-relevant slice of context is the obvious next step — it shrinks the prompt
-and narrows what the guards have to police — but it also narrows what the
-answer is allowed to mention, so it needs its own labelled cases first.
+The other three routes choose which slice of the system's state the answer
+is built from (see context.py). That is not a saving; it is what makes some
+answers possible at all. Asked which pattern had the best option record, the
+copilot could only see the handful near firing that day, and named one that
+lost money. The pattern_record slice carries all 26.
+
+Because a wrong slice removes the very facts an answer needs, the scope is
+only applied when the classification is clear. Below that the full context
+goes, which is what happened before routing existed.
 
 Fails open: no key or a service outage routes everything to the model, which
 is the behaviour we had before routing existed.
@@ -52,6 +57,10 @@ QUESTION = {
 # this it goes to the model, where the guards still apply.
 OFF_TOPIC_ABOVE = 0.7
 
+# And the context is only narrowed when the classification is clear, for the
+# same reason in reverse: an unsure guess would drop the facts needed.
+SLICE_ABOVE = 0.7
+
 DECLINE = (
     "This copilot only explains what this dashboard computed — today's verdict, the patterns and their measured "
     "records, and how those judgments are made. It has no data on anything else, so it won't guess."
@@ -59,16 +68,22 @@ DECLINE = (
 
 
 def route(question: str) -> dict:
-    """{route, off_topic, probabilities, checked}. Never raises."""
+    """{route, scope, off_topic, probabilities, checked}. Never raises.
+
+    `scope` is the route only when the model is sure enough to narrow the
+    context on it; otherwise None, meaning send everything."""
     try:
         answers = jev.ask({"question": question}, QUESTION)
     except jev.JevUnavailable as e:
-        return {"checked": False, "route": None, "off_topic": False, "probabilities": {}, "reason": str(e)}
+        return {"checked": False, "route": None, "scope": None, "off_topic": False,
+                "probabilities": {}, "reason": str(e)}
     a = answers.get("route", {})
     probs = jev.probabilities(a)
+    chosen = a.get("choice")
     return {
         "checked": True,
-        "route": a.get("choice"),
+        "route": chosen,
+        "scope": chosen if probs.get(chosen, 0.0) > SLICE_ABOVE else None,
         "off_topic": probs.get("off_topic", 0.0) > OFF_TOPIC_ABOVE,
         "probabilities": {k: round(v, 3) for k, v in probs.items()},
         "confidence": a.get("confidence"),
