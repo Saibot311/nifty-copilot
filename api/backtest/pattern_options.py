@@ -36,7 +36,7 @@ from .hypothesis_log import log_run
 from .options_engine import run_options_backtest
 from .pattern_info import PATTERN_INFO
 from .strategies import STRATEGY_REGISTRY, load_daily_data
-from .walkforward import excess_t_stat, holdout_verdict
+from .walkforward import holdout_verdict, welch_t_stat
 
 MONEYNESS_PCT = [-2.0, -1.0, 0.0, 1.0, 2.0]  # negative = ITM, positive = OTM
 MIN_DTE = [7, 14, 30]
@@ -76,7 +76,7 @@ def _non_overlapping(fire_idx: list[int], hold: int) -> list[int]:
     for i in fire_idx:
         if i >= next_ok:
             out.append(i)
-            next_ok = i + hold + 1  # position opens at i+1, closes at i+1+hold (same as the index engine)
+            next_ok = i + hold + 1  # bought at the close of i+1, sold at the close of i+1+hold
     return out
 
 
@@ -117,15 +117,35 @@ def _rupees(t) -> float:
     return t.entry_premium * t.net_return_pct / 100 * LOT_SIZE
 
 
+def _dev(trades) -> list:
+    """Development trades are the ones that *finish* before the split.
+
+    Splitting on entry date let a trade entered in late December and exited
+    in January count toward the choice of option — priced with holdout-period
+    data, so the holdout helped pick the thing it was meant to judge. Trades
+    that straddle the split are purged from both sides.
+    """
+    return [t for t in trades if t.exit_date < SPLIT_DATE]
+
+
+def _holdout(trades) -> list:
+    return [t for t in trades if t.entry_date >= SPLIT_DATE]
+
+
 def _baseline(ctx, period_dates: list[str], option_type, m, dte, hold) -> dict:
-    """Buying the same option on a fixed schedule with no signal at all."""
+    """Buying the same option on a fixed schedule with no signal at all.
+    Keeps the trades: the significance test needs the baseline's spread,
+    not just its mean."""
     dates = period_dates[:: hold + 1]
     trades = _run(dates, ctx, option_type, m, dte, hold)
+    trades = _dev(trades) if period_dates and period_dates[0] < SPLIT_DATE else _holdout(trades)
     if not trades:
-        return {"avg_return_pct": 0.0, "avg_profit_per_lot_rs": 0}
+        return {"avg_return_pct": 0.0, "avg_profit_per_lot_rs": 0, "rupees": []}
+    rupees = [_rupees(t) for t in trades]
     return {
         "avg_return_pct": round(statistics.mean(t.net_return_pct for t in trades), 2),
-        "avg_profit_per_lot_rs": round(statistics.mean(_rupees(t) for t in trades)),
+        "avg_profit_per_lot_rs": round(statistics.mean(rupees)),
+        "rupees": rupees,
     }
 
 
@@ -153,8 +173,7 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
         for dte in MIN_DTE:
             for m in MONEYNESS_PCT:
                 trades = _run(dates, ctx, option_type, m, dte, hold)
-                dev = [t for t in trades if t.entry_date < SPLIT_DATE]
-                hol = [t for t in trades if t.entry_date >= SPLIT_DATE]
+                dev, hol = _dev(trades), _holdout(trades)
                 dev_sum = _summarise(dev)
                 log_run(f"{name}_option", {"moneyness_pct": m, "min_dte": dte, "hold_days": hold},
                         "^NSEI", 0, {"num_trades": dev_sum["num_trades"], "expectancy_pct": dev_sum.get("avg_return_pct")})
@@ -176,7 +195,7 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
     hol_base = _baseline(ctx, hol_days, option_type, m, dte, hold)
 
     hol_rs = [_rupees(t) for t in best["_holdout_trades"]]
-    t_stat = excess_t_stat(hol_rs, hol_base["avg_profit_per_lot_rs"])
+    t_stat = welch_t_stat(hol_rs, hol_base["rupees"])
     status, reason = holdout_verdict(
         best["dev"]["avg_profit_per_lot_rs"], best["holdout"].get("avg_profit_per_lot_rs") or 0,
         dev_base["avg_profit_per_lot_rs"], hol_base["avg_profit_per_lot_rs"],

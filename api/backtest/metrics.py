@@ -45,7 +45,10 @@ def compute_metrics(trades: list[Trade]) -> dict:
     else:
         profit_factor = float("inf") if gross_profit > 0 else 0.0
 
-    equity_curve = np.cumprod(1 + returns / 100)
+    # Starts at 1.0, the capital before the first trade. Starting at the
+    # first trade's result instead hid any drawdown the opening trades made
+    # from the starting balance.
+    equity_curve = np.concatenate([[1.0], np.cumprod(1 + returns / 100)])
     running_max = np.maximum.accumulate(equity_curve)
     drawdown = (equity_curve - running_max) / running_max
     max_drawdown_pct = float(drawdown.min() * 100)

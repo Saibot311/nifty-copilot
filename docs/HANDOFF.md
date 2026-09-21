@@ -15,16 +15,25 @@ manufacture a signal — most days it says NO TRADE, and that is the product wor
 deployment) after.
 
 **The honest result so far: nothing has a proven edge.** 26 patterns, each judged
-once on 2024–26 option data it never saw: **0 approved, 2 conditional, 24 rejected.**
-Two apparent edges turned out to be bugs (see Traps). The forward log is the real
-test now, and it needs calendar time.
+once on 2024–26 option data it never saw: **0 approved, 0 conditional, 26 rejected.**
+Four apparent edges have now turned out to be bugs — two in earlier phases, and the
+two CONDITIONAL verdicts, which the deep audit traced to a verdict ladder that
+skipped the significance test for small samples. The forward log is the real test
+now, and it needs calendar time.
+
+**A deep audit of Phases 0–12 was run on 2026-09-21** — read `docs/AUDIT.md`. It
+found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 27 checks, 189 tests — run before and after changes
+./scripts/check_all.sh          # 28 checks, 230 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
+./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
+
+Run `--deep` after any change to data ingestion, indicators, the engines or the
+statistics — that is where every bug the audit found was hiding.
 
 The copilot's three Jev-backed guards are judged by a real model, so they have
 their own harness — it costs tokens and is not in `check_all.sh`. Re-run it after
@@ -40,7 +49,8 @@ session idles; just start them again. First page load after a restart takes ~15-
 because every cache is cold.
 
 **Daily:** a LaunchAgent runs `api/scripts/daily_job.py` at 19:30 on weekdays (forward
-log, archive top-ups, option research). Verified running unattended. Logs:
+log backup, forward log, bar top-ups, option top-ups plus any gap since 2018, option
+research). Verified running unattended. Logs:
 `api/data/daily_job.log`. Remove with `./scripts/install_daily_job.sh --remove`.
 
 **Zerodha login expires every day at ~6 AM IST.** Without it, 15-minute bars and live
@@ -67,7 +77,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/strategy_status.db` | Validation verdict history | `scripts/validate_all.py --all` |
 | `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
 | `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
-| **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt — back it up** |
+| **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt** — backed up nightly to `api/data/backups/` (30 kept). Set `BACKUP_DIR` in `api/.env` to a synced folder so a lost disk doesn't take it too. |
 
 ## Traps that already cost real time
 
@@ -103,6 +113,22 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 - **When a guard misfires, fix the question, not the threshold.** Two false alarms
   went from 0.32 and 0.31 to 0.15 and 0.07 on one added criterion; moving the
   threshold would have hidden them and blinded the guard elsewhere.
+- **`rolling().std()` is the sample standard deviation.** Bollinger's definition is
+  the population one (`ddof=0`). The difference moved 76 signals and turned the
+  system's best-looking record, +₹9,266/lot, into +₹794.
+- **Split development and holdout on exit date, not entry date.** A trade entered in
+  December and closed in January is priced with holdout data.
+- **A missing file is not a holiday.** The options backfill recorded "no bhavcopy" as
+  done, so a day fetched before its file was published was skipped forever — the
+  archive went two sessions stale unnoticed. Ask the index archive whether a session
+  happened.
+- **Order matters in a verdict ladder.** A sample-size check that returns before the
+  significance test hands small samples a better label than large ones.
+- **A test can pin a bug in place.** One asserted that a thin holdout with no t-stat
+  at all should be CONDITIONAL. Read what a failing test is protecting before
+  "fixing" the code to satisfy it.
+- **The normal distribution is not Student's t at n = 11.** The Bonferroni bar was
+  2.79 where it should have been 3.55.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps
@@ -124,6 +150,10 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
    Gemini 1.79 / 1.53.
 5. **Feed the guards real cases.** `/api/copilot/record` lists every withheld answer;
    each is a candidate case for `check_guards.py`.
+6. **The audit's recommendations** — `docs/AUDIT.md`, ranked. Top three: replicate every
+   pattern on BANKNIFTY options (doubles the trades behind each verdict with no new
+   hypotheses), run the fast audit nightly with an alert, and store every trade with each
+   research run. The binding constraint is sample size, not a shortage of indicators.
 
 ## Ground rules that must not slip
 

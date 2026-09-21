@@ -128,8 +128,15 @@ def run_options_backtest(
     strike_offset_pct: float | None = None,
 ) -> list[OptionTrade]:
     """For each signal date, buy one option and hold it `hold_days` trading
-    days. Entry executes on the bar AFTER the signal — same no-lookahead
-    rule as the index engine.
+    days. Entry is at the *close* of the session after the signal: the
+    archive is end-of-day, and a close is the one option price it records
+    reliably. That is one session later than the index engine's next-open
+    entry — never earlier, so never lookahead — and the research states it.
+
+    A trade that cannot run its full hold before the data ends is dropped.
+    It used to be closed early and counted as complete, which would have put
+    a 2-day result into a 10-day statistic for the newest signals — the
+    holdout runs to today, so exactly the trades that decide verdicts.
 
     `strike_offset_pct`, if given, overrides `strike_offset_pts` with a
     per-trade offset of that % of spot, so "1% OTM" means the same thing in
@@ -146,10 +153,10 @@ def run_options_backtest(
                 continue
 
             entry_date = trading_days[i + 1]
-            exit_idx = min(i + 1 + hold_days, len(trading_days) - 1)
+            exit_idx = i + 1 + hold_days
+            if exit_idx >= len(trading_days):
+                continue  # cannot complete its hold yet
             exit_date = trading_days[exit_idx]
-            if exit_date == entry_date:
-                continue
 
             spot = spot_series.get(entry_date)
             if spot is None or pd.isna(spot):

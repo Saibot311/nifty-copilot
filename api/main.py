@@ -30,6 +30,12 @@ from quant import build_analysis
 
 app = FastAPI(title="NIFTY Copilot API")
 
+# Only NIFTY 50 is researched. Every endpoint that takes a symbol is limited
+# to it, so malformed input is refused up front (422) instead of being passed
+# to Yahoo and failing as a 503 — or quietly fetching some other market.
+SUPPORTED_SYMBOL = "^NSEI"
+SymbolQuery = Query(SUPPORTED_SYMBOL, pattern=r"^\^NSEI$")
+
 SAMPLE_CSV = Path(__file__).parent / "market_data" / "sample_data" / "nifty_synthetic_15m.csv"
 
 PROVIDERS = {
@@ -149,7 +155,7 @@ def get_indicators() -> list[Indicator]:
 @app.get("/api/candles")
 def get_candles(
     provider: str = Query("yfinance", description="csv | yfinance | zerodha | archive"),
-    symbol: str = Query("^NSEI"),
+    symbol: str = SymbolQuery,
     timeframe: str = Query("1d", description="1d | 1h | 15m | 5m (csv provider ignores this)"),
     days: int = Query(30, ge=1, le=3650),
 ) -> dict:
@@ -179,7 +185,7 @@ def get_candles(
 
 @app.get("/api/research/compare")
 def research_compare(
-    symbol: str = Query("^NSEI"),
+    symbol: str = SymbolQuery,
     days: int = Query(7000, ge=100, le=10000),
     hold_days: int = Query(10, ge=1, le=60),
 ) -> dict:
@@ -196,7 +202,7 @@ def research_compare(
 @app.get("/api/validation/{strategy_name}")
 def validate_strategy(
     strategy_name: str,
-    symbol: str = Query("^NSEI"),
+    symbol: str = SymbolQuery,
     days: int = Query(7000, ge=100, le=10000),
     hold_days: int = Query(10, ge=1, le=60),
     n_folds: int = Query(5, ge=2, le=10),
@@ -255,7 +261,7 @@ def strategy_history_endpoint(strategy_name: str, limit: int = Query(50, ge=1, l
 
 @app.get("/api/briefing")
 def research_briefing(
-    symbol: str = Query("^NSEI"),
+    symbol: str = SymbolQuery,
     include_live_chain: bool = Query(True),
 ) -> dict:
     """Everything the system knows, assembled: market state, indicator
@@ -306,7 +312,7 @@ def live_quote() -> dict:
 
 
 @app.get("/api/recommendation")
-def recommendation(symbol: str = Query("^NSEI")) -> dict:
+def recommendation(symbol: str = SymbolQuery) -> dict:
     """Today's call, put, or no-trade verdict across every tested strategy
     in both directions. Will say NO_TRADE unless a signal clears a real
     expectancy and sample-size bar — that is the intended behaviour."""
@@ -331,7 +337,7 @@ def _build_and_log_recommendation(symbol: str) -> dict:
 
 
 @app.get("/api/forward_log")
-def forward_log(symbol: str = Query("^NSEI")) -> dict:
+def forward_log(symbol: str = SymbolQuery) -> dict:
     """Every recommendation recorded before its outcome existed, scored
     against what the index actually did next."""
     try:
@@ -400,7 +406,7 @@ def patterns_options() -> dict:
 
 
 @app.get("/api/patterns/today")
-def patterns_today(symbol: str = Query("^NSEI")) -> dict:
+def patterns_today(symbol: str = SymbolQuery) -> dict:
     """Patterns that formed on the last close or could form on the next one,
     each with the option it points to and that option's track record."""
     try:
@@ -419,7 +425,7 @@ def patterns_today(symbol: str = Query("^NSEI")) -> dict:
 
 
 @app.get("/api/live/patterns")
-def live_patterns_endpoint(symbol: str = Query("^NSEI")) -> dict:
+def live_patterns_endpoint(symbol: str = SymbolQuery) -> dict:
     """Phase 10: during market hours, which patterns would form if today
     closed at the current level — provisional until 15:30."""
     try:
@@ -431,7 +437,7 @@ def live_patterns_endpoint(symbol: str = Query("^NSEI")) -> dict:
 
 
 @app.get("/api/similarity")
-def similarity(symbol: str = Query("^NSEI")) -> dict:
+def similarity(symbol: str = SymbolQuery) -> dict:
     """Phase 11: past days most like today and what followed, next to the
     base rate and a walk-forward test of whether analogs predict anything."""
     try:

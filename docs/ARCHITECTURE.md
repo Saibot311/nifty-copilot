@@ -19,7 +19,7 @@ worth trusting at all. A change that breaks one of these is a bug even if every 
 | **I2** | **Every number shown is computed by deterministic Python.** No LLM ever produces a statistic. If it isn't computed, the UI says "not available" — it does not guess. | Whole `quant/` + `backtest/` stack; `lib/api.ts` has no mock fallbacks; `copilot/composer.py` writes the daily explanation in Python, so it cannot invent one at all; `copilot/guard.py` withholds any LLM answer containing a number not in the computed data; `copilot/review.py` withholds forecasts, trade instructions and any sentence the computed data does not support |
 | **I3** | **Costs are always applied.** Gross return is never presented as a result. Index and options have separate, realistic cost models. | `backtest/costs.py`, `backtest/options_engine.py`; locked by `tests/test_costs.py` |
 | **I4** | **Nothing is "validated" from a single split, or from drift.** A strategy must survive walk-forward folds *and* an untouched holdout, and in both periods beat simply being in the market in the same direction (same mechanics, same costs), with the holdout edge at t ≥ 2. | `backtest/walkforward.py` (`holdout_verdict`); locked by `tests/test_validation_verdict.py` |
-| **I5** | **The bar rises with the number of hypotheses tested.** 26 patterns each get one holdout test, so one clearing t = 2 by luck is likely. A trade needs t above the Bonferroni line for that count (≈2.8–2.9), not just 2. | `stats/multiple_comparisons.py` (`required_t`), `briefing/recommendation.py`; `backtest/hypothesis_log.py` keeps the full audit trail |
+| **I5** | **The bar rises with the number of hypotheses tested — and with how few trades a result rests on.** 26 patterns each get one holdout test, so one clearing t = 2 by luck is likely. A trade needs t above the Bonferroni line for that count, computed from Student's t at the pattern's own degrees of freedom (2.79 in the large-sample limit, 3.55 on 11 trades). The t itself is Welch's, because the no-signal baseline is a sample too. | `stats/multiple_comparisons.py` (`required_t`), `stats/student_t.py`, `backtest/walkforward.py` (`significance_bar`, `welch_t_stat`), `briefing/recommendation.py`; `backtest/hypothesis_log.py` keeps the full audit trail |
 
 **And one product rule:** this is a decision-support tool, not a trading system. There is no
 broker execution path, and there never will be. The user makes every decision.
@@ -182,7 +182,8 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `backtest/research.py` | Rank all strategies vs. baseline | Validation verdicts |
 | `backtest/walkforward.py` | Folds, holdout, final verdict | Live recommendations |
 | `backtest/hypothesis_log.py` | Append-only audit trail (JSON Lines, OS file lock) | Rewriting the file — only ever append |
-| `stats/multiple_comparisons.py` | Scaled evidence bar | Strategy logic |
+| `stats/multiple_comparisons.py` | Scaled evidence bar, at each result's degrees of freedom | Strategy logic |
+| `stats/student_t.py` | Student's t CDF and inverse, no scipy; checked against printed tables | Approximations — it is exact to table precision |
 | `backtest/pattern_info.py` | What each pattern checks and the idea behind it | Evidence — the numbers are elsewhere |
 | `backtest/pattern_options.py` | Pattern → option choice on dev data → profit on holdout | Picking the option on holdout data |
 | `backtest/pattern_proximity.py` | Formed today / could form next close, trigger levels (bisected to ~1 pt), base rate | Forecasts — it's a base rate |
@@ -207,6 +208,8 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `briefing/recommendation.py` | The gate → CALL/PUT/NO_TRADE | New statistics |
 | `briefing/forward_log.py` | Record each final-bar verdict; score it from the next open | Backfilling — ever |
 | `storage/forward_log_db.py` | Write-once-per-date recommendation log | Outcomes (computed on read) |
+| `storage/backup.py` | Verified, rotating backups of the forward log (SQLite online backup API) | A plain file copy — it can be torn mid-write |
+| `audit/` | Phase-by-phase deep audit on real data, with independent reference implementations; `scripts/audit.py`, `check_all.sh --deep` | Mocks and fixtures — that is what `tests/` is for |
 | `web/src/components/ui.tsx` | Shared primitives (Panel, Pill, Stat…) | Feature components |
 | `web/src/lib/api.ts` | Typed fetches. **No mock fallbacks (I2).** | Computation |
 

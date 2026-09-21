@@ -61,7 +61,7 @@ def _record_sentence(name: str, rec: dict | None) -> str:
         # The weakness is stated every time. A reader who skims must still
         # come away knowing this is not evidence of anything.
         s += (f", with a t-statistic of {_num(t)}"
-              + (", which is under 2 and so cannot be told apart from luck" if abs(float(t)) < 2 else ""))
+              + (", which is well under 2 and so cannot be told apart from luck" if abs(float(t)) < 2 else ""))
     return s + f". The system marks it {verdict}."
 
 
@@ -129,9 +129,9 @@ def compose(ctx: dict) -> str:
     bar = rec.get("bar") or {}
     if bar.get("min_t") is not None and bar.get("patterns_judged"):
         opening.append(
-            f"With {bar['patterns_judged']} patterns judged, a result now has to clear a t-statistic of "
-            f"{_num(bar['min_t'])} to count as an edge, because testing many patterns makes one look good "
-            "by chance.")
+            f"With {bar['patterns_judged']} patterns judged, a result now has to clear a t-statistic of at "
+            f"least {_num(bar['min_t'])} to count as an edge, more when it rests on few trades, because "
+            "testing many patterns makes one look good by chance.")
 
     paragraphs = [
         " ".join(opening),

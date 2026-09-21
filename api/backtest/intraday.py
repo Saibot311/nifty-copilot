@@ -36,7 +36,7 @@ import pandas as pd
 
 from backtest.pattern_options import SPLIT_DATE
 from backtest.strategies import STRATEGY_REGISTRY, load_daily_data
-from market_data.bar_archive import DB_PATH
+from market_data.bar_archive import DB_PATH, clamp_to_daily
 
 # Bar start times, and the entry each one stands for. "open" is what the
 # backtester assumes today; the rest are what a person who sees the signal
@@ -71,11 +71,12 @@ def _t_stat(values: list[float]) -> float | None:
 
 
 def load_intraday(symbol: str = "^NSEI", db_path: Path | None = None) -> dict[str, dict[str, dict]]:
-    """{date: {HH:MM: bar}} — only complete 25-bar sessions.
+    """{date: {HH:MM: bar}} — only complete 25-bar sessions, bad ticks clamped.
 
     Short sessions (10 of them, from exchange outages and half-days) are
     dropped rather than padded: a study of *when* the market moves cannot
-    average over days whose clock was different.
+    average over days whose clock was different. Bars reaching beyond the
+    day's official high or low are clamped to it (see clamp_to_daily).
     """
     conn = sqlite3.connect(db_path or DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -84,12 +85,18 @@ def load_intraday(symbol: str = "^NSEI", db_path: Path | None = None) -> dict[st
             "SELECT ts, open, high, low, close FROM index_bars "
             "WHERE symbol=? AND interval='15m' ORDER BY ts", (symbol,)
         ).fetchall()
+        daily = {r["ts"][:10]: (r["high"], r["low"]) for r in conn.execute(
+            "SELECT ts, high, low FROM index_bars WHERE symbol=? AND interval='1d'", (symbol,))}
     finally:
         conn.close()
 
     days: dict[str, dict[str, dict]] = defaultdict(dict)
     for r in rows:
-        days[r["ts"][:10]][r["ts"][11:16]] = dict(r)
+        bar = dict(r)
+        d = r["ts"][:10]
+        if d in daily:
+            bar["high"], bar["low"] = clamp_to_daily(bar["high"], bar["low"], bar["open"], bar["close"], *daily[d])
+        days[d][r["ts"][11:16]] = bar
     full = max((len(v) for v in days.values()), default=0)
     return {d: bars for d, bars in days.items() if len(bars) == full}
 

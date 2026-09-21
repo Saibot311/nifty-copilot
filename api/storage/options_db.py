@@ -72,9 +72,18 @@ def is_day_ingested(trade_date: str, db_path: Path | None = None) -> bool:
         return row is not None
 
 
-def save_day(trade_date: str, bars: list[OptionBar], db_path: Path | None = None) -> int:
-    """Stores a day's bars and marks the day ingested. A day with zero bars
-    (holiday/weekend) is still marked, so backfill doesn't retry it forever."""
+def save_day(trade_date: str, bars: list[OptionBar], db_path: Path | None = None,
+             confirmed_holiday: bool = False) -> int:
+    """Stores a day's bars and marks the day ingested.
+
+    An empty day is only marked when the caller confirms there was no
+    session. "No bhavcopy" means holiday, not-published-yet or a failed
+    download, and this function cannot tell them apart. Marking all three
+    as done made 2026-09-15 — an ordinary Tuesday, fetched at 13:38 IST
+    before that day's file existed — permanently skipped.
+    """
+    if not bars and not confirmed_holiday:
+        return 0
     with connect(db_path) as conn:
         if bars:
             conn.executemany(

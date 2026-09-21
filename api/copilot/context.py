@@ -41,8 +41,10 @@ DEFAULT_SECTIONS = SCOPES["today"]
 HOW_IT_DECIDES = {
     "verdicts": {
         "APPROVED": "Beat a direction-matched baseline on data it never saw, by more than the evidence bar.",
-        "CONDITIONAL": "Made money on unseen data but not by enough to rule out luck.",
-        "REJECTED": "No proven edge.",
+        "CONDITIONAL": "Beat the baseline on unseen data by more than luck would explain, but on too few "
+                       "trades to trust yet.",
+        "REJECTED": "No proven edge: lost money, did no better than the baseline, or did better by an "
+                    "amount luck could explain.",
     },
     "development_and_holdout": "Every pattern's option setup is chosen on data up to the end of 2023 (the "
                                "development period) and then judged once on 2024 onward (the holdout), which it "
@@ -50,10 +52,13 @@ HOW_IT_DECIDES = {
                                "themselves.",
     "direction_matched_baseline": "A result is compared against buying the same kind of option on days with no "
                                   "signal at all, so a rising market does not get mistaken for a working pattern.",
-    "execution_rule": "A signal on today's close is entered at the next session's open, never the same close.",
+    "execution_rule": "A signal on today's close is never acted on at that same close. Index results enter at "
+                      "the next session's open; option results enter at the next session's close, because the "
+                      "option archive records one reliable price a day.",
     "evidence_bar": "The t-statistic a result must clear, raised as more patterns are tested so that "
                     "testing many does not make one look good by chance.",
-    "t_stat": "How far a result is from what luck would produce. Under 2 is indistinguishable from luck.",
+    "t_stat": "How far a result is from what luck would produce. The bar is about 2 for a large sample and "
+              "higher for a small one, because a few trades can look good by chance.",
     "provisional": "The day has not closed yet, so the figure can still change.",
     "what_it_will_not_do": "It does not predict prices and does not tell you to trade.",
 }

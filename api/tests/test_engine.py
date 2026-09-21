@@ -99,3 +99,22 @@ def test_costs_reduce_net_return_relative_to_gross():
     # cosmetic display quirk, not a financial error (the underlying
     # unrounded net always equals gross - cost exactly).
     assert t.net_return_pct == pytest.approx(t.gross_return_pct - t.cost_pct, abs=0.002)
+
+
+def test_an_n_day_hold_is_n_sessions_in_the_market():
+    # Found by the audit: this engine exited one session after the forward
+    # log and the intraday studies, so "10-day hold" meant two trades.
+    df = _synthetic_df(n=30)
+    entries = pd.Series(False, index=df.index)
+    entries.iloc[5] = True
+    t = run_backtest(df, entries, pd.Series("N/A", index=df.index), hold_days=3)[0]
+    assert t.entry_date == str(df.index[6].date()) and t.exit_date == str(df.index[8].date())
+    assert t.holding_days == 3
+
+
+def test_a_trade_that_cannot_complete_its_hold_is_not_counted():
+    # It used to be closed at the last bar and reported as a finished trade.
+    df = _synthetic_df(n=12)
+    entries = pd.Series(False, index=df.index)
+    entries.iloc[8] = True  # enters bar 9; a 5-session hold would need bar 13
+    assert run_backtest(df, entries, pd.Series("N/A", index=df.index), hold_days=5) == []

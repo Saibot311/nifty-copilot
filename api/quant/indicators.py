@@ -52,8 +52,13 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 def bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
+    """Bollinger's definition uses the population standard deviation (divide
+    by n), as do TA-Lib and TradingView. pandas' rolling().std() defaults to
+    the sample one (divide by n-1), which made every band about 2.6% wider
+    than the published indicator and changed 76 signals across the two
+    patterns built on it."""
     mid = sma(series, window)
-    std = series.rolling(window).std()
+    std = series.rolling(window).std(ddof=0)
     return pd.DataFrame({
         "mid": mid,
         "upper": mid + num_std * std,

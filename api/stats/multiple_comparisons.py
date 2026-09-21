@@ -6,15 +6,28 @@ uses a Bonferroni threshold: the one-sided critical value for
 FAMILY_ALPHA / N. That keeps the chance of *any* false recommendation
 across all patterns near FAMILY_ALPHA.
 
-Replaces an earlier log-scaled heuristic on index expectancy, which needed
-no p-value but also had no principled basis; option verdicts now carry a
-t-statistic, so the standard correction applies directly.
+The critical value comes from Student's t at the result's own degrees of
+freedom. It used to come from the normal distribution, which is only right
+for large samples: at the Bonferroni level for 19 patterns the normal bar is
+2.79, but a verdict resting on 11 holdout trades needs 3.55. Using the
+normal value there lets through results that are not significant.
 """
 
 from statistics import NormalDist
 
+from . import student_t
+
 FAMILY_ALPHA = 0.05
 
 
-def required_t(tests: int, family_alpha: float = FAMILY_ALPHA) -> float:
-    return round(NormalDist().inv_cdf(1 - family_alpha / max(tests, 1)), 2)
+def required_t(tests: int, df: int | None = None, family_alpha: float = FAMILY_ALPHA) -> float:
+    """The t a result must clear. `df` is the result's degrees of freedom
+    (holdout trades minus one); without it, the large-sample limit — which
+    is the lowest the bar can ever be, so the right figure to quote as
+    'at least'."""
+    p = 1 - family_alpha / max(tests, 1)
+    if df is None:
+        return round(NormalDist().inv_cdf(p), 2)
+    if df < 1:
+        return float("inf")
+    return round(student_t.ppf(p, df), 2)

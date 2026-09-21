@@ -81,6 +81,18 @@ def archive_summary(db_path: Path | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def clamp_to_daily(high: float, low: float, open_: float, close: float,
+                   day_high: float, day_low: float) -> tuple[float, float]:
+    """An intraday bar cannot trade outside the day's official range. The
+    Kite 15-minute archive has a few bad ticks that do — 2022-03-07's 10:00
+    bar has open, low and close at 15,785.4 and a high of 16,174.45, 230
+    points above anything that traded that day. Clamped here so research and
+    charts never see them; open and close are kept inside the bar."""
+    high = max(min(high, day_high), open_, close)
+    low = min(max(low, day_low), open_, close)
+    return high, low
+
+
 class ArchiveProvider:
     """MarketDataProvider over the local archive — no network, no login."""
 
@@ -95,7 +107,28 @@ class ArchiveProvider:
                    ORDER BY ts""",
                 (symbol, timeframe, start.isoformat(), end.isoformat()),
             ).fetchall()
-        return [
-            Candle(timestamp=r["ts"], open=r["open"], high=r["high"], low=r["low"], close=r["close"], volume=r["volume"])
-            for r in rows
-        ]
+        daily = {}
+        if timeframe != "1d" and rows:
+            with connect(self.db_path) as conn:
+                daily = {r["ts"][:10]: (r["high"], r["low"]) for r in conn.execute(
+                    """SELECT ts, high, low FROM index_bars WHERE symbol = ? AND interval = '1d'
+                       AND ts BETWEEN ? AND ?""", (symbol, start.isoformat(), end.isoformat()))}
+        out = []
+        for r in rows:
+            hi, lo = r["high"], r["low"]
+            if r["ts"][:10] in daily:
+                hi, lo = clamp_to_daily(hi, lo, r["open"], r["close"], *daily[r["ts"][:10]])
+            out.append(Candle(timestamp=r["ts"], open=r["open"], high=hi, low=lo, close=r["close"], volume=r["volume"]))
+        return out
+
+
+def index_trading_days(symbol: str = "^NSEI", db_path: Path | None = None) -> tuple[set[str], str | None]:
+    """Every date the index had a daily bar, and the last date archived.
+
+    The options backfill needs to tell a holiday from a failed download, and
+    the index is the authority on whether a session happened. Includes the
+    weekend sessions NSE occasionally holds (Budget day, Muhurat)."""
+    with connect(db_path) as conn:
+        days = {r["ts"][:10] for r in conn.execute(
+            "SELECT ts FROM index_bars WHERE symbol = ? AND interval = '1d'", (symbol,))}
+    return days, (max(days) if days else None)

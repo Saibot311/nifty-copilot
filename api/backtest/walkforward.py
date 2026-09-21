@@ -30,6 +30,8 @@ import math
 import statistics
 from datetime import timedelta
 
+from stats import student_t
+
 from .costs import CostModel
 from .engine import run_backtest
 from .hypothesis_log import log_run
@@ -166,12 +168,25 @@ def run_holdout_test(
     }
 
 
-MIN_T_STAT = 2.0
+# The approved rule was "t >= 2" — the large-sample form of a one-sided
+# 2.5% test. The bar is now that same test at the result's own degrees of
+# freedom: ~2.0 for a large sample, higher for a small one, where 2 was too
+# easy to reach by chance.
+SIGNIFICANCE_ALPHA = 0.025
+MIN_T_STAT = 2.0  # the large-sample limit, kept for display
+
+
+def significance_bar(n: int) -> float | None:
+    """The t a holdout result on n trades must clear to be told from luck."""
+    if n < 3:
+        return None
+    return round(student_t.ppf(1 - SIGNIFICANCE_ALPHA, n - 1), 2)
 
 
 def excess_t_stat(returns: list[float], baseline: float) -> float | None:
-    """t-statistic of mean per-trade return over the baseline. ~2 is the
-    conventional line where an edge stops looking like luck."""
+    """t-statistic of mean per-trade return over a baseline treated as a
+    known constant. Right when the baseline is a population figure; when it
+    is itself a sample, use welch_t_stat, or t comes out too large."""
     if len(returns) < 2:
         return None
     sd = statistics.stdev(returns)
@@ -180,17 +195,38 @@ def excess_t_stat(returns: list[float], baseline: float) -> float | None:
     return round((statistics.mean(returns) - baseline) / (sd / math.sqrt(len(returns))), 2)
 
 
+def welch_t_stat(returns: list[float], baseline_returns: list[float]) -> float | None:
+    """Two-sample t (Welch) of the signal's trades against the no-signal
+    trades over the same period. The baseline's mean is an estimate with its
+    own uncertainty; the one-sample test drops that term and overstates t."""
+    if len(returns) < 2 or len(baseline_returns) < 2:
+        return None
+    v1, v2 = statistics.variance(returns), statistics.variance(baseline_returns)
+    se = math.sqrt(v1 / len(returns) + v2 / len(baseline_returns))
+    if se == 0:
+        return None
+    return round((statistics.mean(returns) - statistics.mean(baseline_returns)) / se, 2)
+
+
 def holdout_verdict(
     dev_exp: float, holdout_exp: float, dev_baseline: float, holdout_baseline: float,
     holdout_n: int, min_holdout_trades: int, direction: str = "long",
-    holdout_t: float | None = None, min_t: float = MIN_T_STAT, baseline_label: str | None = None,
+    holdout_t: float | None = None, min_t: float | None = None, baseline_label: str | None = None,
     unit: str = "%",
 ) -> tuple[str, str]:
     """A strategy must make money AND beat simply being in the market in the
-    same direction, in both periods. "Positive" alone isn't enough: NIFTY's
-    drift made two long strategies APPROVED at +0.04% and +0.06% per trade
-    while always-long earned more over the same holdout."""
+    same direction, in both periods, by more than luck. "Positive" alone
+    isn't enough: NIFTY's drift made two long strategies APPROVED at +0.04%
+    and +0.06% per trade while always-long earned more over the same holdout.
+
+    The checks run from cheapest to hardest to pass, and the sample-size
+    check comes *after* significance. It used to come before, which let a
+    pattern with fewer trades than the minimum skip the significance test
+    entirely and land on CONDITIONAL — so less evidence earned a better
+    verdict than more. A small sample can only ever hold a result back.
+    """
     side = baseline_label or ("always-long" if direction == "long" else "always-short")
+    bar = min_t if min_t is not None else significance_bar(holdout_n)
 
     def f(v: float) -> str:
         return f"₹{round(v):,}" if unit == "₹" else f"{v}%"
@@ -203,20 +239,21 @@ def holdout_verdict(
             f"{f(dev_baseline)}, holdout {f(holdout_exp)} vs {f(holdout_baseline)} per trade. "
             "The return comes from the market, not the pattern."
         )
-    if holdout_n < min_holdout_trades:
-        return "CONDITIONAL", (
-            f"Beats {side} in both periods, but only {holdout_n} holdout trades — "
-            f"below the {min_holdout_trades}-trade bar for confidence."
-        )
-    if holdout_t is None or holdout_t < min_t:
+    if holdout_t is None or bar is None or holdout_t < bar:
         return "REJECTED", (
             f"Beats {side}, but by too little to tell from luck: holdout edge "
             f"{f(round(holdout_exp - holdout_baseline, 3))} per trade over {holdout_n} trades, t = {holdout_t} "
-            f"(needs t >= {min_t})."
+            f"(needs t >= {bar} at that sample size)."
+        )
+    if holdout_n < min_holdout_trades:
+        return "CONDITIONAL", (
+            f"Beats {side} in both periods and clears the significance bar (t = {holdout_t} >= {bar}), "
+            f"but on only {holdout_n} holdout trades — below the {min_holdout_trades} needed to trust it."
         )
     return "APPROVED", (
         f"Beats {side} in both development ({f(dev_exp)} vs {f(dev_baseline)}) and holdout "
-        f"({f(holdout_exp)} vs {f(holdout_baseline)}), with {holdout_n} holdout trades and t = {holdout_t}."
+        f"({f(holdout_exp)} vs {f(holdout_baseline)}), with {holdout_n} holdout trades and t = {holdout_t} "
+        f"(bar {bar})."
     )
 
 

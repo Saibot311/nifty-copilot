@@ -6,6 +6,14 @@ already-closed bars, entry always happens one bar later).
 
 Positions are non-overlapping (one trade at a time) — deliberately simple
 for a first engine. No pyramiding, no concurrent strategies.
+
+A `hold_days`-day hold means that many sessions in the market: in at the
+open of the first, out at the close of the last. The forward log and the
+intraday studies use the same definition. This engine used to exit one
+session later than both, so the same words described two different trades.
+
+A trade that cannot complete its hold before the data ends is not a trade:
+it is dropped rather than closed early and counted as if it had run.
 """
 
 from dataclasses import dataclass
@@ -53,9 +61,9 @@ def run_backtest(
         # at bar i's own close.
         if bool(entry_signal.iloc[i]):
             entry_idx = i + 1
-            if entry_idx >= n:
-                break
-            exit_idx = min(entry_idx + hold_days, n - 1)
+            exit_idx = entry_idx + hold_days - 1
+            if exit_idx >= n:
+                break  # not enough data left for any later signal to complete either
 
             entry_price = float(df["open"].iloc[entry_idx])
             exit_price = float(df["close"].iloc[exit_idx])
@@ -69,7 +77,7 @@ def run_backtest(
                 entry_price=round(entry_price, 2),
                 exit_price=round(exit_price, 2),
                 regime_at_entry=str(regime_series.iloc[i]),
-                holding_days=exit_idx - entry_idx,
+                holding_days=exit_idx - entry_idx + 1,
                 gross_return_pct=round(gross_return_pct, 3),
                 cost_pct=round(round_trip_cost, 3),
                 net_return_pct=round(net_return_pct, 3),

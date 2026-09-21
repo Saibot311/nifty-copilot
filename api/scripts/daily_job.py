@@ -3,12 +3,16 @@ remembering to open the dashboard.
 
     python scripts/daily_job.py
 
-1. Records today's recommendation in the forward log (only once the day's
+1. Backs up the forward log — the one file that cannot be regenerated.
+2. Records today's recommendation in the forward log (only once the day's
    bar is final; write-once, so re-running is harmless).
-2. Tops up the NSE options archive (bhavcopy, free, no login).
 3. Tops up the Kite 15-minute and daily bar archives — only if today's Zerodha
    login is still valid; otherwise skipped and said so (login needs a human).
-4. Recomputes pattern -> option research so verdicts include the newest data.
+   Runs before the options step: the index archive is what tells the options
+   backfill which days were sessions.
+4. Tops up the NSE options archive (bhavcopy, free, no login): the last ten
+   days, then any session since 2018 still missing data.
+5. Recomputes pattern -> option research so verdicts include the newest data.
 
 Each step runs independently: one failing doesn't stop the others. Output is
 appended to data/daily_job.log. Scheduled by a macOS LaunchAgent at 19:30 IST
@@ -53,6 +57,22 @@ def step_forward_log() -> bool:
     return True
 
 
+def step_backup() -> bool:
+    from storage.backup import backup_forward_log
+
+    r = backup_forward_log()
+    log(f"    {r['summary']}")
+    return r["ok"]
+
+
+def step_options() -> bool:
+    # Both passes always run: a failed recent day is exactly when filling
+    # older gaps still matters, so one must not short-circuit the other.
+    recent = run_script("scripts/backfill_options.py", "--start", str(date.today() - timedelta(days=10)))
+    gaps = run_script("scripts/backfill_options.py", "--fill-gaps")
+    return recent and gaps
+
+
 def step_kite_bars() -> bool:
     from market_data.kite_session import session_status
 
@@ -68,10 +88,10 @@ def step_kite_bars() -> bool:
 def main() -> int:
     log("daily job start")
     steps = [
+        ("forward log backup", step_backup),
         ("forward log", step_forward_log),
-        ("options archive", lambda: run_script(
-            "scripts/backfill_options.py", "--start", str(date.today() - timedelta(days=10)))),
         ("kite bars", step_kite_bars),
+        ("options archive", step_options),
         ("pattern -> option research", lambda: run_script("scripts/pattern_options.py")),
     ]
     failed = []

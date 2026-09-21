@@ -24,9 +24,37 @@ def test_beats_baseline_in_both_with_enough_trades_is_approved():
     assert status == "APPROVED"
 
 
-def test_beats_baseline_with_thin_holdout_is_conditional():
+def test_thin_holdout_that_clears_the_bar_is_conditional():
+    # Significant, but on too few trades to trust: the one thing CONDITIONAL means.
+    status, reason = holdout_verdict(0.9, 0.8, 0.4, 0.4, 10, 15, "long", holdout_t=4.0)
+    assert status == "CONDITIONAL" and "only 10 holdout trades" in reason
+
+
+def test_thin_holdout_does_not_skip_the_significance_test():
+    # Found by the audit. This used to return CONDITIONAL with no t at all:
+    # the sample-size check ran first and returned before significance was
+    # ever tested. Bollinger Band Reversion held CONDITIONAL at t = 0.86.
     status, _ = holdout_verdict(0.9, 0.8, 0.4, 0.4, 10, 15, "long")
-    assert status == "CONDITIONAL"
+    assert status == "REJECTED"
+    status, _ = holdout_verdict(3667, 3667, 100, -2000, 11, 15, "long", holdout_t=0.86, unit="₹")
+    assert status == "REJECTED"
+
+
+def test_less_evidence_never_earns_a_better_verdict():
+    rank = {"REJECTED": 0, "CONDITIONAL": 1, "APPROVED": 2}
+    for t in (0.2, 0.9, 1.8, 2.4, 3.5):
+        few, _ = holdout_verdict(0.9, 0.8, 0.4, 0.4, 11, 15, "long", holdout_t=t)
+        many, _ = holdout_verdict(0.9, 0.8, 0.4, 0.4, 60, 15, "long", holdout_t=t)
+        assert rank[few] <= rank[many], f"t={t}: {few} on 11 trades beat {many} on 60"
+
+
+def test_the_bar_rises_for_small_samples():
+    from backtest.walkforward import significance_bar
+    assert significance_bar(11) == 2.23
+    assert significance_bar(1000) == 1.96
+    # 2.1 clears the bar on 60 trades but not on 11.
+    assert holdout_verdict(0.9, 0.8, 0.4, 0.4, 60, 15, "long", holdout_t=2.1)[0] == "APPROVED"
+    assert holdout_verdict(0.9, 0.8, 0.4, 0.4, 11, 15, "long", holdout_t=2.1)[0] == "REJECTED"
 
 
 def test_short_strategy_is_judged_against_always_short():
@@ -51,6 +79,15 @@ def test_t_stat_matches_hand_calculation():
     # mean 2, baseline 0, sample sd 1.1547, n 4 -> t = 2 / (1.1547 / 2) ≈ 3.46
     assert excess_t_stat([1.0, 3.0, 1.0, 3.0], 0.0) == round(2 / (1.1547005383792515 / 2), 2)
     assert excess_t_stat([1.0], 0.0) is None
+
+
+def test_welch_includes_the_baselines_own_uncertainty():
+    from backtest.walkforward import excess_t_stat, welch_t_stat
+    a, b = [4.0, 6.0, 5.0, 7.0, 3.0], [1.0, 2.0, 0.0, 3.0, 1.0, 2.0]
+    # By hand: means 5 and 1.5, variances 2.5 and 1.1, se = sqrt(2.5/5 + 1.1/6)
+    assert welch_t_stat(a, b) == round(3.5 / (2.5 / 5 + 1.1 / 6) ** 0.5, 2)
+    # Treating the baseline mean as exact always gives a larger t.
+    assert excess_t_stat(a, 1.5) > welch_t_stat(a, b)
 
 
 def test_rupee_unit_formats_reasons_in_rupees():

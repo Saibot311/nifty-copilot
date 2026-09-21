@@ -179,3 +179,16 @@ def test_hypothesis_log_survives_concurrent_processes(tmp_path, monkeypatch):
 
     assert hl.total_runs_logged() == 800
     assert total_hypotheses_tested() == 800
+
+
+def test_drawdown_counts_losses_from_the_starting_balance():
+    # Found by the audit: the equity curve began after the first trade, so a
+    # losing first trade never registered as a drawdown at all.
+    from backtest.engine import Trade
+    from backtest.metrics import compute_metrics
+
+    def trade(r):
+        return Trade("2020-01-01", "2020-01-02", "long", 100, 100, "N/A", 1, r, 0.0, r)
+
+    m = compute_metrics([trade(-10.0), trade(5.0), trade(5.0)])
+    assert m["max_drawdown_pct"] == pytest.approx(-10.0)

@@ -9,6 +9,12 @@
 # Usage:
 #   ./scripts/check_all.sh          # full check
 #   ./scripts/check_all.sh --fast   # skip endpoint smoke test (servers not required)
+#   ./scripts/check_all.sh --deep   # full check, then the phase-by-phase audit on real data
+#
+# The audit (api/scripts/audit.py) is the slower, deeper layer: it checks
+# every phase against the data the system actually runs on, with independent
+# reference implementations. Run it after any change to data ingestion,
+# indicators, the engines or the statistics.
 
 set -uo pipefail
 
@@ -16,7 +22,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$ROOT_DIR/api"
 WEB_DIR="$ROOT_DIR/web"
 FAST=false
+DEEP=false
 [[ "${1:-}" == "--fast" ]] && FAST=true
+[[ "${1:-}" == "--deep" ]] && DEEP=true
 
 PASS=()
 FAIL=()
@@ -145,6 +153,17 @@ if ! $FAST; then
         rm -f /tmp/check_all_resp
     else
         echo "skipped (API server not reachable at :8000 — start it or pass --fast)"
+    fi
+fi
+
+if $DEEP; then
+    # -----------------------------------------------------------------
+    section "Deep audit: every phase on real data (api/scripts/audit.py)"
+    # -----------------------------------------------------------------
+    if (cd "$API_DIR" && .venv/bin/python scripts/audit.py); then
+        ok "audit: no FAIL (warnings are facts about the data — see docs/AUDIT.md)"
+    else
+        bad "audit: at least one FAIL — details above and in api/data/audit_results.json"
     fi
 fi
 

@@ -67,3 +67,21 @@ def test_archive_provider_round_trip_and_upsert(tmp_path):
     assert [c.close for c in got] == [100]
     both = ArchiveProvider(db).get_ohlc("^NSEI", "15m", date(2026, 9, 17), date(2026, 9, 18))
     assert len(both) == 2
+
+
+def test_a_bad_tick_beyond_the_days_range_is_clamped():
+    # The real case: 2022-03-07 10:00 — open, low and close 15,785.4, high
+    # 16,174.45, 230 points above the day's official high of 15,944.6.
+    from market_data.bar_archive import clamp_to_daily
+    assert clamp_to_daily(16174.45, 15785.4, 15785.4, 15785.4, 15944.6, 15711.45) == (15944.6, 15785.4)
+
+
+def test_clamping_never_puts_open_or_close_outside_the_bar():
+    from market_data.bar_archive import clamp_to_daily
+    hi, lo = clamp_to_daily(110, 90, 105, 95, 100, 92)
+    assert hi >= 105 and lo <= 95
+
+
+def test_an_ordinary_bar_is_untouched():
+    from market_data.bar_archive import clamp_to_daily
+    assert clamp_to_daily(101, 99, 100, 100.5, 105, 95) == (101, 99)

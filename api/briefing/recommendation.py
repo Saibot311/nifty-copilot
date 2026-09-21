@@ -9,7 +9,8 @@ A pattern earns a recommendation only if all of these hold:
   3. Its holdout t-statistic clears a Bonferroni threshold across every
      pattern judged on the holdout (I5). Twenty-six patterns each get one shot
      at the holdout, so one of them clearing t = 2 by luck alone is likely;
-     the bar rises with that count.
+     the bar rises with that count — and with how few trades the verdict
+     rests on, since it is Student's t at the pattern's own degrees of freedom.
 
 Expect NO TRADE most days. Manufacturing a call to fill the space is the
 failure this is built to avoid.
@@ -26,6 +27,8 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
     research = load_research()
     by_name = {p["strategy"]: p for p in (research or {}).get("patterns", [])}
     judged = sum(1 for p in by_name.values() if (p.get("holdout") or {}).get("num_trades"))
+    # The large-sample bar: the lowest it can be. Each candidate is held to
+    # the bar for its own sample size, which is higher.
     min_t = required_t(judged)
 
     base = {"as_of": prox["as_of"], "regime": prox["regime"]}
@@ -35,7 +38,8 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
         "methodology_note": (
             f"{judged} patterns were each judged once on 2024-26 option data. To keep the chance of any "
             f"false recommendation across all of them near {FAMILY_ALPHA:.0%}, a pattern needs APPROVED and "
-            f"a holdout t of at least {min_t} (Bonferroni), not just 2."
+            f"a holdout t of at least {min_t} (Bonferroni) — more when it rests on few trades, because the "
+            "bar is Student's t at the pattern's own degrees of freedom."
         ),
     }
 
@@ -50,11 +54,13 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
             continue
         r = by_name.get(p["strategy"], {})
         t = r.get("holdout_t_stat")
+        n = (r.get("holdout") or {}).get("num_trades", 0)
+        own_bar = required_t(judged, df=n - 1) if n >= 2 else None
         status = r.get("status", "REJECTED")
         if status != "APPROVED":
             why_not = f"option verdict {status}"
-        elif t is None or t < min_t:
-            why_not = f"APPROVED, but t {t} is below the {min_t} bar"
+        elif t is None or own_bar is None or t < own_bar:
+            why_not = f"APPROVED, but t {t} is below the {own_bar} bar for {n} holdout trades"
         else:
             why_not = None
         candidates.append({
@@ -63,7 +69,7 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
             "suggested_option": (r.get("suggested_option") or {}).get("description"),
             "holdout_trades": (r.get("holdout") or {}).get("num_trades", 0),
             "holdout_avg_profit_per_lot_rs": (r.get("holdout") or {}).get("avg_profit_per_lot_rs"),
-            "holdout_t_stat": t, "qualifies": why_not is None, "why_not": why_not,
+            "holdout_t_stat": t, "required_t": own_bar, "qualifies": why_not is None, "why_not": why_not,
         })
 
     close_txt = f"the {prox['as_of']} close"

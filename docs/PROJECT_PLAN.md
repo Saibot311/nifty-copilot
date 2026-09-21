@@ -4,8 +4,45 @@ Living document — the *chronological* record of what was decided and when. For
 system is structured (layers, invariants, the strategy lifecycle, how to extend it), see
 **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
-Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
+Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
+
+**Deep audit of Phases 0–12: 14 bugs found and fixed (2026-09-21).** Full report in
+[AUDIT.md](AUDIT.md). A new `api/audit/` package checks every phase against the data the system
+actually runs on — real data rather than fixtures, independent reference implementations rather
+than the same code run twice, and the *impact* of each problem measured rather than merely noted.
+44 checks; `check_all.sh --deep` runs them.
+
+*What changed for you:* **both CONDITIONAL verdicts are gone — all 26 patterns are now REJECTED.**
+They held CONDITIONAL only because the verdict ladder checked sample size before significance and
+returned early, so a pattern on fewer than 15 holdout trades skipped the t-test entirely. With t =
+0.86 and 0.50 neither was close. The existing tests contained one that pinned this bug in place.
+And **the system's best-looking record, Bollinger Upper Rejection at +₹9,266 per lot, was mostly an
+artefact**: the Bollinger bands used pandas' sample standard deviation instead of Bollinger's
+population one, 2.6% too wide, moving 76 signals across the two patterns built on them. With
+correct bands it is +₹794.
+
+*The rest:* the significance bar used the normal distribution where Student's t applies (2.79 vs
+3.55 on 11 trades); the t-test treated the no-signal baseline as exact (now Welch); two development
+trades were priced with holdout data (the split was on entry date; now purged); the options backfill
+recorded "no file yet" as "done", so last Tuesday and Friday were silently missing and would never
+have been fetched (14 sessions restored; a `--fill-gaps` mode now runs nightly); trades that could
+not finish were counted as finished; the index engine held one session longer than everything else;
+max drawdown ignored losses from the starting balance; four sessions of 15-minute bars carry bad
+ticks up to 230 points outside the day's range (now clamped on load); the regime classifier labelled
+30 bars instead of raising; arbitrary symbols reached Yahoo; and the one irreplaceable file, the
+forward log, had no backup (now nightly, verified).
+
+*What held:* no indicator, regime label, strategy or analog uses the future — checked at random cut
+points across every series, all 26 strategies and 410 instrumented similarity test points. Five of
+seven indicators match Wilder's and Lane's definitions exactly. No secret appears anywhere in git
+history. Phases 9–12, the most recent work, were clean on the first run; every bug was in the older
+foundations.
+
+*What to do next,* ranked in AUDIT.md by how much evidence each adds rather than how much signal:
+replicate every pattern on BANKNIFTY options, run the fast audit nightly, store every trade with
+each research run. Ten of 26 patterns are judged on fewer than 15 trades; the binding constraint is
+sample size, and every new indicator is a new hypothesis that raises the bar for all the others.
 
 **A copilot that can write without a model (2026-09-21).** Asked whether Jev could be trained
 alongside Gemini and eventually replace it. It cannot: there is no fine-tuning, and Jev does not

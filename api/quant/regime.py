@@ -21,6 +21,12 @@ class RegimeResult:
 
 
 def classify_regime(df: pd.DataFrame, fast_span: int = 20, slow_span: int = 50) -> RegimeResult:
+    # The EMA and ADX here are pandas ewm without min_periods, so they return
+    # a number from the second bar on. The isna() check below could therefore
+    # never fire, and 30 bars came back labelled TREND_BULL instead of
+    # raising as documented. The slow EMA's span is the real minimum.
+    if len(df) < slow_span:
+        raise ValueError(f"Not enough history to classify regime (need {slow_span}+ bars, got {len(df)}).")
     close = df["close"]
     ema_fast = ema(close, fast_span)
     ema_slow = ema(close, slow_span)
@@ -78,4 +84,7 @@ def classify_regime_series(df: pd.DataFrame, fast_span: int = 20, slow_span: int
     )
     result = pd.Series(regime, index=df.index)
     result[adx_series.isna() | ema_fast.isna() | ema_slow.isna()] = "UNKNOWN"
+    # Before the slow EMA has its span of history the label is a guess, and
+    # a regime filter must not act on a guess.
+    result.iloc[: slow_span - 1] = "UNKNOWN"
     return result
