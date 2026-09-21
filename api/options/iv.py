@@ -20,6 +20,7 @@ cannot diverge on a deep in-the-money option with almost no time value.
 """
 
 import math
+import statistics
 from dataclasses import dataclass
 
 SQRT2 = math.sqrt(2.0)
@@ -72,34 +73,57 @@ class ForwardFit:
     forward: float
     discount: float
     strikes_used: int
-    method: str  # "parity fit" | "fallback"
+    method: str  # "parity fit" | "parity forward" | "fallback"
+
+
+# A discount factor is only believable if the interest rate it implies is.
+# The regression's slope is fragile on a violent day: NSE's "close" is each
+# strike's last trade, and when the index is moving fast different strikes
+# last traded at different moments. On 2024-06-04 that produced a 9-day
+# discount factor of 0.978 — an 88% interest rate.
+RATE_RANGE = (-0.02, 0.15)
+NEAREST_FOR_FORWARD = 5
+ATM_MAX_DISTANCE = 0.02
 
 
 def fit_forward(calls: dict[float, float], puts: dict[float, float], spot: float, T: float) -> ForwardFit:
-    """Least-squares line through C - P against K over near-the-money
-    strikes quoted on both sides. Falls back to an assumed rate only when
-    the fit is impossible or implausible, and says so."""
+    """Forward and discount factor from put-call parity, C - P = D (F - K).
+
+    D comes from the slope of C - P against strike, kept only if the rate it
+    implies is plausible; otherwise an assumed rate is used and the method
+    says so. F is the median of K + (C - P)/D over the strikes nearest spot,
+    so one mistimed quote cannot drag it. F is the number that matters: the
+    at-the-money vol is read wherever it lands, while D only rescales
+    prices by a fraction of a percent at these maturities."""
+    assumed = math.exp(-FALLBACK_RATE * T)
     ks = sorted(k for k in set(calls) & set(puts) if abs(k / spot - 1) <= FIT_WINDOW)
+    D, method = assumed, "parity forward"
     if len(ks) >= 3:
         y = [calls[k] - puts[k] for k in ks]
-        n, mk, my = len(ks), sum(ks) / len(ks), sum(y) / len(ks)
+        mk, my = sum(ks) / len(ks), sum(y) / len(ks)
         sxx = sum((k - mk) ** 2 for k in ks)
         if sxx > 0:
             slope = sum((k - mk) * (v - my) for k, v in zip(ks, y)) / sxx
-            intercept = my - slope * mk
-            D = -slope
-            if 0.9 < D <= 1.001:
-                F = intercept / D
-                if abs(F / spot - 1) < 0.03:
-                    return ForwardFit(F, min(D, 1.0), n, "parity fit")
-    D = math.exp(-FALLBACK_RATE * T)
-    return ForwardFit(spot / D, D, 0, "fallback")
+            if 0 < -slope <= 1.0 + 1e-9 and T > 0:
+                r = -math.log(min(-slope, 1.0)) / T
+                if RATE_RANGE[0] <= r <= RATE_RANGE[1]:
+                    D, method = min(-slope, 1.0), "parity fit"
+    if ks:
+        near = sorted(ks, key=lambda k: abs(k - spot))[:NEAREST_FOR_FORWARD]
+        F = statistics.median(k + (calls[k] - puts[k]) / D for k in near)
+        if abs(F / spot - 1) < 0.03:
+            return ForwardFit(F, D, len(ks), method)
+    return ForwardFit(spot / assumed, assumed, 0, "fallback")
 
 
 def atm_iv(calls: dict[float, float], puts: dict[float, float], fit: ForwardFit, T: float) -> float | None:
     """Volatility at the forward: interpolated between the two strikes that
     bracket it, each strike's vol taken as the mean of its call and put vols
-    (the same number, if parity holds — averaging halves close-price noise)."""
+    (the same number, if parity holds — averaging halves close-price noise).
+
+    Refuses when no listed strike is near the forward. In March 2020 the
+    index fell faster than NSE listed new strikes, and a vol read off a
+    strike 5% away is a skew reading, not an at-the-money one."""
     def vol_at(k: float) -> float | None:
         vs = [v for v in (
             implied_vol(calls[k], fit.forward, k, T, fit.discount, "CE") if k in calls else None,
@@ -107,7 +131,7 @@ def atm_iv(calls: dict[float, float], puts: dict[float, float], fit: ForwardFit,
         ) if v is not None]
         return sum(vs) / len(vs) if vs else None
 
-    strikes = sorted(set(calls) | set(puts))
+    strikes = [k for k in sorted(set(calls) | set(puts)) if abs(k / fit.forward - 1) <= ATM_MAX_DISTANCE]
     below = [k for k in strikes if k <= fit.forward]
     above = [k for k in strikes if k > fit.forward]
     k_lo = below[-1] if below else None

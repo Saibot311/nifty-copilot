@@ -110,6 +110,24 @@ def _analogs(sim: dict | None) -> list[str]:
     return out
 
 
+def _ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def _iv(iv: dict | None) -> list[str]:
+    if not iv or iv.get("iv_30d_pct") is None:
+        return []
+    s = f"Options are priced at {_num(iv['iv_30d_pct'])}% implied volatility"
+    if iv.get("percentile_1y") is not None:
+        s += f", the {_ordinal(int(iv['percentile_1y']))} percentile of the past year"
+    out = [s + "."]
+    if iv.get("tested_as_filter") and iv["tested_as_filter"] != "CANDIDATE FILTER":
+        # The one test of using it as a rule failed; saying so stops the
+        # number being read as advice to buy when it is low.
+        out.append("Buying only below its one-year median was tested and did not beat luck: context, not a signal.")
+    return out
+
+
 def _forward(fwd: dict | None) -> list[str]:
     if not fwd or not fwd.get("days_logged"):
         return []
@@ -138,6 +156,7 @@ def compose(ctx: dict) -> str:
         " ".join(_formed(ctx.get("patterns_formed_on_last_close") or [])),
         " ".join(_could_form(ctx.get("patterns_that_could_form_next_close") or [])),
         " ".join(_analogs(ctx.get("similar_past_days"))),
+        " ".join(_iv(ctx.get("implied_volatility"))),
         " ".join(_forward(ctx.get("forward_track_record"))),
     ]
     return "\n\n".join(p for p in paragraphs if p.strip())

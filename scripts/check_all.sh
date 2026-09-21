@@ -131,6 +131,7 @@ if ! $FAST; then
         api/live/patterns
         api/similarity
         api/intraday/research
+        api/iv
         api/copilot/status
         api/copilot/record
         api/copilot/composed

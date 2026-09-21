@@ -209,6 +209,8 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `briefing/forward_log.py` | Record each final-bar verdict; score it from the next open | Backfilling — ever |
 | `storage/forward_log_db.py` | Write-once-per-date recommendation log | Outcomes (computed on read) |
 | `storage/backup.py` | Verified, rotating backups of the forward log (SQLite online backup API) | A plain file copy — it can be torn mid-write |
+| `options/iv.py` | Black-76 implied vol; forward and discount read off put-call parity, no assumed rates | A regression slope believed without checking the rate it implies |
+| `backtest/iv_research.py` | Daily 30-day IV, its VIX check, IV description of every pattern, the one pre-registered filter test | Editing `PREREGISTERED` — a new hypothesis is a new test (a hash test guards it) |
 | `audit/` | Phase-by-phase deep audit on real data, with independent reference implementations; `scripts/audit.py`, `check_all.sh --deep` | Mocks and fixtures — that is what `tests/` is for |
 | `web/src/components/ui.tsx` | Shared primitives (Panel, Pill, Stat…) | Feature components |
 | `web/src/lib/api.ts` | Typed fetches. **No mock fallbacks (I2).** | Computation |

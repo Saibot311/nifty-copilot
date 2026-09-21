@@ -224,3 +224,22 @@ def options_coverage():
                           f"{len(weekend)} weekend special session(s) have no option data",
                   {"weekday_missing": weekday, "weekend_missing": weekend, "recent": recent,
                    "archive_ends": max(have), "note": "Older gaps are retried nightly by backfill_options.py --fill-gaps."})
+
+
+@check("0", "0.8", "Implied volatility computed from the archive tracks India VIX")
+def iv_tracks_vix():
+    """India VIX is the exchange's own 30-day volatility from the same
+    market. The IV here is computed independently, from closing prices and a
+    forward read off put-call parity. If the two stop moving together, the
+    calculation — or the archive — has gone wrong."""
+    from backtest.iv_research import load_series, vix_check
+    series = load_series()
+    if series.empty:
+        return Result(WARN, "no IV series yet — python scripts/iv_research.py")
+    v = vix_check(series)
+    corr = v.get("level_correlation") or 0
+    fallback = float((series["method"] == "fallback").mean())
+    status = FAIL if corr < 0.9 else (WARN if fallback > 0.05 else PASS)
+    return Result(status, f"{v['compared_days']} days compared: correlation {corr}, VIX a median "
+                          f"{v.get('median_gap_points')} points higher (it prices the skew); "
+                          f"{fallback:.1%} of days needed an assumed forward", v)

@@ -7,6 +7,46 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Implied volatility — a description, and one test that failed honestly (2026-09-21).** The top
+"trade recognition" recommendation from the audit. For someone buying options the volatility priced
+in at entry matters as much as direction, and the archive already held everything needed to compute
+it. `options/iv.py` backs implied volatility out of NSE closing prices with Black-76, reading each
+expiry's forward and discount factor off put-call parity instead of assuming an interest rate
+(rates ran from 3% to 7% over the period). `backtest/iv_research.py` builds a 30-day
+constant-maturity series from 2018 by interpolating total variance between expiries.
+
+*Checked against the exchange's own number.* India VIX is NSE's 30-day volatility from the same
+market, computed differently (the whole strike range rather than at the money). Over 2,130 days the
+two correlate at **0.983**, with VIX a median 1.25 points higher because it also prices the skew. Two
+stress days caught real problems on the way: on 2024-06-04 the parity regression read a 9-day
+discount factor of 0.978 — an 88% interest rate — because NSE's "close" is each strike's last trade
+and on a violent day those are not simultaneous; and on 2020-03-23 no strike near spot had been
+listed yet, so an "at-the-money" vol was being read off a strike 5% away. The forward now comes
+from the median of the nearest strikes, a discount factor is kept only if its implied rate is
+plausible, and no ATM vol is reported without a strike within 2% of the forward.
+
+*Described first.* Every pattern's trades now carry the IV they were bought at. It shows the
+climate each pattern fires in — squeeze breakouts upward and overbought reversals buy cheap options
+(24th-26th percentile), Bollinger Band Reversion, the bearish Supertrend flip and PCR capitulation
+buy expensive ones (68th-73rd). And it shows something worth knowing before blaming volatility: the
+*market's* 30-day IV barely moves while these trades are held (median -0.05 points), while the IV
+of the contract held rises 1.8 — that is the contract sliding along the skew, not fear draining
+out. What hurts these trades is time decay and direction, not an IV collapse.
+
+*Then tested once, as fixed in advance.* The hypothesis — trades bought when 30-day IV is at or
+below its one-year median earn more per lot — was committed on its own (d1aa408) before any IV
+number existed, with a hash test that fails if it is edited. Pooled across every pattern's chosen
+setup, one observation per entry day, Welch's t: low-IV entries did better in both periods
+(development +₹1,291 per lot, holdout +₹964), but the holdout t is **0.43** against a bar of 1.97.
+**Not adopted.** In the holdout both groups lost money anyway (-₹2,322 and -₹3,286 per lot), so the
+filter would at best have made losing patterns lose less. The per-pattern table flips direction
+from one pattern to the next; picking its favourable cells would have been choosing a filter after
+seeing the answer, which is why the test was fixed first.
+
+Surfaced as an Implied Volatility card on the dashboard (today's IV, its percentile, the past year,
+and the test's verdict), a line on every pattern, and one sentence in the copilot's explanation.
+Audit checks 0.8 (tracks VIX) and 5.6 (the percentile never looks ahead) added. Runs nightly.
+
 **Deep audit of Phases 0–12: 14 bugs found and fixed (2026-09-21).** Full report in
 [AUDIT.md](AUDIT.md). A new `api/audit/` package checks every phase against the data the system
 actually runs on — real data rather than fixtures, independent reference implementations rather

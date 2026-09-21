@@ -13,6 +13,8 @@ remembering to open the dashboard.
 4. Tops up the NSE options archive (bhavcopy, free, no login): the last ten
    days, then any session since 2018 still missing data.
 5. Recomputes pattern -> option research so verdicts include the newest data.
+6. Extends the implied-volatility series and re-runs its description and the
+   pre-registered filter test (the hypothesis is fixed; only the data grows).
 
 Each step runs independently: one failing doesn't stop the others. Output is
 appended to data/daily_job.log. Scheduled by a macOS LaunchAgent at 19:30 IST
@@ -93,6 +95,7 @@ def main() -> int:
         ("kite bars", step_kite_bars),
         ("options archive", step_options),
         ("pattern -> option research", lambda: run_script("scripts/pattern_options.py")),
+        ("implied volatility", lambda: run_script("scripts/iv_research.py")),
     ]
     failed = []
     for name, fn in steps:

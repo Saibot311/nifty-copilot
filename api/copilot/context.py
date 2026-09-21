@@ -21,6 +21,7 @@ there. Every figure it gave was real. The answer was still wrong.
 Kept small enough to fit free-tier per-minute token limits either way.
 """
 
+from backtest.iv_research import load_iv_research
 from backtest.pattern_options import LOT_SIZE, load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.similarity import run_similarity
@@ -128,6 +129,17 @@ def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | 
         },
         "how_it_decides": HOW_IT_DECIDES,
     }
+    iv = load_iv_research()
+    if iv:
+        latest = iv["series"]["latest"]
+        ctx["implied_volatility"] = {
+            "as_of": latest["date"],
+            "iv_30d_pct": latest["iv_30d_pct"],
+            "percentile_1y": latest["percentile_1y"],
+            "tested_as_filter": iv["preregistered_test"]["verdict"],
+            "what_it_means": "What options cost: higher implied volatility means paying more for the same "
+                             "expected move. Context about price, not a signal about direction.",
+        }
 
     if "patterns" in sections:
         ctx["patterns_formed_on_last_close"] = [pattern(p) for p in prox["patterns"] if p.get("formed_today")]

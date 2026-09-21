@@ -10,6 +10,7 @@ from backtest.research import run_all_strategies
 from cache import cached
 from backtest.walkforward import evaluate_strategy
 from backtest.intraday import load_research as load_intraday_research
+from backtest.iv_research import load_iv_research, load_series as load_iv_series
 from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.live_patterns import live_patterns, merge_live
@@ -358,6 +359,32 @@ def intraday_research() -> dict:
     return r
 
 
+@app.get("/api/iv")
+def implied_volatility() -> dict:
+    """What options are pricing in: 30-day at-the-money implied volatility
+    from NSE closing prices, where it stands against the past year, how it
+    compares with India VIX, and the result of the one pre-registered test
+    of using it as a filter. Saved by scripts/iv_research.py."""
+    r = load_iv_research()
+    if r is None:
+        raise HTTPException(503, "Implied volatility not computed yet — python scripts/iv_research.py")
+    s = load_iv_series().dropna(subset=["iv_30d"]).tail(260)
+    year = s["iv_30d"] * 100
+    return {
+        "latest": r["series"]["latest"],
+        # Computed here, not in the browser: every number the dashboard shows
+        # comes from Python (I2).
+        "last_year_stats": {"median": round(float(year.median()), 2), "low": round(float(year.min()), 2),
+                            "high": round(float(year.max()), 2), "days": int(len(year))},
+        "vix_check": r["vix_check"],
+        "test": {k: r["preregistered_test"][k] for k in ("hypothesis", "registered", "verdict", "detail")},
+        "last_year": [{"date": d, "iv_30d_pct": round(v * 100, 2),
+                       "percentile": None if p != p else round(p)} for d, v, p in
+                      zip(s.index, s["iv_30d"], s["iv_pct"])],
+        "method_note": r["method_note"],
+    }
+
+
 @app.get("/api/bars/archive")
 def bars_archive() -> dict:
     """What's in the local index-bar archive (filled by scripts/backfill_bars.py)."""
@@ -395,7 +422,10 @@ def _pattern_options() -> dict:
     research = load_research()
     if research is None:
         raise HTTPException(503, "Pattern-option research not computed yet — run: python scripts/pattern_options.py")
-    return research
+    # The implied-volatility description of each pattern's trades, where it
+    # has been computed. Description only: which IV its options were bought at.
+    iv = (load_iv_research() or {}).get("by_pattern", {})
+    return {**research, "patterns": [{**p, "iv": iv.get(p["strategy"])} for p in research["patterns"]]}
 
 
 @app.get("/api/patterns/options")

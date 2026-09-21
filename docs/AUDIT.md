@@ -196,7 +196,8 @@ be pre-registered before testing.
 
 ### Trade recognition
 
-8. **Implied volatility from data already on disk.** For a buyer of options, the entry IV
+8. **✅ Done 2026-09-21 — see PROJECT_PLAN.md. The pre-registered filter test was NOT ADOPTED.**
+   **Implied volatility from data already on disk.** For a buyer of options, the entry IV
    matters as much as direction — buying calls into high IV loses to the IV collapse even when
    the index moves the right way. The archive holds price, strike, expiry and spot for every
    contract since 2018, so IV and IV rank can be computed (Black-Scholes inversion) with no new

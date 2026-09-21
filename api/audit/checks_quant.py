@@ -257,3 +257,38 @@ def regime_distribution():
     stuck = any(v > 70 for v in dist.values())
     return Result(WARN if stuck else PASS, f"distribution %: {dist}; longest unbroken run {longest} bars",
                   {"distribution_pct": dist, "longest_run": longest})
+
+
+@check("5", "5.6", "An IV percentile never changes when later days are removed")
+def iv_percentile_no_lookahead():
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+
+    import backtest.iv_research as ivr
+    full = ivr.load_series()
+    if full.empty:
+        return Result(WARN, "no IV series yet")
+    rng = random.Random(5)
+    cuts = sorted(rng.sample(range(300, len(full) - 1), 8))
+    real_db = ivr.IV_DB
+    leaks = []
+    try:
+        for cut in cuts:
+            scratch = Path(tempfile.mkdtemp()) / "iv.db"
+            conn = sqlite3.connect(scratch)
+            conn.executescript(ivr.SCHEMA)
+            keep = full.iloc[:cut]
+            conn.executemany("INSERT INTO iv_daily (trade_date, iv_30d) VALUES (?, ?)",
+                             list(zip(keep.index, keep["iv_30d"])))
+            conn.commit()
+            conn.close()
+            ivr.IV_DB = scratch
+            a, b = full["iv_pct"].iloc[cut - 1], ivr.load_series()["iv_pct"].iloc[-1]
+            if not (pd.isna(a) and pd.isna(b)) and abs(a - b) > 1e-9:
+                leaks.append((full.index[cut - 1], float(a), float(b)))
+    finally:
+        ivr.IV_DB = real_db
+    return Result(FAIL if leaks else PASS,
+                  f"{len(cuts)} random cut points; {len(leaks)} percentile(s) changed when later days were removed",
+                  {"leaks": leaks})

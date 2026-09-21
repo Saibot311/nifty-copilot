@@ -21,6 +21,11 @@ two CONDITIONAL verdicts, which the deep audit traced to a verdict ladder that
 skipped the significance test for small samples. The forward log is the real test
 now, and it needs calendar time.
 
+**Implied volatility is computed from the options archive** (`options/iv.py`) and
+tracks India VIX at a correlation of 0.983. It describes every pattern's trades. Its
+one pre-registered test as a filter — buy only below the one-year median — was
+**not adopted**: the right direction in both periods, but holdout t = 0.43.
+
 **A deep audit of Phases 0–12 was run on 2026-09-21** — read `docs/AUDIT.md`. It
 found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 
@@ -76,6 +81,8 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/pattern_options.json` | Pattern → option research output | `scripts/pattern_options.py` |
 | `api/data/strategy_status.db` | Validation verdict history | `scripts/validate_all.py --all` |
 | `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
+| `api/data/iv.db` | Daily 30-day implied volatility from 2018 | `scripts/iv_research.py` (incremental) |
+| `api/data/iv_research.json` | IV description of every pattern, VIX check, the pre-registered test | `scripts/iv_research.py` |
 | `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
 | **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt** — backed up nightly to `api/data/backups/` (30 kept). Set `BACKUP_DIR` in `api/.env` to a synced folder so a lost disk doesn't take it too. |
 
@@ -122,6 +129,16 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
   done, so a day fetched before its file was published was skipped forever — the
   archive went two sessions stale unnoticed. Ask the index archive whether a session
   happened.
+- **NSE's "close" is each strike's last trade, not a synchronous price.** On a
+  violent day a regression across strikes reads that timing noise as an 88% interest
+  rate. Take the forward from the median of the strikes nearest spot, and judge a
+  discount factor by the rate it implies.
+- **A tripwire computed from the live value trips on nothing.** The pre-registration
+  hash has to be a literal, or editing the hypothesis changes both sides of the check.
+- **Pre-register before you look.** The IV filter's hypothesis was committed on its own
+  (d1aa408) before any IV number existed. Reading the per-pattern table first and then
+  choosing a threshold would have been fitting the filter to the answer — and that
+  table flips direction from pattern to pattern.
 - **Order matters in a verdict ladder.** A sample-size check that returns before the
   significance test hands small samples a better label than large ones.
 - **A test can pin a bug in place.** One asserted that a thin holdout with no t-stat

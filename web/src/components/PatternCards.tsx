@@ -143,6 +143,12 @@ export function PatternsTodayCard({ data }: { data: PatternsToday | null }) {
   );
 }
 
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
 export function PatternOptionsTable({ data }: { data: PatternOptionsResearch | null }) {
   if (!data) return <Offline what="Pattern → option research" />;
   return (
@@ -166,6 +172,14 @@ export function PatternOptionsTable({ data }: { data: PatternOptionsResearch | n
             <div className="mt-2">
               <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} />
             </div>
+            {p.iv?.median_entry_iv_pct != null && (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+                Options usually bought with implied volatility at the {ordinal(p.iv.median_entry_iv_pct)} percentile
+                of the past year
+                {p.iv.median_market_iv_change_pts != null &&
+                  ` · market volatility moved ${p.iv.median_market_iv_change_pts >= 0 ? "+" : ""}${p.iv.median_market_iv_change_pts} pts over a typical hold`}
+              </p>
+            )}
             <Why p={p} />
           </div>
         ))}

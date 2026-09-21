@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS iv_daily (
     forward      REAL,     -- that expiry's forward, from put-call parity
     discount     REAL,
     strikes_used INTEGER,
-    method       TEXT      -- 'parity fit' | 'fallback'
+    method       TEXT      -- 'parity fit' | 'parity forward' | 'fallback'
 );
 """
 
@@ -236,10 +236,12 @@ def annotate(trades_by_pattern: dict, series: pd.DataFrame, spot: dict[str, floa
                 exit_iv = (contract_iv(conn, cache, t.exit_date, t.expiry_date, t.strike, t.option_type,
                                        t.exit_premium, exit_spot) if exit_spot else None)
                 s = series.loc[t.entry_date] if t.entry_date in series.index else None
+                e = series.loc[t.exit_date] if t.exit_date in series.index else None
                 rows.append({
                     "pattern": name, "entry_date": t.entry_date, "exit_date": t.exit_date,
                     "rupees": _rupees(t), "entry_iv": entry_iv, "exit_iv": exit_iv,
                     "iv_30d": None if s is None else s["iv_30d"],
+                    "iv_30d_exit": None if e is None else e["iv_30d"],
                     "iv_pct": None if s is None or pd.isna(s["iv_pct"]) else float(s["iv_pct"]),
                 })
     finally:
@@ -264,6 +266,11 @@ def describe(rows: list[dict], labels: dict) -> dict:
             continue
         pct = [r["iv_pct"] for r in rs if r["iv_pct"] is not None]
         moves = [(r["exit_iv"] - r["entry_iv"]) * 100 for r in rs if r["entry_iv"] and r["exit_iv"]]
+        # The market's 30-day vol over the same days. Cleaner than the
+        # contract's own vol, which also shifts as the contract drifts in or
+        # out of the money along the skew.
+        market = [(r["iv_30d_exit"] - r["iv_30d"]) * 100 for r in rs
+                  if r["iv_30d"] is not None and r["iv_30d_exit"] is not None]
         low = [r["rupees"] for r in rs if r["iv_pct"] is not None and r["iv_pct"] <= IV_THRESHOLD_PCT]
         high = [r["rupees"] for r in rs if r["iv_pct"] is not None and r["iv_pct"] > IV_THRESHOLD_PCT]
         out[name] = {
@@ -272,7 +279,8 @@ def describe(rows: list[dict], labels: dict) -> dict:
             "bought_in_top_half_of_iv": round(sum(p > 50 for p in pct) / len(pct), 2) if pct else None,
             "median_contract_iv_at_entry": round(statistics.median(
                 [r["entry_iv"] for r in rs if r["entry_iv"]]) * 100, 1) if any(r["entry_iv"] for r in rs) else None,
-            "median_iv_change_while_held_pts": round(statistics.median(moves), 1) if moves else None,
+            "median_contract_iv_change_pts": round(statistics.median(moves), 1) if moves else None,
+            "median_market_iv_change_pts": round(statistics.median(market), 1) if market else None,
             "rupees_per_lot_when_iv_low": _mean(low), "trades_when_iv_low": len(low),
             "rupees_per_lot_when_iv_high": _mean(high), "trades_when_iv_high": len(high),
         }
@@ -362,6 +370,11 @@ def run_iv_research(symbol: str = "^NSEI") -> dict:
         },
         "vix_check": vix_check(series),
         "by_pattern": describe(rows, {k: v["label"] for k, v in trades.items()}),
+        "by_pattern_note": (
+            "A description, not a finding. Which patterns did better at low or high IV flips from one "
+            "pattern to the next, and picking the favourable cells out of a table this size would be "
+            "choosing a filter after seeing the answer. The one filter that was tested is below."
+        ),
         "preregistered_test": preregistered_test(rows),
         "method_note": (
             "Implied volatility is backed out of NSE closing prices with Black-76 on each expiry's forward, "

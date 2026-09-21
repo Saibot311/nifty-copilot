@@ -41,7 +41,7 @@ def test_the_forward_and_discount_come_back_out_of_parity():
     F, D, T = 25137.0, 0.9921, 45 / 365
     calls, puts = _chain(F, D, T, 0.15, range(24000, 26100, 100))
     fit = fit_forward(calls, puts, spot=25000, T=T)
-    assert fit.method == "parity fit"
+    assert fit.method == "parity fit"  # 6.4% implied rate: plausible, so kept
     assert fit.forward == pytest.approx(F, abs=0.5) and fit.discount == pytest.approx(D, abs=1e-5)
 
 
@@ -51,8 +51,16 @@ def test_atm_vol_is_recovered_from_a_chain():
     assert atm_iv(calls, puts, ForwardFit(F, D, 21, "parity fit"), T) == pytest.approx(0.15, abs=1e-4)
 
 
-def test_an_unfittable_chain_falls_back_and_says_so():
+def test_one_two_sided_strike_is_enough_for_a_forward():
+    # One call and put at the same strike pin the forward by parity; the
+    # discount factor then has to be assumed, and the method says so.
     fit = fit_forward({25000: 200.0}, {25000: 210.0}, spot=25000, T=30 / 365)
+    assert fit.method == "parity forward" and fit.strikes_used == 1
+    assert fit.forward == pytest.approx(25000 - 10 / fit.discount)
+
+
+def test_no_two_sided_strike_falls_back_and_says_so():
+    fit = fit_forward({25000: 200.0}, {24000: 210.0}, spot=25000, T=30 / 365)
     assert fit.method == "fallback" and fit.strikes_used == 0
 
 
@@ -63,3 +71,26 @@ def test_thirty_day_vol_interpolates_total_variance():
     v = constant_maturity([(15 / 365, 0.10), (45 / 365, 0.20)])
     # total variance: 0.01*15 = 0.15 and 0.04*45 = 1.8 -> 0.975 at 30 days
     assert v == pytest.approx(math.sqrt(0.975 / 30), rel=1e-9)
+
+
+def test_an_implausible_discount_factor_is_not_believed():
+    # Found on 2024-06-04: mistimed closes gave a 9-day D of 0.978, an 88%
+    # interest rate. Parity still gives the forward; D falls back to a rate.
+    F, T = 21877.0, 9 / 365
+    calls, puts = {}, {}
+    for i, k in enumerate(range(21000, 22900, 50)):
+        c = black76(F, k, T, 0.3, 0.9983, "CE") + 0.024 * (k - 21000) * (i % 2)
+        calls[k], puts[k] = c, black76(F, k, T, 0.3, 0.9983, "PE")
+    fit = fit_forward(calls, puts, spot=21884.5, T=T)
+    r = -math.log(fit.discount) / T
+    assert -0.02 <= r <= 0.15
+    assert fit.forward == pytest.approx(F, abs=40)
+
+
+def test_no_atm_vol_without_a_strike_near_the_forward():
+    # March 2020: the index fell faster than NSE listed strikes. A vol read
+    # 5% away is skew, not at-the-money.
+    F, D, T = 7622.0, 0.998, 9 / 365
+    calls = {k: black76(F, k, T, 0.9, D, "CE") for k in range(8100, 8600, 100)}
+    puts = {k: black76(F, k, T, 0.9, D, "PE") for k in range(8100, 8600, 100)}
+    assert atm_iv(calls, puts, ForwardFit(F, D, 5, "parity forward"), T) is None

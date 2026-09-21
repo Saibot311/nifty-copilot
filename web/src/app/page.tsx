@@ -2,6 +2,7 @@ import { BriefingCard } from "@/components/BriefingCard";
 import { CopilotCard } from "@/components/CopilotCard";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
+import { IVCard } from "@/components/IVCard";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { LivePatternsCard } from "@/components/LivePatternsCard";
 import { PatternOptionsTable, PatternsTodayCard } from "@/components/PatternCards";
@@ -17,6 +18,7 @@ import {
   fetchCandles,
   fetchCopilotStatus,
   fetchForwardLog,
+  fetchImpliedVol,
   fetchIndicators,
   fetchLivePatterns,
   fetchLiveQuote,
@@ -45,6 +47,7 @@ export default async function Home() {
     livePatterns,
     similarity,
     copilotStatus,
+    impliedVol,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -60,6 +63,7 @@ export default async function Home() {
     fetchLivePatterns(),
     fetchSimilarity(),
     fetchCopilotStatus(),
+    fetchImpliedVol(),
   ]);
 
   const snap = snapshot.data;
@@ -152,6 +156,13 @@ export default async function Home() {
                   Patterns
                 </SectionLabel>
                 <PatternsTodayCard data={patternsToday.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="what options cost, from NSE closing prices">
+                  Implied volatility
+                </SectionLabel>
+                <IVCard data={impliedVol.data} />
               </section>
 
               <section>

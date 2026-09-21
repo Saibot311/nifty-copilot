@@ -230,8 +230,10 @@ def context_traces_to_source():
     from copilot.guard import numbers_in_data
     ctx = build_context(scope="pattern_record")
     sources = numbers_in_data([load_research(), build_recommendation(), pattern_proximity(), HOW_IT_DECIDES])
+    from backtest.iv_research import load_iv_research
     from briefing.forward_log import forward_report
     sources |= numbers_in_data(forward_report())
+    sources |= numbers_in_data(load_iv_research() or {})
     from backtest.pattern_options import LOT_SIZE
     sources |= {float(LOT_SIZE), 15.0, 30.0, 2024.0, 2026.0}
     orphan = sorted(v for v in numbers_in_data(ctx) if v not in sources and not (float(v).is_integer() and abs(v) <= 10))

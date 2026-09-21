@@ -267,7 +267,29 @@ export interface PatternOptionResult {
   holdout_t_stat?: number | null;
   status: Verdict;
   reason: string;
+  /** How implied volatility stood when this pattern's options were bought. Description only. */
+  iv?: PatternIV | null;
 }
+
+export interface PatternIV {
+  trades: number;
+  median_entry_iv_pct: number | null;
+  bought_in_top_half_of_iv: number | null;
+  median_contract_iv_at_entry: number | null;
+  median_market_iv_change_pts: number | null;
+  median_contract_iv_change_pts: number | null;
+}
+
+export interface ImpliedVol {
+  latest: { date: string; iv_30d_pct: number; percentile_1y: number | null };
+  last_year_stats: { median: number; low: number; high: number; days: number };
+  vix_check: { compared_days: number; level_correlation?: number; median_gap_points?: number; verdict: string };
+  test: { hypothesis: string; registered: string; verdict: string; detail: string };
+  last_year: { date: string; iv_30d_pct: number; percentile: number | null }[];
+  method_note: string;
+}
+
+export const fetchImpliedVol = () => get<ImpliedVol>("/api/iv");
 
 export interface PatternOptionsResearch {
   computed_at: string;
