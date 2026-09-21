@@ -7,6 +7,40 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Copilot: grades, drafts and a record (2026-09-21).** The rest of the planned Jev/Gemini pairing,
+built. The theme is the same one the whole project runs on — measure it rather than assert it.
+
+*A record (`storage/copilot_log_db.py`, `/api/copilot/record`).* Until now a review was computed,
+used once to decide whether to show an answer, and thrown away. Nobody could say how often a guard
+fires, on what, or whether a wording change helped — all 42 labelled cases were synthetic, written
+by the same hand that wrote the questions. Every answer is now recorded with what the guards made of
+it, and the summary lists withheld answers specifically, because each is a candidate labelled case.
+This is the copilot's forward log. Unlike the forward log its rows may be deleted: they hold the
+questions the user typed, and nothing in it feeds a verdict.
+
+*Grades (`copilot/grading.py`).* The guards are pass/fail and none of them can tell a properly
+hedged explanation from a technically-true one that leaves a beginner over-confident — which is the
+entire product. Two 0-2 scores now ride the same Jev request as the guards, so they cost nothing:
+honesty about how weak the evidence is, and clarity for a beginner. They never block; a low grade is
+recorded, not acted on. Their value is the trend, so a prompt change can be judged instead of
+guessed at.
+
+*Best of two drafts.* The daily explanation is written twice and the better-graded one kept — it is
+read every day and costs one extra call a day. A typed question is written once: the guards already
+decide whether it is safe, and grades only choose between two safe answers. A clean draft always
+beats a better-written blocked one.
+
+*The grading cases caught two bugs in my own writing.* Four answers were written to check the score
+ordering (a hedged answer must outrank a flattering one on honesty; a plain one must outrank a
+jargon wall on clarity — 4/4 correct, and the flattering answer scored 0.4 on honesty against 2.0).
+But the answer written to be the *ideal* one was blocked by two guards, and both were right.
+"So there is nothing here worth acting on" is the writer telling the reader what to do, at 0.51.
+And "nothing that formed on the last close has ever shown a reliable edge" presupposes patterns that
+formed, when DATA says none did, at 0.95 not-in-data. Both are now labelled cases. 48/48.
+
+Also fixed: when a rewrite and the draft before it both failed, the tie went to the draft, so the
+reported answer was the one the model produced *before* it saw the feedback.
+
 **Intraday archive put to work — on assumptions, not edge (2026-09-21).** 11.7 years of 15-minute
 bars had been sitting unused since the backfill. The tempting use was mining them for intraday
 patterns; the right first use was not. A new intraday pattern is a new hypothesis family that raises

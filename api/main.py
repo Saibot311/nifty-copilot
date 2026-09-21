@@ -17,6 +17,7 @@ from backtest.similarity import run_similarity
 from copilot import assistant as copilot
 from copilot.llm_client import LLMError, LLMNotConfigured, config as llm_config
 from copilot.jev import available as jev_available
+from storage.copilot_log_db import summary as copilot_record_summary
 from briefing import build_briefing, build_recommendation
 from briefing.forward_log import forward_report, record_if_final
 from options.chain_analytics import live_chain_analytics
@@ -466,6 +467,14 @@ def copilot_status() -> dict:
     cfg = llm_config()
     return {"configured": cfg["has_key"], "provider": cfg["provider"], "model": cfg["model"],
             "guards": {"numbers": True, "forecast": jev_available(), "claims": jev_available(), "routing": jev_available()}}
+
+
+@app.get("/api/copilot/record")
+def copilot_record() -> dict:
+    """What the guards have actually done: how many answers were shown,
+    withheld and why, and how the two grades are trending. Withheld answers
+    are listed because each is a candidate case for scripts/check_guards.py."""
+    return copilot_record_summary()
 
 
 @app.get("/api/copilot/explain")

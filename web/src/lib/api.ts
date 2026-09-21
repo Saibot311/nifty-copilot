@@ -414,6 +414,9 @@ export interface CopilotAnswer {
     reason: string;
   };
   route?: { checked: boolean; route: string | null; off_topic: boolean };
+  /** 0-2 on each; recorded and trended, never used to withhold an answer. */
+  grades?: { honesty?: number; clarity?: number };
+  drafts?: number;
 }
 
 export const fetchCopilotStatus = () => get<CopilotStatus>("/api/copilot/status");

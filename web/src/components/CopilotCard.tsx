@@ -18,6 +18,14 @@ function Answer({ a }: { a: CopilotAnswer }) {
           ? `Jev checked ${a.review.claims_checked ?? 0} sentence${a.review.claims_checked === 1 ? "" : "s"} against it, and found no forecast`
           : "Jev checks skipped"}
         {a.cached ? " · saved explanation" : ""}
+        {a.grades?.honesty !== undefined && a.grades?.clarity !== undefined ? (
+          <>
+            {" · "}
+            <span title="Scored 0-2 by Jev on how plainly it admits weak evidence, and on whether a beginner could follow it. Recorded and trended; never used to withhold an answer.">
+              graded {a.grades.honesty.toFixed(1)} honest / {a.grades.clarity.toFixed(1)} clear
+            </span>
+          </>
+        ) : null}
       </p>
     </div>
   );

@@ -11,9 +11,9 @@ answer unchecked rather than withholding it — the number guard in guard.py
 is local, deterministic and always runs.
 """
 
-from . import claim_guard, jev, prediction_guard
+from . import claim_guard, grading, jev, prediction_guard
 
-SKIPPED = {"checked": False, "blocked": False, "scores": {}, "unsupported": [], "problems": []}
+SKIPPED = {"checked": False, "blocked": False, "scores": {}, "unsupported": [], "problems": [], "grades": {}}
 
 
 def build_state(answer: str, data=None, claims: list[str] | None = None) -> dict:
@@ -29,6 +29,10 @@ def review_answer(answer: str, data=None, check_claims: bool = True) -> dict:
     """{checked, blocked, scores, unsupported, problems, reason}. Never raises."""
     claims = claim_guard.split_claims(answer) if (check_claims and data is not None) else []
     questions = {**prediction_guard.QUESTIONS, **claim_guard.questions(claims)}
+    if data is not None:
+        # Graded in the same request as the guards: independent judgments
+        # over the same state, so they cost nothing extra.
+        questions |= grading.QUESTIONS
     try:
         answers = jev.ask(build_state(answer, data, claims), questions)
     except jev.JevUnavailable as e:
@@ -58,6 +62,7 @@ def review_answer(answer: str, data=None, check_claims: bool = True) -> dict:
         "scores": {k: round(v, 3) for k, v in scores.items()},
         "unsupported": unsupported,
         "claims": judged,
+        "grades": grading.scores(answers),
         "problems": problems,
         "claims_checked": len(claims),
         "reason": _reason(hits, unsupported),

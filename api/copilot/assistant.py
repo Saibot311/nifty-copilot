@@ -1,23 +1,32 @@
-"""Phase 12 — the copilot: plain-language explanation of what the system
-computed. It explains; it never produces a number (I2).
+"""The copilot: plain-language explanation of what the system computed. It
+explains; it never produces a number (I2).
 
-Three guards, cheapest first:
-  guard.py         local, deterministic — every number must be in DATA
-  review.py        one Jev call — no forecast, no trade advice, and every
-                   sentence backed by DATA
-  router.py        before any of it, on a user question: refuse what this
-                   dashboard has no data for, without calling the model
+Guards, cheapest first:
+  router.py   before anything, on a user question: refuse what this
+              dashboard has no data for, without calling the model
+  guard.py    local, deterministic — every number must be in DATA
+  review.py   one Jev call — no forecast, no trade advice, every sentence
+              backed by DATA, and two grades that never block
 
 One retry names everything wrong with the draft at once; a second failure
 returns nothing rather than an unverified answer. The number check runs
-first and short-circuits the Jev call, so a draft that is already going to
-be rewritten is not also paid for semantically.
+first and short-circuits the Jev call, so a draft already being rewritten is
+not also paid for semantically.
+
+The daily explanation is written twice and the better-graded one kept — it
+is read every day and costs one extra call a day. A typed question is
+written once.
+
+Every answer, shown or withheld, goes to storage/copilot_log_db.py. A guard
+with no record is a guard nobody can tune.
 """
 
 import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+
+from storage.copilot_log_db import record as record_answer
 
 from .context import build_context
 from .guard import unverified_numbers
@@ -27,6 +36,11 @@ from .router import DECLINE, route as route_question
 
 CACHE_PATH = Path(__file__).parent.parent / "data" / "copilot_explanations.json"
 _LOCK = threading.Lock()
+
+# The one answer read every day, so it is worth a second draft. A typed
+# question gets one: the guards already decide whether it is safe, and the
+# grades only decide which of two safe answers reads better.
+EXPLAIN_DRAFTS = 2
 
 SYSTEM = """You explain a NIFTY 50 options decision-support dashboard to its owner, a beginner trader in India.
 
@@ -45,47 +59,86 @@ EXPLAIN_PROMPT = (
 )
 
 
-def _problems(text: str, data: dict, question: str) -> tuple[list[str], list[float], dict]:
-    """What is wrong with this draft: (instructions to fix, bad numbers, review).
+def _evaluate(text: str, data: dict, question: str) -> dict:
+    """A draft and everything known about it.
 
     An invented number is fatal on its own, so the Jev call is skipped when
     one is found — this draft is being rewritten either way.
     """
     bad = unverified_numbers(text, data, question)
     if bad:
-        return ([
+        return {"text": text, "bad_numbers": bad, "review": {
+            "checked": False, "blocked": False, "grades": {},
+            "reason": "not reached — numbers failed first"}, "problems": [
             f"These numbers are not in DATA: {', '.join(f'{b:g}' for b in bad)}. Rewrite using only numbers that "
-            "appear in DATA, or describe them in words without a number."
-        ], bad, {"checked": False, "blocked": False, "reason": "not reached — numbers failed first"})
+            "appear in DATA, or describe them in words without a number."]}
     review = review_answer(text, data)
-    return (review["problems"], [], review)
+    return {"text": text, "bad_numbers": [], "review": review, "problems": review["problems"]}
 
 
-def _answer(question: str, data: dict) -> dict:
-    messages = [
+def _rank(attempt: dict) -> tuple:
+    """Clean first, then better graded. A withheld answer is worse than any
+    shown one however well it reads."""
+    grades = attempt["review"].get("grades") or {}
+    return (not attempt["problems"], grades.get("honesty", 0) + grades.get("clarity", 0))
+
+
+def _answer(question: str, data: dict, drafts: int = 1, kind: str = "ask", route: str | None = None) -> dict:
+    base = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"DATA:\n{json.dumps(data, separators=(',', ':'), default=str)}\n\nQUESTION: {question}"},
     ]
-    text = chat(messages)
-    problems, bad, review = _problems(text, data, question)
-    if problems:
-        messages += [
-            {"role": "assistant", "content": text},
+    attempts = [_evaluate(chat(base), data, question) for _ in range(max(1, drafts))]
+    best = max(attempts, key=_rank)
+    written = len(attempts)
+
+    if best["problems"]:
+        messages = base + [
+            {"role": "assistant", "content": best["text"]},
             {"role": "user", "content": "Rewrite the whole answer. Fix all of this:\n"
-                                        + "\n".join(f"- {p}" for p in problems)},
+                                        + "\n".join(f"- {p}" for p in best["problems"])},
         ]
-        text = chat(messages)
-        problems, bad, review = _problems(text, data, question)
+        # The rewrite is listed first so that it wins a tie: it is the one
+        # that saw the feedback, and reporting the draft that preceded it
+        # would hide what the model was actually told.
+        best = max([_evaluate(chat(messages), data, question), best], key=_rank)
+        written += 1
 
     cfg = config()
-    base = {"provider": cfg["provider"], "model": cfg["model"],
-            "generated_at": datetime.now(timezone.utc).isoformat(), "review": review}
-    if bad:
-        return {**base, "ok": False, "answer": None,
-                "reason": f"Answer withheld: it contained numbers not in the computed data ({', '.join(f'{b:g}' for b in bad)})."}
-    if problems:
-        return {**base, "ok": False, "answer": None, "reason": review["reason"]}
-    return {**base, "ok": True, "answer": text.strip()}
+    review = best["review"]
+    result = {
+        "provider": cfg["provider"], "model": cfg["model"], "drafts": written,
+        "generated_at": datetime.now(timezone.utc).isoformat(), "review": review,
+        "grades": review.get("grades") or {},
+    }
+    if best["bad_numbers"]:
+        result |= {"ok": False, "answer": None, "reason": (
+            "Answer withheld: it contained numbers not in the computed data "
+            f"({', '.join(f'{b:g}' for b in best['bad_numbers'])}).")}
+    elif best["problems"]:
+        result |= {"ok": False, "answer": None, "reason": review["reason"]}
+    else:
+        result |= {"ok": True, "answer": best["text"].strip()}
+
+    _log(result, kind=kind, question=question, route=route, as_of=data.get("as_of_close"),
+         bad_numbers=best["bad_numbers"], review=review)
+    return result
+
+
+def _log(result: dict, *, kind: str, question: str, route: str | None, as_of: str | None,
+         bad_numbers: list, review: dict, outcome: str | None = None) -> None:
+    """Never lets a logging problem cost the user their answer."""
+    try:
+        record_answer({
+            "kind": kind, "question": question, "route": route, "as_of_close": as_of,
+            "drafts": result["drafts"], "outcome": outcome or ("shown" if result["ok"] else "withheld"),
+            "reason": None if result["ok"] else result["reason"],
+            "bad_numbers": bad_numbers, "unsupported": review.get("unsupported") or [],
+            "scores": review.get("scores") or {}, "grades": review.get("grades") or {},
+            "answer": result.get("answer"),
+        })
+    except Exception:
+        pass
 
 
 def explain_today(symbol: str = "^NSEI", live: dict | None = None) -> dict:
@@ -97,7 +150,8 @@ def explain_today(symbol: str = "^NSEI", live: dict | None = None) -> dict:
         saved = json.loads(CACHE_PATH.read_text()) if CACHE_PATH.exists() else {}
         if key in saved and saved[key].get("ok"):
             return {**saved[key], "cached": True}
-    result = {**_answer(EXPLAIN_PROMPT, data), "as_of_close": data["as_of_close"]}
+    result = {**_answer(EXPLAIN_PROMPT, data, drafts=EXPLAIN_DRAFTS, kind="explain"),
+              "as_of_close": data["as_of_close"]}
     if result["ok"]:
         with _LOCK:
             saved = json.loads(CACHE_PATH.read_text()) if CACHE_PATH.exists() else {}
@@ -114,8 +168,14 @@ def ask(question: str, symbol: str = "^NSEI", live: dict | None = None) -> dict:
         # Refused by code, not by the model: nothing was generated, so there
         # is nothing to guard.
         cfg = config()
-        return {"provider": cfg["provider"], "model": None, "ok": True, "answer": DECLINE,
-                "generated_at": datetime.now(timezone.utc).isoformat(), "route": routed,
-                "review": {"checked": False, "blocked": False, "reason": "no model answer to check"}}
+        result = {"provider": cfg["provider"], "model": None, "ok": True, "answer": DECLINE, "drafts": 0,
+                  "generated_at": datetime.now(timezone.utc).isoformat(), "route": routed, "grades": {},
+                  "review": {"checked": False, "blocked": False, "reason": "no model answer to check"}}
+        # "declined", not "shown": no model wrote it, so it is not evidence
+        # about the guards or the prose.
+        _log(result, kind="ask", question=question, route="off_topic", as_of=None,
+             bad_numbers=[], review={}, outcome="declined")
+        return result
     data = build_context(symbol, live=live)
-    return {**_answer(question, data), "as_of_close": data["as_of_close"], "route": routed}
+    return {**_answer(question, data, kind="ask", route=routed.get("route")),
+            "as_of_close": data["as_of_close"], "route": routed}

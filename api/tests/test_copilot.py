@@ -7,6 +7,13 @@ import copilot.assistant as assistant
 import copilot.llm_client as llm
 from copilot.guard import numbers_in_text, unverified_numbers
 
+@pytest.fixture(autouse=True)
+def _log_to_a_temp_db(tmp_path, monkeypatch):
+    """No test may write to the real copilot log."""
+    import storage.copilot_log_db as log_db
+    monkeypatch.setattr(log_db, "DB_PATH", tmp_path / "copilot_log.db")
+
+
 DATA = {
     "last_close": 23270.6,
     "as_of_close": "2026-09-17",
@@ -91,6 +98,7 @@ def test_one_retry_then_withhold_if_numbers_are_still_invented(monkeypatch):
     replies = iter(["NIFTY will hit 24,500.", "Fine: NIFTY will hit 24,800."])
     monkeypatch.setattr(assistant, "chat", lambda messages: next(replies))
     r = assistant._answer("what next?", DATA)
+    # The rewrite is what gets reported, not the draft that preceded it.
     assert r["ok"] is False and r["answer"] is None and "24800" in r["reason"]
 
 
@@ -107,7 +115,10 @@ def test_explanation_is_saved_per_day_and_not_regenerated(tmp_path, monkeypatch)
     monkeypatch.setattr(assistant, "build_context", lambda symbol, live=None: DATA)
     monkeypatch.setattr(assistant, "chat", lambda messages: calls.append(1) or "It closed at 23,270.6.")
     first, second = assistant.explain_today(), assistant.explain_today()
-    assert first["ok"] and not first["cached"] and second["cached"] and len(calls) == 1
+    assert first["ok"] and not first["cached"] and second["cached"]
+    # The daily explanation is drafted more than once and the better one
+    # kept; the cache is what stops that happening twice in a day.
+    assert len(calls) == assistant.EXPLAIN_DRAFTS
 
 
 def test_every_number_in_the_data_passes_its_own_check():
@@ -187,7 +198,9 @@ def test_both_guards_ride_one_request_over_shared_state(jev_key, monkeypatch):
     monkeypatch.setattr(jev.requests, "post",
                         lambda url, **k: sent.update(k["json"]) or _jev(claims=[(1, 0, 0, 0)] * 2))
     review.review_answer("It closed at 23,270.6. The verdict is NO_TRADE.", DATA)
-    assert set(sent["questions"]) == {"predicts_market", "advises_trade", "claim_0", "claim_1"}
+    # Both guards and both grades, in one request over one state.
+    assert set(sent["questions"]) == {"predicts_market", "advises_trade", "claim_0", "claim_1",
+                                      "honesty", "clarity"}
     assert sent["model"] == "jev-latest"
     # Richer state than the answer alone: the forecast questions can tell
     # reporting from predicting by checking what the system actually computed.
@@ -338,3 +351,96 @@ def test_empty_content_from_a_reasoning_model_is_a_clear_error(env, monkeypatch)
         200, {"choices": [{"finish_reason": "length", "message": {"role": "assistant"}}]}))
     with pytest.raises(llm.LLMError, match="no text"):
         llm.chat([{"role": "user", "content": "hi"}])
+
+
+# --- grades, drafts and the log ----------------------------------------------
+
+import storage.copilot_log_db as log_db
+
+
+def _review(blocked=False, honesty=1.0, clarity=1.0, problems=()):
+    return {"checked": True, "blocked": blocked, "scores": {}, "unsupported": [],
+            "problems": list(problems), "grades": {"honesty": honesty, "clarity": clarity},
+            "reason": "withheld" if problems else "clean"}
+
+
+def test_the_better_graded_of_two_clean_drafts_is_the_one_shown(monkeypatch):
+    monkeypatch.setattr(assistant, "chat", lambda messages: "It closed at 23,270.6." if len(messages) == 2 else "x")
+    texts = iter(["Dry but correct.", "Clear and honest."])
+    monkeypatch.setattr(assistant, "chat", lambda messages: next(texts))
+    grades = {"Dry but correct.": _review(honesty=1.0, clarity=0.5),
+              "Clear and honest.": _review(honesty=2.0, clarity=1.8)}
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: grades[text])
+    r = assistant._answer("explain", DATA, drafts=2)
+    assert r["ok"] and r["answer"] == "Clear and honest." and r["drafts"] == 2
+    assert r["grades"] == {"honesty": 2.0, "clarity": 1.8}
+
+
+def test_a_low_grade_never_withholds_an_answer(monkeypatch):
+    # Grades are recorded, not enforced. Only the guards block.
+    monkeypatch.setattr(assistant, "chat", lambda messages: "Terse.")
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: _review(honesty=0.0, clarity=0.0))
+    r = assistant._answer("explain", DATA)
+    assert r["ok"] is True and r["grades"] == {"honesty": 0.0, "clarity": 0.0}
+
+
+def test_a_clean_draft_beats_a_better_graded_blocked_one(monkeypatch):
+    texts = iter(["Beautifully written forecast.", "Plain and clean."])
+    monkeypatch.setattr(assistant, "chat", lambda messages: next(texts))
+    grades = {"Beautifully written forecast.": _review(blocked=True, honesty=2.0, clarity=2.0,
+                                                       problems=["This answer predicts the market."]),
+              "Plain and clean.": _review(honesty=0.5, clarity=0.5)}
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: grades[text])
+    r = assistant._answer("explain", DATA, drafts=2)
+    assert r["ok"] is True and r["answer"] == "Plain and clean."
+
+
+def test_every_answer_is_recorded_shown_or_withheld(monkeypatch):
+    monkeypatch.setattr(assistant, "chat", lambda messages: "It closed at 23,270.6.")
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: _review())
+    assistant._answer("why no trade?", DATA, kind="ask", route="today")
+
+    monkeypatch.setattr(assistant, "chat", lambda messages: "NIFTY will hit 24,500.")
+    assistant._answer("target?", DATA, kind="ask", route="today")
+
+    rows = log_db.recent()
+    assert [r["outcome"] for r in rows] == ["withheld", "shown"]
+    assert rows[0]["bad_numbers"] == [24500.0] and rows[0]["question"] == "target?"
+    assert rows[1]["grades"] == {"honesty": 1.0, "clarity": 1.0} and rows[1]["route"] == "today"
+
+
+def test_an_off_topic_refusal_is_logged_as_declined_not_shown(jev_key, monkeypatch):
+    # No model wrote it, so it is not evidence about the guards or the prose.
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _route(
+        today=0.01, pattern_record=0.0, method=0.0, off_topic=0.99))
+    monkeypatch.setattr(assistant, "chat", lambda messages: pytest.fail("no model call expected"))
+    assistant.ask("write me a poem")
+    row = log_db.recent()[0]
+    assert row["outcome"] == "declined" and row["drafts"] == 0
+
+
+def test_a_broken_log_never_costs_the_user_their_answer(monkeypatch):
+    def boom(*a, **k):
+        raise sqlite_error()
+
+    def sqlite_error():
+        import sqlite3
+        return sqlite3.OperationalError("disk full")
+
+    monkeypatch.setattr(assistant, "record_answer", boom)
+    monkeypatch.setattr(assistant, "chat", lambda messages: "It closed at 23,270.6.")
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: _review())
+    assert assistant._answer("why?", DATA)["ok"] is True
+
+
+def test_the_summary_surfaces_withheld_answers_as_candidate_cases():
+    log_db.record({"kind": "ask", "question": "will it rise?", "outcome": "withheld", "drafts": 2,
+                   "reason": "Answer withheld: it predicts where the market is going.",
+                   "unsupported": [{"claim": "it should bounce"}]})
+    log_db.record({"kind": "explain", "question": "explain", "outcome": "shown", "drafts": 2,
+                   "grades": {"honesty": 2.0, "clarity": 1.5}})
+    s = log_db.summary()
+    assert s["answers"] == 2 and s["shown"] == 1 and s["withheld"] == 1
+    assert s["grades"] == {"honesty": 2.0, "clarity": 1.5}
+    assert s["flagged_for_review"][0]["unsupported"] == ["it should bounce"]
+    assert s["needed_a_retry"] == 1

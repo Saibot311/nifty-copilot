@@ -22,7 +22,7 @@ test now, and it needs calendar time.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 25 checks, 155 tests — run before and after changes
+./scripts/check_all.sh          # 26 checks, 162 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ```
 
@@ -31,7 +31,7 @@ their own harness — it costs tokens and is not in `check_all.sh`. Re-run it af
 changing any question, criterion or threshold:
 
 ```bash
-cd api && .venv/bin/python scripts/check_guards.py   # or: ... forecast | claims | routes
+cd api && .venv/bin/python scripts/check_guards.py   # forecast | claims | routes | grades
 ```
 
 Dev servers are started through the harness preview tool, never `npm`/`uvicorn` in a
@@ -66,6 +66,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/pattern_options.json` | Pattern → option research output | `scripts/pattern_options.py` |
 | `api/data/strategy_status.db` | Validation verdict history | `scripts/validate_all.py --all` |
 | `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
+| `api/data/copilot_log.db` | Every copilot answer and what the guards made of it | Accrues in use; deletable (holds your questions) |
 | **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt — back it up** |
 
 ## Traps that already cost real time
@@ -87,6 +88,11 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
   assumes, shorts dearer — CE results are mildly conservative, PE ones mildly optimistic.
 - **A result that flips sign between dev and holdout is not a result**, however big
   the t is on each side. Entry timing showed t=-4 one way and t=+3.3 the other.
+- **Write a sentence you think is clean and the guards will still find things.** Both
+  flags on my own "ideal" answer were correct: "nothing here worth acting on" is the
+  writer advising, and a sentence about what formed presupposed patterns the data says
+  did not form. Real flagged answers make better labelled cases than invented ones —
+  `/api/copilot/record` lists them.
 - **When a guard misfires, fix the question, not the threshold.** Two false alarms
   went from 0.32 and 0.31 to 0.15 and 0.07 on one added criterion; moving the
   threshold would have hidden them and blinded the guard elsewhere.
