@@ -122,6 +122,7 @@ if ! $FAST; then
         api/patterns/today
         api/live/patterns
         api/similarity
+        api/intraday/research
         api/copilot/status
         "api/candles?provider=archive&timeframe=15m&days=10"
     )

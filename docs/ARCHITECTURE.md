@@ -188,6 +188,7 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `backtest/pattern_proximity.py` | Formed today / could form next close, trigger levels (bisected to ~1 pt), base rate | Forecasts — it's a base rate |
 | `copilot/llm_client.py` | Provider-agnostic LLM client (any OpenAI-compatible API; Gemini/Groq presets) | Business logic |
 | `copilot/guard.py` | I2 for the LLM: rejects any answer with a number not in the data | Leniency — it's the safety net |
+| `backtest/intraday.py` | Execution studies on the 15-min archive: is the open obtainable, does entry time matter | Reading it as a pattern engine — it tests assumptions, not edge |
 | `copilot/jev.py` | Shared TypeSafe Jev client; every call fails open | Letting a guard outage take the copilot down |
 | `copilot/prediction_guard.py` | The two forecast/advice questions and their threshold | Raising `BLOCK_ABOVE` to fix a wording problem — fix the criteria instead |
 | `copilot/claim_guard.py` | One choice question per sentence: does the data support it? | Judging a whole block as one claim — a false sentence averages out |

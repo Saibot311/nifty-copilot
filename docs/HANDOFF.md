@@ -22,7 +22,7 @@ test now, and it needs calendar time.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 24 checks, 145 tests — run before and after changes
+./scripts/check_all.sh          # 25 checks, 155 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ```
 
@@ -65,6 +65,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/nifty_bars.db` | 15-min bars from 2015-01-09; daily from 1990 | `scripts/backfill_bars.py` |
 | `api/data/pattern_options.json` | Pattern → option research output | `scripts/pattern_options.py` |
 | `api/data/strategy_status.db` | Validation verdict history | `scripts/validate_all.py --all` |
+| `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
 | **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt — back it up** |
 
 ## Traps that already cost real time
@@ -81,6 +82,11 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 - **Ranking options by % return** picks ₹20 lottery tickets. Rank by ₹ per lot.
 - **A guard that judges a whole block as one claim averages a lie away.** Split on
   lines as well as sentences, or a false line hides between two true ones.
+- **The opening print is not a price you get.** The index sits ~0.042% below it 15
+  minutes later, in all 12 years. Longs entered late are cheaper than the backtest
+  assumes, shorts dearer — CE results are mildly conservative, PE ones mildly optimistic.
+- **A result that flips sign between dev and holdout is not a result**, however big
+  the t is on each side. Entry timing showed t=-4 one way and t=+3.3 the other.
 - **When a guard misfires, fix the question, not the threshold.** Two false alarms
   went from 0.32 and 0.31 to 0.15 and 0.07 on one added criterion; moving the
   threshold would have hidden them and blinded the guard elsewhere.
@@ -92,8 +98,11 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
    against what the system said. Pairs with the forward log. No API needed.
 2. **Let the forward log accrue.** It is the only out-of-sample evidence that can't be
    fooled by better backtesting.
-3. **Intraday research.** 11.7 years of 15-minute bars are archived and unused. Option
-   P&L can't be backtested intraday (the archive is end-of-day), so index-level only.
+3. **Intraday: mining for edge, if you still want to.** The execution studies are done
+   (see below). Anything further — opening-range breakouts, time-of-day effects — is a
+   new hypothesis family that raises the Bonferroni bar for the daily patterns, and it
+   can only be measured in index points, never in option money. Decide that trade-off
+   before starting.
 4. **Copilot: slice context per route.** `router.py` already classifies every
    question and records the route; acting on it (sending only the relevant part of
    the digest) needs its own labelled cases, because a narrower context also

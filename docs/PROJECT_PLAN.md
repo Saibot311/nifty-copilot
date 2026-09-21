@@ -7,6 +7,42 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Intraday archive put to work — on assumptions, not edge (2026-09-21).** 11.7 years of 15-minute
+bars had been sitting unused since the backfill. The tempting use was mining them for intraday
+patterns; the right first use was not. A new intraday pattern is a new hypothesis family that raises
+the Bonferroni bar for all 26 daily patterns, and it could only ever be scored in index points,
+because the options archive is end-of-day. Testing the *execution assumption* every existing number
+already rests on costs no hypotheses at all. `backtest/intraday.py`, three studies:
+
+*A. The opening print is not a price you can get.* The archive and the daily series agree on the
+open to within a hundredth of a point, so the data is sound — but the index sits 0.042% **below**
+that print 15 minutes later, and it does so in 12 years out of 12, dev t=-6.96 and holdout t=-2.13.
+Probably the pre-open call auction rather than anything tradeable. The consequence for this system:
+a long entered slightly late is bought cheaper than the backtest assumes and a short sold cheaper,
+so every CE result is mildly conservative and every PE result mildly optimistic by about that much
+per trade. Too small to overturn any current verdict — and nothing here is close enough for it to
+matter — but the right size to matter for one that ever gets close. The larger number is the std:
+being 15 minutes late adds 0.31% of noise to every entry, which dwarfs any per-trade edge claimed
+so far.
+
+*B. No entry time beats the next open — and the way it failed is the finding.* Five fixed entry
+times, the same signals, the same exits. The first cut said "enter at the close, +0.098% on the
+holdout, t=3.8". That was confounded: entering later means less time in the market, and the holdout
+is a falling period for mostly-long strategies. Adding a direction-matched baseline (the same fix
+the strategy verdicts already use) did not rescue it either — the excess was -0.032% on development
+data (t=-4.8) and +0.047% on the holdout (t=+4.0). Two significant results pointing in opposite
+directions measure the period, not the execution. `_verdict` now requires the sign to agree across
+both periods before anything is called a finding, and reports UNSTABLE when it does not. The
+next-open rule (I1) stands, unchanged and now actually tested.
+
+*C. When the index moves.* Descriptive only: range by 15-minute slot, busiest at the open. Three of
+25 slots have drift clearing |t|>2, which is roughly what testing 25 slots at once produces by
+chance, and it is stated next to the number.
+
+No new hypotheses were added to the evidence bar. The studies are saved by
+`scripts/intraday_research.py` and served at `/api/intraday/research`; there is no dashboard card,
+because none of this is a daily decision input.
+
 **Copilot guards built out: claims, routing, one call (2026-09-21).** The planned Jev/Gemini pairing
 below is now built, except context slicing. Three things changed.
 

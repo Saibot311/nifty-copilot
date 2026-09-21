@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from backtest.research import run_all_strategies
 from cache import cached
 from backtest.walkforward import evaluate_strategy
+from backtest.intraday import load_research as load_intraday_research
 from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.live_patterns import live_patterns, merge_live
@@ -336,6 +337,18 @@ def forward_log(symbol: str = Query("^NSEI")) -> dict:
         return forward_report(symbol)
     except Exception as e:
         raise HTTPException(503, f"Forward log failed: {e}")
+
+
+@app.get("/api/intraday/research")
+def intraday_research() -> dict:
+    """What the 15-minute archive says about the system's own execution
+    assumption: whether the opening print is a price you can get, and
+    whether any fixed entry time beats it. Saved by
+    scripts/intraday_research.py; these studies add no new hypotheses."""
+    r = load_intraday_research()
+    if r is None:
+        raise HTTPException(503, "Intraday research has not been run yet — python scripts/intraday_research.py")
+    return r
 
 
 @app.get("/api/bars/archive")
