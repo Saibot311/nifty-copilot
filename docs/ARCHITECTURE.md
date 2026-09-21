@@ -16,7 +16,7 @@ worth trusting at all. A change that breaks one of these is a bug even if every 
 | # | Invariant | Where it's enforced |
 |---|---|---|
 | **I1** | **No look-ahead.** A signal is decided on bar `i`'s close and executed at bar `i+1`'s open. Never same-bar, never a future bar. A bar whose window hasn't closed is `provisional` and is never a signal input or archived. | `backtest/engine.py`, `zerodha_provider.is_provisional`; locked by `tests/test_engine.py`, `tests/test_intraday_bars.py`, and `tests/test_pattern_no_lookahead.py` (every pattern re-run on truncated history must agree) |
-| **I2** | **Every number shown is computed by deterministic Python.** No LLM ever produces a statistic. If it isn't computed, the UI says "not available" — it does not guess. | Whole `quant/` + `backtest/` stack; `lib/api.ts` has no mock fallbacks; `copilot/guard.py` withholds any LLM answer containing a number not in the computed data, `copilot/prediction_guard.py` withholds forecasts and trade instructions |
+| **I2** | **Every number shown is computed by deterministic Python.** No LLM ever produces a statistic. If it isn't computed, the UI says "not available" — it does not guess. | Whole `quant/` + `backtest/` stack; `lib/api.ts` has no mock fallbacks; `copilot/guard.py` withholds any LLM answer containing a number not in the computed data; `copilot/review.py` withholds forecasts, trade instructions and any sentence the computed data does not support |
 | **I3** | **Costs are always applied.** Gross return is never presented as a result. Index and options have separate, realistic cost models. | `backtest/costs.py`, `backtest/options_engine.py`; locked by `tests/test_costs.py` |
 | **I4** | **Nothing is "validated" from a single split, or from drift.** A strategy must survive walk-forward folds *and* an untouched holdout, and in both periods beat simply being in the market in the same direction (same mechanics, same costs), with the holdout edge at t ≥ 2. | `backtest/walkforward.py` (`holdout_verdict`); locked by `tests/test_validation_verdict.py` |
 | **I5** | **The bar rises with the number of hypotheses tested.** 26 patterns each get one holdout test, so one clearing t = 2 by luck is likely. A trade needs t above the Bonferroni line for that count (≈2.8–2.9), not just 2. | `stats/multiple_comparisons.py` (`required_t`), `briefing/recommendation.py`; `backtest/hypothesis_log.py` keeps the full audit trail |
@@ -188,7 +188,11 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `backtest/pattern_proximity.py` | Formed today / could form next close, trigger levels (bisected to ~1 pt), base rate | Forecasts — it's a base rate |
 | `copilot/llm_client.py` | Provider-agnostic LLM client (any OpenAI-compatible API; Gemini/Groq presets) | Business logic |
 | `copilot/guard.py` | I2 for the LLM: rejects any answer with a number not in the data | Leniency — it's the safety net |
-| `copilot/prediction_guard.py` | Second check via TypeSafe Jev: blocks forecasts and trade instructions (no numbers needed) | Blocking when the service is down — it fails open, marked unchecked |
+| `copilot/jev.py` | Shared TypeSafe Jev client; every call fails open | Letting a guard outage take the copilot down |
+| `copilot/prediction_guard.py` | The two forecast/advice questions and their threshold | Raising `BLOCK_ABOVE` to fix a wording problem — fix the criteria instead |
+| `copilot/claim_guard.py` | One choice question per sentence: does the data support it? | Judging a whole block as one claim — a false sentence averages out |
+| `copilot/review.py` | Both guards in one Jev call over shared state | Splitting them into two calls; they judge the same evidence |
+| `copilot/router.py` | Classifies a question before the model is called; refuses off-topic ones in code | Slicing context per route without labelled cases first |
 | `copilot/context.py` · `assistant.py` | Compact digest of computed results → explain/ask | Computing anything new |
 | `backtest/similarity.py` | Phase 11: 5-feature nearest-neighbour analogs + walk-forward test | More features without evidence they help |
 | `backtest/live_patterns.py` | Phase 10: today's candle from 15-min closes → which patterns would form now | Anything final before 15:30 |

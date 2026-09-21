@@ -1,37 +1,37 @@
-"""Second guard on copilot answers, using TypeSafe's Jev (System One).
+"""Forecast guard: does the answer predict the market, or tell the reader
+to trade? Both are forbidden, and neither leaves a number behind for
+guard.py to catch — "this looks set to rise" breaks the rule with no figures
+in it at all.
 
-guard.py catches invented *numbers*. It cannot catch "this looks set to
-rise" — a forecast with no number in it, which the copilot's rules forbid
-just as firmly. That judgment is semantic, so it goes to a model built to
-return a typed answer rather than prose: two noul questions (probability
-that a statement is true), asked together over the same state.
+The judgment is semantic, so it goes to Jev as two noul questions (the
+probability that a statement is true) asked over the same state as the claim
+guard, in one request.
 
 Reporting the system's own computed verdict is explicitly allowed — the
-criteria say so, otherwise every honest explanation of a CONSIDER_CALL
-would be flagged.
+criteria say so and give examples, otherwise every honest explanation of a
+CONSIDER_CALL would be flagged. Tuning that distinction moved a real false
+positive from 0.64 to 0.05, which is why the examples are worth their space.
 
-Optional: with no TYPESAFE_API_KEY the check is skipped and the answer is
-marked unchecked rather than blocked; the number guard still applies.
+The state also carries what the system actually computed, so "the system
+recommends a CALL" can be recognised as reporting rather than guessed at
+from tone alone.
 """
-
-import requests
-
-from market_data.kite_session import _env
-
-ENDPOINT = "https://api.typesafe.ai/v1/systemone"
-MODEL = "jev-latest"
-TIMEOUT_S = 20
 
 # Low on purpose: letting a forecast through breaks the product's core
 # promise, while a wrongly withheld explanation costs one more click.
-# Tune against real answers before raising it.
+# Tune against scripts/check_guards.py before raising it.
 BLOCK_ABOVE = 0.3
+
+LABELS = {
+    "predicts_market": "predicts where the market is going",
+    "advises_trade": "tells you to trade",
+}
 
 QUESTIONS = {
     "predicts_market": {
         "type": "noul",
         "instructions": {
-            "question": "In the writer's own voice, the text claims what the market, index or price will do next.",
+            "question": "In the writer's own voice, the text in `answer` claims what the market, index or price will do next.",
             "note": "Relaying a verdict that software computed is reporting, not predicting. What matters is who is making the claim, not whether a direction is mentioned.",
         },
         "criteria": {
@@ -53,8 +53,11 @@ QUESTIONS = {
     "advises_trade": {
         "type": "noul",
         "instructions": {
-            "question": "The text tells the reader to place, hold or avoid a trade, as the writer's own advice.",
-            "note": "Describing the software's recommendation is not the writer advising; a direct instruction to the reader is.",
+            "question": "The text in `answer` tells the reader to place, hold or avoid a trade, as the writer's own advice.",
+            "note": "Describing the software's recommendation is not the writer advising; a direct instruction to the reader is. "
+                    "Naming the option the system computed — its moneyness, strike or holding period — is part of reporting that "
+                    "verdict, not an instruction. A verdict such as REJECTED or NO_TRADE is a finding about past data, not a "
+                    "warning to stay out.",
         },
         "criteria": {
             "true": {
@@ -66,6 +69,8 @@ QUESTIONS = {
                 "examples": [
                     "the system recommends a CALL today; its option record is approved",
                     "the system's verdict is NO_TRADE",
+                    "the system's verdict is CONSIDER_CALL: buy a 2% ITM call, hold 10 days, per its computed record",
+                    "on 2024-26 data that option lost money per lot, so the system rejects it",
                 ],
             },
         },
@@ -73,36 +78,9 @@ QUESTIONS = {
 }
 
 
-def available() -> bool:
-    return bool(_env("TYPESAFE_API_KEY"))
+def scores(answers: dict) -> dict[str, float]:
+    return {k: float(answers[k]["noul"]) for k in QUESTIONS if k in answers}
 
 
-def check(answer: str) -> dict:
-    """{checked, blocked, scores, reason}. Never raises: a guard that is
-    down must not take the copilot down with it."""
-    key = _env("TYPESAFE_API_KEY")
-    if not key:
-        return {"checked": False, "blocked": False, "scores": {}, "reason": "no TYPESAFE_API_KEY — prediction check skipped"}
-    try:
-        resp = requests.post(
-            ENDPOINT,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"state": answer, "model": MODEL, "questions": QUESTIONS},
-            timeout=TIMEOUT_S,
-        )
-        resp.raise_for_status()
-        answers = resp.json()["answers"]
-        scores = {k: float(answers[k]["noul"]) for k in QUESTIONS if k in answers}
-    except Exception as e:
-        return {"checked": False, "blocked": False, "scores": {},
-                "reason": f"prediction check unavailable ({type(e).__name__}) — skipped"}
-
-    hits = [k for k, v in scores.items() if v > BLOCK_ABOVE]
-    label = {"predicts_market": "predicts where the market is going", "advises_trade": "tells you to trade"}
-    return {
-        "checked": True,
-        "blocked": bool(hits),
-        "scores": {k: round(v, 3) for k, v in scores.items()},
-        "reason": ("Answer withheld: it " + " and ".join(label[h] for h in hits) + ", which this tool must not do."
-                   if hits else "no forecast or trade instruction detected"),
-    }
+def blocking(scores: dict[str, float]) -> list[str]:
+    return [k for k, v in scores.items() if v > BLOCK_ABOVE]

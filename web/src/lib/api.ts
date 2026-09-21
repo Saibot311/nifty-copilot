@@ -393,7 +393,7 @@ export interface CopilotStatus {
   configured: boolean;
   provider: string;
   model: string | null;
-  prediction_guard: boolean;
+  guards: { numbers: boolean; forecast: boolean; claims: boolean; routing: boolean };
 }
 
 export interface CopilotAnswer {
@@ -401,10 +401,19 @@ export interface CopilotAnswer {
   answer: string | null;
   reason?: string;
   provider: string;
-  model: string;
-  as_of_close: string;
+  /** null when the router turned the question away — nothing was generated. */
+  model: string | null;
+  as_of_close?: string;
   cached?: boolean;
-  prediction_check?: { checked: boolean; blocked: boolean; scores: Record<string, number>; reason: string };
+  review?: {
+    checked: boolean;
+    blocked: boolean;
+    scores?: Record<string, number>;
+    unsupported?: { claim: string; verdict: string; against: number }[];
+    claims_checked?: number;
+    reason: string;
+  };
+  route?: { checked: boolean; route: string | null; off_topic: boolean };
 }
 
 export const fetchCopilotStatus = () => get<CopilotStatus>("/api/copilot/status");

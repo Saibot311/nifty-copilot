@@ -22,8 +22,16 @@ test now, and it needs calendar time.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 24 checks, 130 tests — run before and after changes
+./scripts/check_all.sh          # 24 checks, 145 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
+```
+
+The copilot's three Jev-backed guards are judged by a real model, so they have
+their own harness — it costs tokens and is not in `check_all.sh`. Re-run it after
+changing any question, criterion or threshold:
+
+```bash
+cd api && .venv/bin/python scripts/check_guards.py   # or: ... forecast | claims | routes
 ```
 
 Dev servers are started through the harness preview tool, never `npm`/`uvicorn` in a
@@ -42,7 +50,7 @@ Re-login: <http://127.0.0.1:8000/api/zerodha/login>
 ## Secrets
 
 All in `api/.env` (gitignored, never in chat or commits): `KITE_API_KEY`,
-`KITE_API_SECRET`, `LLM_API_KEY` (Gemini free tier), `TYPESAFE_API_KEY` (Jev).
+`KITE_API_SECRET`, `LLM_API_KEY` (Gemini free tier), `LLM_PROVIDER`, `TYPESAFE_API_KEY` (Jev).
 To add one, prompt for it — never put a key in the command text:
 
 ```bash
@@ -71,6 +79,11 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 - **Gemini 3.x think before writing.** Too small a `max_tokens` returns empty content
   with `finish_reason: "length"` and HTTP 200.
 - **Ranking options by % return** picks ₹20 lottery tickets. Rank by ₹ per lot.
+- **A guard that judges a whole block as one claim averages a lie away.** Split on
+  lines as well as sentences, or a false line hides between two true ones.
+- **When a guard misfires, fix the question, not the threshold.** Two false alarms
+  went from 0.32 and 0.31 to 0.15 and 0.07 on one added criterion; moving the
+  threshold would have hidden them and blinded the guard elsewhere.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps
@@ -81,7 +94,10 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
    fooled by better backtesting.
 3. **Intraday research.** 11.7 years of 15-minute bars are archived and unused. Option
    P&L can't be backtested intraday (the archive is end-of-day), so index-level only.
-4. **Copilot improvements** — see the Jev/Gemini notes in `PROJECT_PLAN.md`.
+4. **Copilot: slice context per route.** `router.py` already classifies every
+   question and records the route; acting on it (sending only the relevant part of
+   the digest) needs its own labelled cases, because a narrower context also
+   narrows what the answer is allowed to mention.
 
 ## Ground rules that must not slip
 

@@ -13,8 +13,10 @@ function Answer({ a }: { a: CopilotAnswer }) {
     <div>
       <div className="whitespace-pre-line text-sm leading-relaxed text-zinc-200">{a.answer}</div>
       <p className="mt-2 text-[10px] text-zinc-600">
-        {a.provider} · {a.model} · every number checked against the computed data ·{" "}
-        {a.prediction_check?.checked ? "forecast check passed (Jev)" : "forecast check skipped"}
+        {a.model ? `${a.provider} · ${a.model} · ` : ""}every number checked against the computed data ·{" "}
+        {a.review?.checked
+          ? `Jev checked ${a.review.claims_checked ?? 0} sentence${a.review.claims_checked === 1 ? "" : "s"} against it, and found no forecast`
+          : "Jev checks skipped"}
         {a.cached ? " · saved explanation" : ""}
       </p>
     </div>
@@ -92,7 +94,7 @@ export function CopilotCard({ status }: { status: CopilotStatus | null }) {
       {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
       <p className="mt-3 text-[10px] leading-relaxed text-zinc-600">
         Explains what the system computed; it can&apos;t predict or add numbers — answers with any number not in the data
-        are withheld{status.prediction_guard ? ", as are answers that forecast the market or tell you to trade" : ""}.
+        are withheld{status.guards.forecast ? ", as are answers that forecast the market, tell you to trade, or say something the computed data doesn't back" : ""}.
         Uses the {status.provider} free tier: your questions and today&apos;s market figures are sent to it and may be
         used to improve its models.
       </p>

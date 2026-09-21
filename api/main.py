@@ -15,7 +15,7 @@ from backtest.live_patterns import live_patterns, merge_live
 from backtest.similarity import run_similarity
 from copilot import assistant as copilot
 from copilot.llm_client import LLMError, LLMNotConfigured, config as llm_config
-from copilot.prediction_guard import available as prediction_guard_available
+from copilot.jev import available as jev_available
 from briefing import build_briefing, build_recommendation
 from briefing.forward_log import forward_report, record_if_final
 from options.chain_analytics import live_chain_analytics
@@ -452,7 +452,7 @@ def _copilot_call(fn):
 def copilot_status() -> dict:
     cfg = llm_config()
     return {"configured": cfg["has_key"], "provider": cfg["provider"], "model": cfg["model"],
-            "prediction_guard": prediction_guard_available()}
+            "guards": {"numbers": True, "forecast": jev_available(), "claims": jev_available(), "routing": jev_available()}}
 
 
 @app.get("/api/copilot/explain")

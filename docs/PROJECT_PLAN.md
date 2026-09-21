@@ -7,13 +7,55 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
-**Copilot: how to improve Jev and its pairing with Gemini (2026-09-21, planned not built).**
+**Copilot guards built out: claims, routing, one call (2026-09-21).** The planned Jev/Gemini pairing
+below is now built, except context slicing. Three things changed.
+
+*A claim guard (`copilot/claim_guard.py`).* The number guard catches invented figures and the
+forecast guard catches predictions, but neither catches "volatility has been elevated all month" —
+no figure, no forecast, and nothing in the data behind it. One Jev choice question per sentence now
+asks how DATA relates to it: supported, contradicted, not in data, or not a factual claim at all.
+That fourth option is what makes it usable — an explanation is mostly framing and caveats, and
+scoring those as unsupported would withhold every honest answer. Flags above 0.6 combined
+contradicted + not-in-data, looser than the forecast guard's 0.3 on purpose: a forecast getting
+through breaks the promise, while a twitchy claim check just makes the copilot useless, and the
+number guard already covers the dangerous case.
+
+*Both guards ride one request (`copilot/review.py`).* They are independent judgments over the same
+evidence, so they go together: one round trip, one bill, and the forecast questions now see what the
+system actually computed rather than judging tone alone. The number check runs first and
+short-circuits the Jev call — a draft already being rewritten is not also paid for semantically. One
+retry now names every problem at once (bad numbers, unsupported sentences, forecasts) instead of
+numbers only.
+
+*A router (`copilot/router.py`).* A Jev choice classifies the question before Gemini is called at
+all. An off-topic question is refused by code — no model call, nothing to guard. This copilot
+explains one dashboard; it is not a general chatbot. The other three routes are recorded but not yet
+acted on: sending only the relevant slice of context is the obvious next step, but a narrower
+context also narrows what the answer may mention, so it needs its own labelled cases first.
+
+*Measured, not asserted.* `scripts/check_guards.py` (was `check_prediction_guard.py`) now holds 42
+labelled cases across all three guards and prints an accuracy sweep over candidate thresholds. First
+live run: 15/17 forecast, 15/15 claims, 10/10 routes. The two failures were both false alarms where
+reporting a computed verdict read as advice — "buy a 2% ITM call, hold 10 days" at 0.32, and "that
+option lost ₹1,170 per lot, so it is rejected" at 0.31. The sweep showed a threshold of 0.4 would
+have made them disappear, which is exactly the wrong fix: it hides the confusion and blinds the
+guard elsewhere. Adding two criteria examples (naming the option the system computed is part of the
+verdict; REJECTED is a finding, not a warning to stay out) moved them to 0.15 and 0.07 — 42/42, with
+the highest pass at 0.15 and the lowest block at 0.44.
+
+*Two bugs the live run found.* The splitter treated a whole bulleted block as one claim, so a false
+sentence could have averaged out against true ones beside it — it now splits lines before sentences.
+And a sentence scored 1.0 supported was reported with verdict "contradicted", because the label was
+a tie-break between two of the four options rather than the model's own pick. Both have tests.
+
+**Copilot: how to improve Jev and its pairing with Gemini (2026-09-21, planned — claims, routing and
+the single call are now built; best-of-N drafts and daily grading are not).**
 Jev cannot be fine-tuned — it is a hosted judgment model. "Training" it here means improving the
 questions, the state it sees, and the thresholds, measured against labelled cases:
 
 1. *Questions and criteria are the biggest lever.* Rewriting one question around whose claim it is
    moved a false positive from 0.64 to 0.05. Worked examples in the criteria did most of that.
-2. *Grow the labelled set.* `scripts/check_prediction_guard.py` holds 9 cases. Every answer the
+2. *Grow the labelled set.* `scripts/check_guards.py` holds 42 cases. Every answer the
    guard gets wrong in real use should be added, with the right label, and the script re-run after
    any wording change — the unit tests mock the service, so only this measures the real model.
 3. *Tune the threshold on those cases,* not by taste. 0.3 today, chosen because a missed forecast
@@ -45,7 +87,7 @@ before any visible text, so a small `max_tokens` returns an empty message with f
 Guard tuning against the real model: the first wording blocked "the system recommends a CALL
 because…" at 0.64 — a false positive on the copilot's own job. Rewritten around *whose* claim it is
 (writer's forecast vs reporting a computed verdict), with examples: 9/9 labelled cases now correct,
-kept as scripts/check_prediction_guard.py. Asked directly for a prediction and a buy signal, the
+kept as scripts/check_guards.py. Asked directly for a prediction and a buy signal, the
 copilot refuses and reports the verdict instead.
 
 **Copilot gains a forecast guard via TypeSafe Jev (2026-09-21):** the number guard can't catch

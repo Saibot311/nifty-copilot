@@ -119,72 +119,216 @@ def test_every_number_in_the_data_passes_its_own_check():
     assert unverified_numbers(json.dumps(data), data) == []
 
 
-# --- prediction guard (TypeSafe Jev) -----------------------------------------
+# --- Jev client ---------------------------------------------------------------
 
+import copilot.claim_guard as cg
 import copilot.prediction_guard as pg
-
-
-def _jev(predicts: float, advises: float):
-    return _Resp(200, {"model": "jev-1.13.0", "answers": {
-        "predicts_market": {"type": "noul", "noul": predicts},
-        "advises_trade": {"type": "noul", "noul": advises},
-    }})
+import copilot.jev as jev
+import copilot.review as review
+import copilot.router as router
 
 
 @pytest.fixture
 def jev_key(monkeypatch):
-    monkeypatch.setattr(pg, "_env", lambda k: "ts-key" if k == "TYPESAFE_API_KEY" else None)
+    monkeypatch.setattr(jev, "_env", lambda k: "ts-key" if k == "TYPESAFE_API_KEY" else None)
+
+
+def test_no_key_is_unavailable_not_an_answer(monkeypatch):
+    monkeypatch.setattr(jev, "_env", lambda k: None)
+    with pytest.raises(jev.JevUnavailable):
+        jev.ask("x", {"q": {"type": "noul", "instructions": "?"}})
+
+
+def test_jev_errors_never_echo_the_key_or_the_body(jev_key, monkeypatch):
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _Resp(401, text="bad key ts-key"))
+    with pytest.raises(jev.JevUnavailable) as e:
+        jev.ask("x", {"q": {"type": "noul", "instructions": "?"}})
+    assert "ts-key" not in str(e.value) and "bad key" not in str(e.value)
+
+
+# --- forecast + claim review (one Jev call) -----------------------------------
+
+def _answers(predicts=0.0, advises=0.0, claims=()):
+    """claims: one (supported, contradicted, not_in_data, not_a_claim) tuple per sentence."""
+    out = {"predicts_market": {"type": "noul", "noul": predicts},
+           "advises_trade": {"type": "noul", "noul": advises}}
+    for i, (sup, con, nid, nac) in enumerate(claims):
+        out[f"claim_{i}"] = {"type": "choice", "choice": "supported",
+                             "probabilities": {"supported": sup, "contradicted": con,
+                                               "not_in_data": nid, "not_a_claim": nac}}
+    return out
+
+
+def _jev(predicts=0.0, advises=0.0, claims=()):
+    return _Resp(200, {"model": "jev-1.13.0", "answers": _answers(predicts, advises, claims)})
 
 
 def test_forecast_without_any_number_is_blocked(jev_key, monkeypatch):
     # The gap the number guard cannot cover: a prediction with no figures in it.
-    monkeypatch.setattr(pg.requests, "post", lambda *a, **k: _jev(0.91, 0.04))
-    r = pg.check("The setup looks set to push higher from here.")
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _jev(0.91, 0.04))
+    r = review.review_answer("The setup looks set to push higher from here.", check_claims=False)
     assert r["checked"] and r["blocked"] and "predicts" in r["reason"]
 
 
 def test_explaining_the_systems_own_verdict_passes(jev_key, monkeypatch):
-    monkeypatch.setattr(pg.requests, "post", lambda *a, **k: _jev(0.04, 0.02))
-    r = pg.check("The system says NO_TRADE because no pattern formed.")
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _jev(0.04, 0.02))
+    r = review.review_answer("The system says NO_TRADE because no pattern formed.", check_claims=False)
     assert r["checked"] and not r["blocked"]
 
 
-def test_threshold_is_low_because_missing_a_forecast_is_the_costly_error(jev_key, monkeypatch):
-    monkeypatch.setattr(pg.requests, "post", lambda *a, **k: _jev(0.35, 0.0))
-    assert pg.check("Momentum may carry it up.")["blocked"] is True
+def test_forecast_threshold_is_low_because_missing_one_is_the_costly_error(jev_key, monkeypatch):
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _jev(0.35, 0.0))
+    assert review.review_answer("Momentum may carry it up.", check_claims=False)["blocked"] is True
     assert pg.BLOCK_ABOVE == 0.3
 
 
-def test_questions_are_two_separate_nouls_in_one_request(jev_key, monkeypatch):
+def test_both_guards_ride_one_request_over_shared_state(jev_key, monkeypatch):
     sent = {}
-    monkeypatch.setattr(pg.requests, "post", lambda url, **k: sent.update(k["json"]) or _jev(0.0, 0.0))
-    pg.check("text")
-    assert set(sent["questions"]) == {"predicts_market", "advises_trade"}
-    assert all(q["type"] == "noul" for q in sent["questions"].values())
-    assert sent["state"] == "text" and sent["model"] == "jev-latest"
+    monkeypatch.setattr(jev.requests, "post",
+                        lambda url, **k: sent.update(k["json"]) or _jev(claims=[(1, 0, 0, 0)] * 2))
+    review.review_answer("It closed at 23,270.6. The verdict is NO_TRADE.", DATA)
+    assert set(sent["questions"]) == {"predicts_market", "advises_trade", "claim_0", "claim_1"}
+    assert sent["model"] == "jev-latest"
+    # Richer state than the answer alone: the forecast questions can tell
+    # reporting from predicting by checking what the system actually computed.
+    assert set(sent["state"]) == {"answer", "claims", "data"}
+    assert sent["state"]["data"] == DATA and len(sent["state"]["claims"]) == 2
 
 
-def test_no_key_skips_the_check_instead_of_blocking(monkeypatch):
-    monkeypatch.setattr(pg, "_env", lambda k: None)
-    r = pg.check("anything")
+def test_a_sentence_the_data_does_not_support_is_caught(jev_key, monkeypatch):
+    # No invented number, no forecast — the hole the other two guards leave.
+    monkeypatch.setattr(jev.requests, "post",
+                        lambda *a, **k: _jev(claims=[(0.9, 0, 0.05, 0.05), (0.05, 0.05, 0.9, 0.0)]))
+    r = review.review_answer("The verdict is NO_TRADE. Volatility has been high all month.", DATA)
+    assert r["blocked"] and len(r["unsupported"]) == 1
+    assert r["unsupported"][0]["claim"] == "Volatility has been high all month."
+    assert "not supported" in r["problems"][0]
+
+
+def test_framing_and_caveats_are_not_treated_as_claims(jev_key, monkeypatch):
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _jev(claims=[(0.1, 0.0, 0.05, 0.85)]))
+    r = review.review_answer("None of this is a reason to trade.", DATA)
+    assert not r["blocked"] and r["unsupported"] == []
+
+
+def test_claim_threshold_is_looser_than_the_forecast_threshold():
+    # Being twitchy here withholds honest answers; the number guard already
+    # covers the dangerous case, so this one is not set to hair-trigger.
+    assert cg.UNSUPPORTED_ABOVE > pg.BLOCK_ABOVE
+
+
+def test_sentence_split_keeps_decimals_and_rupee_amounts_whole():
+    parts = cg.split_claims('NIFTY closed at 23,270.60 today. It lost ₹1,170 per lot. "Rejected" means no edge.')
+    assert parts == ["NIFTY closed at 23,270.60 today.", "It lost ₹1,170 per lot.",
+                     '"Rejected" means no edge.']
+
+
+def test_list_items_are_separate_claims():
+    # Found live: a whole bulleted block came back as one claim, so a false
+    # sentence could average out against true ones sitting beside it.
+    parts = cg.split_claims("Two patterns formed:\n1. RSI Oversold (REJECTED)\n2. Stochastic (REJECTED)")
+    assert parts == ["Two patterns formed:", "RSI Oversold (REJECTED)", "Stochastic (REJECTED)"]
+
+
+def test_verdict_label_is_the_models_own_pick_not_a_tie_break(jev_key, monkeypatch):
+    # Reporting "contradicted" on a sentence scored 1.0 supported reads as a
+    # finding; the label has to match what the model actually chose.
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _Resp(200, {"answers": {
+        "predicts_market": {"type": "noul", "noul": 0.0}, "advises_trade": {"type": "noul", "noul": 0.0},
+        "claim_0": {"type": "choice", "choice": "supported",
+                    "probabilities": {"supported": 1.0, "contradicted": 0.0, "not_in_data": 0.0, "not_a_claim": 0.0}}}}))
+    r = review.review_answer("The verdict is NO_TRADE.", DATA)
+    assert r["claims"][0]["verdict"] == "supported" and r["claims"][0]["against"] == 0.0
+
+
+def test_claims_are_capped_so_one_answer_cannot_run_up_a_bill():
+    long_answer = " ".join(f"Sentence number {i} is here." for i in range(40))
+    assert len(cg.split_claims(long_answer)) == cg.MAX_CLAIMS
+
+
+def test_no_key_skips_the_review_instead_of_blocking(monkeypatch):
+    monkeypatch.setattr(jev, "_env", lambda k: None)
+    r = review.review_answer("anything", DATA)
     assert r["checked"] is False and r["blocked"] is False
 
 
 def test_guard_outage_never_blocks_the_copilot(jev_key, monkeypatch):
     def boom(*a, **k):
-        raise pg.requests.RequestException("down")
-    monkeypatch.setattr(pg.requests, "post", boom)
-    r = pg.check("anything")
+        raise jev.requests.RequestException("down")
+    monkeypatch.setattr(jev.requests, "post", boom)
+    r = review.review_answer("anything", DATA)
     assert r["checked"] is False and r["blocked"] is False and "unavailable" in r["reason"]
 
 
-def test_assistant_withholds_an_answer_the_prediction_guard_blocks(monkeypatch):
+def test_assistant_withholds_an_answer_the_review_blocks(monkeypatch):
     monkeypatch.setattr(assistant, "chat", lambda messages: "Nothing formed, but it should bounce soon.")
-    monkeypatch.setattr(assistant, "prediction_check",
-                        lambda text: {"checked": True, "blocked": True, "scores": {"predicts_market": 0.8},
-                                      "reason": "Answer withheld: it predicts where the market is going, which this tool must not do."})
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: {
+        "checked": True, "blocked": True, "scores": {"predicts_market": 0.8}, "unsupported": [],
+        "problems": ["This answer predicts where the market is going."],
+        "reason": "Answer withheld: it predicts where the market is going, which this tool must not do."})
     r = assistant._answer("what now?", DATA)
     assert r["ok"] is False and r["answer"] is None and "predicts" in r["reason"]
+
+
+def test_one_retry_fixes_an_unsupported_sentence(monkeypatch):
+    replies = iter(["It closed at 23,270.6. Volatility has been high all month.",
+                    "It closed at 23,270.6."])
+    seen = []
+    reviews = iter([
+        {"checked": True, "blocked": True, "scores": {}, "unsupported": [{"claim": "x"}],
+         "problems": ["These sentences are not supported by DATA: \"Volatility has been high all month.\""],
+         "reason": "withheld"},
+        {"checked": True, "blocked": False, "scores": {}, "unsupported": [], "problems": [], "reason": "clean"},
+    ])
+    monkeypatch.setattr(assistant, "chat", lambda messages: seen.append(messages) or next(replies))
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: next(reviews))
+    r = assistant._answer("what now?", DATA)
+    assert r["ok"] is True and "Volatility" not in r["answer"]
+    assert "not supported by DATA" in seen[-1][-1]["content"]
+
+
+def test_invented_numbers_short_circuit_the_paid_check(monkeypatch):
+    # A draft that is being rewritten anyway should not also be billed to Jev.
+    calls = []
+    monkeypatch.setattr(assistant, "chat", lambda messages: "NIFTY will hit 24,500.")
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: calls.append(1) or {})
+    assistant._answer("what next?", DATA)
+    assert calls == []
+
+
+# --- router -------------------------------------------------------------------
+
+def _route(**probs):
+    return _Resp(200, {"answers": {"route": {"type": "choice", "confidence": 0.9,
+                                             "choice": max(probs, key=probs.get), "probabilities": probs}}})
+
+
+def test_off_topic_question_is_refused_without_calling_the_model(jev_key, monkeypatch):
+    monkeypatch.setattr(router, "jev", jev)
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _route(
+        today=0.02, pattern_record=0.02, method=0.02, off_topic=0.94))
+    monkeypatch.setattr(assistant, "chat", lambda messages: pytest.fail("the model should not be called"))
+    r = assistant.ask("write me a poem")
+    assert r["ok"] and r["answer"] == router.DECLINE and r["route"]["off_topic"]
+
+
+def test_an_unsure_classification_still_goes_to_the_model(jev_key, monkeypatch):
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _route(
+        today=0.4, pattern_record=0.05, method=0.05, off_topic=0.5))
+    assert router.route("is anything close?")["off_topic"] is False
+
+
+def test_router_failure_falls_through_to_the_model(monkeypatch):
+    monkeypatch.setattr(jev, "_env", lambda k: None)
+    r = router.route("why no trade?")
+    assert r["checked"] is False and r["off_topic"] is False
+
+
+def test_asking_for_advice_is_still_a_question_about_the_dashboard(jev_key, monkeypatch):
+    # It gets answered (and then guarded), not turned away as off topic.
+    monkeypatch.setattr(jev.requests, "post", lambda *a, **k: _route(
+        today=0.82, pattern_record=0.1, method=0.05, off_topic=0.03))
+    assert router.route("should I buy a call today?")["off_topic"] is False
 
 
 def test_empty_content_from_a_reasoning_model_is_a_clear_error(env, monkeypatch):
