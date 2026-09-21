@@ -12,8 +12,18 @@ function Answer({ a }: { a: CopilotAnswer }) {
   return (
     <div>
       <div className="whitespace-pre-line text-sm leading-relaxed text-zinc-200">{a.answer}</div>
+      {a.fallback_from ? (
+        <p className="mt-2 text-[10px] text-amber-300/70">
+          Written by the dashboard itself — {a.fallback_from}. Every figure comes straight from the computed data.
+        </p>
+      ) : null}
       <p className="mt-2 text-[10px] text-zinc-600">
-        {a.model ? `${a.provider} · ${a.model} · ` : ""}every number checked against the computed data ·{" "}
+        {a.method === "composed"
+          ? "composed by the dashboard, no model · "
+          : a.model
+            ? `${a.provider} · ${a.model} · `
+            : ""}
+        every number checked against the computed data ·{" "}
         {a.review?.checked
           ? `Jev checked ${a.review.claims_checked ?? 0} sentence${a.review.claims_checked === 1 ? "" : "s"} against it, and found no forecast`
           : "Jev checks skipped"}

@@ -417,6 +417,10 @@ export interface CopilotAnswer {
   /** 0-2 on each; recorded and trended, never used to withhold an answer. */
   grades?: { honesty?: number; clarity?: number };
   drafts?: number;
+  /** "gemini" = written by the model; "composed" = assembled by the dashboard itself. */
+  method?: string;
+  /** Set when the provider was down and the composed explanation was served. */
+  fallback_from?: string;
 }
 
 export const fetchCopilotStatus = () => get<CopilotStatus>("/api/copilot/status");

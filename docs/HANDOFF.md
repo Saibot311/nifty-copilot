@@ -22,7 +22,7 @@ test now, and it needs calendar time.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 26 checks, 176 tests — run before and after changes
+./scripts/check_all.sh          # 27 checks, 189 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ```
 
@@ -66,7 +66,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/pattern_options.json` | Pattern → option research output | `scripts/pattern_options.py` |
 | `api/data/strategy_status.db` | Validation verdict history | `scripts/validate_all.py --all` |
 | `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
-| `api/data/copilot_log.db` | Every copilot answer and what the guards made of it | Accrues in use; deletable (holds your questions) |
+| `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
 | **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt — back it up** |
 
 ## Traps that already cost real time
@@ -93,6 +93,9 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
   writer advising, and a sentence about what formed presupposed patterns the data says
   did not form. Real flagged answers make better labelled cases than invented ones —
   `/api/copilot/record` lists them.
+- **A cached fallback is a trap.** One transient 503 served the composed explanation,
+  which was then cached, so the model would not have been retried until the next day.
+  Only cache what was expensive to produce.
 - **An answer can be wrong with every number right.** Asked which pattern had the
   best option record, the copilot named one that lost ₹1,170 per lot — the three
   better ones had not formed that day, so they were not in its context at all. Check
@@ -113,9 +116,14 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
    new hypothesis family that raises the Bonferroni bar for the daily patterns, and it
    can only be measured in index points, never in option money. Decide that trade-off
    before starting.
-4. **Copilot: nothing outstanding.** Guards, grades, the answer log and route-scoped
-   context are all built. The next useful thing is real usage: `/api/copilot/record`
-   lists every withheld answer, and each is a candidate case for `check_guards.py`.
+4. **Decide whether the copilot still needs a language model.** `composer.py` writes
+   the daily explanation in Python and runs beside Gemini every day, graded by the same
+   judge. Watch `grades_by_method` at `/api/copilot/record`: if the composed version
+   closes the clarity gap, the model can be dropped from the daily explanation and kept
+   only for typed questions. First readings — composed 1.99 honest / 1.38 clear against
+   Gemini 1.79 / 1.53.
+5. **Feed the guards real cases.** `/api/copilot/record` lists every withheld answer;
+   each is a candidate case for `check_guards.py`.
 
 ## Ground rules that must not slip
 

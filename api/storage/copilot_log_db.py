@@ -29,10 +29,11 @@ CREATE TABLE IF NOT EXISTS copilot_log (
     recorded_at   TEXT NOT NULL,
     as_of_close   TEXT,
     kind          TEXT NOT NULL,   -- explain | ask
+    method        TEXT NOT NULL DEFAULT 'gemini',  -- gemini | composed
     question      TEXT NOT NULL,
     route         TEXT,
     drafts        INTEGER NOT NULL,
-    outcome       TEXT NOT NULL,   -- shown | withheld | declined
+    outcome       TEXT NOT NULL,   -- shown | withheld | declined | shadow
     reason        TEXT,
     bad_numbers_json  TEXT NOT NULL DEFAULT '[]',
     unsupported_json  TEXT NOT NULL DEFAULT '[]',
@@ -57,22 +58,33 @@ def connect(db_path: Path | None = None):
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         yield conn
         conn.commit()
     finally:
         conn.close()
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """CREATE TABLE IF NOT EXISTS leaves an existing table alone, so a new
+    column has to be added by hand. Rows written before the deterministic
+    explainer existed were all from the model."""
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(copilot_log)")}
+    if "method" not in have:
+        conn.execute("ALTER TABLE copilot_log ADD COLUMN method TEXT NOT NULL DEFAULT 'gemini'")
+
+
 def record(entry: dict, db_path: Path | None = None) -> int:
     with connect(db_path) as conn:
         cur = conn.execute(
             """INSERT INTO copilot_log
-               (recorded_at, as_of_close, kind, question, route, drafts, outcome, reason,
+               (recorded_at, as_of_close, kind, method, question, route, drafts, outcome, reason,
                 bad_numbers_json, unsupported_json, scores_json, grades_json, answer)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 datetime.now(timezone.utc).isoformat(),
-                entry.get("as_of_close"), entry["kind"], entry["question"], entry.get("route"),
+                entry.get("as_of_close"), entry["kind"], entry.get("method", "gemini"),
+                entry["question"], entry.get("route"),
                 int(entry.get("drafts", 1)), entry["outcome"], entry.get("reason"),
                 *(json.dumps(entry.get(k) or _DEFAULTS[k]) for k in _JSON_COLUMNS),
                 entry.get("answer"),
@@ -106,6 +118,15 @@ def summary(db_path: Path | None = None) -> dict:
     def mean(vals):
         return round(sum(vals) / len(vals), 2) if vals else None
 
+    def grades_for(method: str) -> dict | None:
+        # Shadow rows count here and nowhere else: the comparison is the
+        # whole reason the deterministic explainer runs.
+        got = [r for r in rows if r["method"] == method and r["grades"]]
+        if not got:
+            return None
+        return {"answers": len(got),
+                **{k: mean([r["grades"][k] for r in got if k in r["grades"]]) for k in ("honesty", "clarity")}}
+
     return {
         "answers": len(rows),
         "first": rows[-1]["recorded_at"][:10],
@@ -117,6 +138,14 @@ def summary(db_path: Path | None = None) -> dict:
         "by_route": _counts(r["route"] for r in rows if r["route"]),
         "grades": {k: mean([r["grades"][k] for r in graded if k in r["grades"]])
                    for k in ("honesty", "clarity")} if graded else None,
+        # Gemini writes one, Python composes another, the same judge grades
+        # both. Whether to drop the model is decided on this, not on taste.
+        "grades_by_method": {m: grades_for(m) for m in ("gemini", "composed")},
+        "shadow_runs": sum(1 for r in rows if r["outcome"] == "shadow"),
+        # Should always be zero. The composed explanation is built from the
+        # same data the guards check against, so a block means a template
+        # says something the data does not support, or a guard is wrong.
+        "composed_blocked": sum(1 for r in rows if r["method"] == "composed" and r["reason"]),
         # The point of keeping this: real answers a guard objected to are
         # worth more as labelled cases than any I could invent.
         "flagged_for_review": [

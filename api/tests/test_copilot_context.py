@@ -147,3 +147,72 @@ def test_a_router_outage_sends_everything(monkeypatch):
     import copilot.jev as jev
     monkeypatch.setattr(jev, "_env", lambda k: None)
     assert router.route("why no trade?")["scope"] is None
+
+
+# --- the deterministic explainer ---------------------------------------------
+
+import copilot.composer as composer
+
+FULL = {
+    "fixed_facts": {"lot_size": 65, "option_evidence_period": "2024-2026"},
+    "as_of_close": "2026-09-18", "last_close": 23346.4, "regime": "TREND_BEAR",
+    "recommendation": {"action": "NO_TRADE", "headline": "Patterns formed, but none has a proven option edge",
+                       "reason": "...", "bar": {"min_t": 2.79, "patterns_judged": 19}},
+    "patterns_formed_on_last_close": [
+        {"name": "RSI Oversold Reversal", "option_type": "CALL", "option_record": None},
+        {"name": "Stochastic Oversold Reversal", "option_type": "CALL", "option_record": {
+            "option": "Buy 2% ITM CE, hold 10 trading days", "verdict": "REJECTED",
+            "trades_2024_26": 28, "win_rate": 0.5, "avg_profit_per_lot_rs": -1170, "t_stat": 0.74}},
+    ],
+    "patterns_that_could_form_next_close": [
+        {"name": "Prev-Day-High Breakout", "forms_on_close_between": [[23389, 24047]],
+         "option_record": {"verdict": "REJECTED"}},
+    ],
+    "similar_past_days": {"count": 20, "predictive_test": {
+        "verdict": "No demonstrated predictive value: treat the analogs as context, not a forecast."}},
+    "forward_track_record": {"days_logged": 2},
+}
+
+
+def test_every_number_it_writes_came_from_the_data():
+    # The whole point: invention is impossible by construction, not caught
+    # afterwards by a guard.
+    from copilot.guard import unverified_numbers
+    assert unverified_numbers(composer.compose(FULL), FULL) == []
+
+
+def test_it_states_the_weakness_rather_than_leaving_it_implicit():
+    text = composer.compose(FULL)
+    assert "cannot be told apart from luck" in text and "REJECTED" in text
+    assert "far too few to judge anything" in text
+
+
+def test_an_unmeasured_pattern_is_said_to_be_unmeasured():
+    assert "RSI Oversold Reversal has no measured option record yet." in composer.compose(FULL)
+
+
+def test_the_analog_verdict_is_trimmed_to_the_verdict_itself():
+    # The stored verdict is a whole sentence with its own explanation after
+    # a colon; embedding it whole produced a doubled full stop.
+    text = composer.compose(FULL)
+    assert "returned no demonstrated predictive value." in text and ".." not in text
+
+
+def test_a_count_does_not_open_a_sentence_as_a_numeral():
+    assert "Two patterns formed on the last close" in composer.compose(FULL)
+
+
+def test_it_says_so_when_nothing_is_near_forming():
+    text = composer.compose({**FULL, "patterns_that_could_form_next_close": []})
+    assert "No pattern is close enough to form on the next close." in text
+
+
+def test_it_composes_something_sane_from_almost_nothing():
+    # A fresh install, before any research has run.
+    text = composer.compose({"recommendation": {"action": "NO_TRADE"}})
+    assert text.startswith("The system says no trade today.") and len(text.split()) < 40
+
+
+def test_it_reads_the_action_it_is_given():
+    assert "a call is worth considering" in composer.compose(
+        {**FULL, "recommendation": {**FULL["recommendation"], "action": "CONSIDER_CALL"}})

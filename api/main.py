@@ -469,6 +469,15 @@ def copilot_status() -> dict:
             "guards": {"numbers": True, "forecast": jev_available(), "claims": jev_available(), "routing": jev_available()}}
 
 
+@app.get("/api/copilot/composed")
+def copilot_composed() -> dict:
+    """The daily explanation as Python composes it, with no model involved.
+    Runs beside the model's version every day and is graded by the same
+    judge; it is what gets served if the provider is down."""
+    from copilot.context import build_context
+    return copilot.composed_explanation(build_context())
+
+
 @app.get("/api/copilot/record")
 def copilot_record() -> dict:
     """What the guards have actually done: how many answers were shown,

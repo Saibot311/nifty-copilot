@@ -444,3 +444,74 @@ def test_the_summary_surfaces_withheld_answers_as_candidate_cases():
     assert s["grades"] == {"honesty": 2.0, "clarity": 1.5}
     assert s["flagged_for_review"][0]["unsupported"] == ["it should bounce"]
     assert s["needed_a_retry"] == 1
+
+
+# --- the deterministic explainer, shadowed and as a fallback ------------------
+
+@pytest.fixture
+def explain_setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(assistant, "CACHE_PATH", tmp_path / "explain.json")
+    monkeypatch.setattr(assistant, "build_context", lambda symbol, live=None: DATA)
+    monkeypatch.setattr(assistant, "compose", lambda data: "Composed: it closed at 23,270.6.")
+    monkeypatch.setattr(assistant, "review_answer", lambda text, data: _review(honesty=2.0, clarity=1.4))
+
+
+def test_the_composed_version_runs_beside_the_model_and_is_logged_not_shown(explain_setup, monkeypatch):
+    monkeypatch.setattr(assistant, "chat", lambda messages: "Model: it closed at 23,270.6.")
+    r = assistant.explain_today()
+    assert r["ok"] and r["answer"].startswith("Model:") and r["method"] == "gemini"
+    rows = {row["method"]: row for row in log_db.recent()}
+    assert rows["composed"]["outcome"] == "shadow"
+    assert rows["composed"]["grades"] == {"honesty": 2.0, "clarity": 1.4}
+    assert rows["gemini"]["outcome"] == "shown"
+
+
+def test_a_provider_outage_serves_the_composed_explanation_instead_of_an_error(explain_setup, monkeypatch):
+    # The composed text is assembled from the same computed data and cannot
+    # invent anything, so serving it beats serving a 502.
+    def down(messages):
+        raise assistant.LLMError("gemini returned HTTP 503")
+
+    monkeypatch.setattr(assistant, "chat", down)
+    r = assistant.explain_today()
+    assert r["ok"] and r["answer"].startswith("Composed:") and r["method"] == "composed"
+    assert "unavailable" in r["fallback_from"]
+    assert log_db.recent()[0]["outcome"] == "shown" and log_db.recent()[0]["method"] == "composed"
+
+
+def test_a_blocked_composed_answer_is_never_served_as_the_fallback(explain_setup, monkeypatch):
+    # Should never happen — every number in it came from the data — so if it
+    # does, the error is the right outcome, not a quietly withheld answer.
+    monkeypatch.setattr(assistant, "review_answer",
+                        lambda text, data: _review(blocked=True, problems=["unsupported"]))
+    monkeypatch.setattr(assistant, "chat", lambda messages: (_ for _ in ()).throw(assistant.LLMError("down")))
+    with pytest.raises(assistant.LLMError):
+        assistant.explain_today()
+
+
+def test_the_composed_answer_goes_through_the_same_guards(explain_setup, monkeypatch):
+    seen = []
+    monkeypatch.setattr(assistant, "review_answer",
+                        lambda text, data: seen.append(text) or _review())
+    monkeypatch.setattr(assistant, "chat", lambda messages: "Model: it closed at 23,270.6.")
+    assistant.explain_today()
+    assert any(t.startswith("Composed:") for t in seen)
+
+
+def test_a_transient_outage_does_not_become_the_whole_days_explanation(explain_setup, monkeypatch):
+    # Found live: a 503 served the composed version, which was then cached,
+    # so the model would not have been retried until tomorrow.
+    calls = []
+
+    def flaky(messages):
+        calls.append(1)
+        if len(calls) == 1:
+            raise assistant.LLMError("gemini returned HTTP 503")
+        return "Model: it closed at 23,270.6."
+
+    monkeypatch.setattr(assistant, "chat", flaky)
+    first = assistant.explain_today()
+    assert first["method"] == "composed" and not first["cached"]
+    second = assistant.explain_today()
+    assert second["method"] == "gemini" and not second["cached"]
+    assert assistant.explain_today()["cached"] is True

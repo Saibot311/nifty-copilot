@@ -18,6 +18,12 @@ The daily explanation is written twice and the better-graded one kept — it
 is read every day and costs one extra call a day. A typed question is
 written once.
 
+It is also composed a third time, in Python, by composer.py. That version
+is not shown; it is graded by the same judge and logged beside the model's,
+so the question "does this still need a language model?" is answered by the
+record rather than by opinion. It does become the answer when the provider
+is down, which is strictly safer than an error: it cannot invent anything.
+
 Every answer, shown or withheld, goes to storage/copilot_log_db.py. A guard
 with no record is a guard nobody can tune.
 """
@@ -29,9 +35,10 @@ from pathlib import Path
 
 from storage.copilot_log_db import record as record_answer
 
+from .composer import compose
 from .context import build_context
 from .guard import unverified_numbers
-from .llm_client import chat, config
+from .llm_client import LLMError, LLMNotConfigured, chat, config
 from .review import review_answer
 from .router import DECLINE, route as route_question
 
@@ -127,11 +134,11 @@ def _answer(question: str, data: dict, drafts: int = 1, kind: str = "ask", route
 
 
 def _log(result: dict, *, kind: str, question: str, route: str | None, as_of: str | None,
-         bad_numbers: list, review: dict, outcome: str | None = None) -> None:
+         bad_numbers: list, review: dict, outcome: str | None = None, method: str = "gemini") -> None:
     """Never lets a logging problem cost the user their answer."""
     try:
         record_answer({
-            "kind": kind, "question": question, "route": route, "as_of_close": as_of,
+            "kind": kind, "question": question, "route": route, "as_of_close": as_of, "method": method,
             "drafts": result["drafts"], "outcome": outcome or ("shown" if result["ok"] else "withheld"),
             "reason": None if result["ok"] else result["reason"],
             "bad_numbers": bad_numbers, "unsupported": review.get("unsupported") or [],
@@ -140,6 +147,26 @@ def _log(result: dict, *, kind: str, question: str, route: str | None, as_of: st
         })
     except Exception:
         pass
+
+
+def composed_explanation(data: dict) -> dict:
+    """The Python-written explanation, graded like any other answer.
+
+    It goes through the same guards deliberately. It should never be
+    blocked — every number in it came from `data` — so if it ever is, either
+    a template says something the data does not support or a guard is wrong.
+    Both are worth knowing, which is why it is checked rather than trusted.
+    """
+    text = compose(data)
+    review = review_answer(text, data)
+    return {
+        "provider": "python", "model": None, "drafts": 0, "method": "composed",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "review": review, "grades": review.get("grades") or {},
+        "ok": not review["blocked"],
+        "answer": None if review["blocked"] else text,
+        "reason": review["reason"] if review["blocked"] else None,
+    }
 
 
 def explain_today(symbol: str = "^NSEI", live: dict | None = None) -> dict:
@@ -151,9 +178,27 @@ def explain_today(symbol: str = "^NSEI", live: dict | None = None) -> dict:
         saved = json.loads(CACHE_PATH.read_text()) if CACHE_PATH.exists() else {}
         if key in saved and saved[key].get("ok"):
             return {**saved[key], "cached": True}
-    result = {**_answer(EXPLAIN_PROMPT, data, drafts=EXPLAIN_DRAFTS, kind="explain"),
-              "as_of_close": data["as_of_close"]}
-    if result["ok"]:
+
+    shadow = composed_explanation(data)
+    try:
+        result = {**_answer(EXPLAIN_PROMPT, data, drafts=EXPLAIN_DRAFTS, kind="explain"),
+                  "as_of_close": data["as_of_close"], "method": "gemini"}
+        _log(shadow, kind="explain", question=EXPLAIN_PROMPT, route=None,
+             as_of=data["as_of_close"], bad_numbers=[], review=shadow["review"],
+             outcome="shadow", method="composed")
+    except (LLMError, LLMNotConfigured) as e:
+        if not shadow["ok"]:
+            raise
+        # Serving the composed explanation beats serving an error: it was
+        # assembled from the same computed data and cannot invent anything.
+        result = {**shadow, "as_of_close": data["as_of_close"],
+                  "fallback_from": f"{config()['provider']} unavailable ({type(e).__name__})"}
+        _log(result, kind="explain", question=EXPLAIN_PROMPT, route=None,
+             as_of=data["as_of_close"], bad_numbers=[], review=shadow["review"], method="composed")
+    # Only a model answer is worth saving. The composed fallback costs
+    # nothing to rebuild, and caching it would make one transient 503 the
+    # explanation for the rest of the day.
+    if result["ok"] and result.get("method") != "composed":
         with _LOCK:
             saved = json.loads(CACHE_PATH.read_text()) if CACHE_PATH.exists() else {}
             saved[key] = result

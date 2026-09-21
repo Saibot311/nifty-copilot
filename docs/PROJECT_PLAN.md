@@ -7,6 +7,38 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**A copilot that can write without a model (2026-09-21).** Asked whether Jev could be trained
+alongside Gemini and eventually replace it. It cannot: there is no fine-tuning, and Jev does not
+generate prose at all — every output is a probability distribution over options you supply. But the
+question has a better answer than no.
+
+Every guard in `copilot/` exists because a language model might invent something. The daily
+explanation asks the same question every day over structured data, so `composer.py` now assembles it
+in Python from the same context the guards check against. Invention becomes impossible by
+construction: I2 stops being an invariant we police and becomes one the code cannot break. What is
+given up is fluency and the ability to answer an unanticipated question, which is why typed
+questions still go to the model.
+
+It is put through the same three guards deliberately, rather than trusted. It should never be
+blocked — every number in it came from the context — so a block would mean either a template says
+something the data does not support or a guard is wrong. `composed_blocked` in the record is the
+alarm for that, and should stay at zero.
+
+*The comparison is the point.* Both versions run every day and the same judge grades both, so
+whether to drop the model is settled on the record rather than on taste. First readings: composed
+scores **1.99 honesty / 1.38 clarity** against Gemini's **1.79 / 1.53** — exactly the predicted
+shape, winning on honesty (it can be written to always state the weakness) and losing on clarity.
+If that gap closes, the model goes.
+
+*It earned its place the same afternoon.* Gemini's free tier returned HTTP 503, and instead of a
+502 the dashboard served its own explanation. That exposed a bug immediately: the fallback was
+cached, so one transient outage would have been the day's explanation until tomorrow. Only a model
+answer is cached now — the composed one costs nothing to rebuild.
+
+Three small things the first render caught: a numeral opening a sentence ("2 patterns formed"), a
+doubled full stop from embedding the analog verdict (which is itself a whole sentence with its
+explanation after a colon), and 202 words against a 180 target.
+
 **Copilot: the context follows the question (2026-09-21).** Route-scoped context, the last
 unbuilt item — and it turned out not to be the token-saving exercise it was written up as.
 
