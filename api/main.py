@@ -11,6 +11,8 @@ from cache import cached
 from backtest.walkforward import evaluate_strategy
 from backtest.intraday import load_research as load_intraday_research
 from backtest.iv_research import load_iv_research, load_series as load_iv_series
+from market_engine.engine import load_studies as load_market_studies, today as market_today
+from market_engine.knowledge import KNOWLEDGE
 from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.live_patterns import live_patterns, merge_live
@@ -383,6 +385,19 @@ def implied_volatility() -> dict:
                       zip(s.index, s["iv_30d"], s["iv_pct"])],
         "method_note": r["method_note"],
     }
+
+
+@app.get("/api/market")
+def market() -> dict:
+    """The market context engine: why the latest session moved, what options
+    cost against what the index has delivered, expiry-day flags, unusual
+    strike activity and who is positioned how — plus the historical studies
+    and the sourced principles behind them. For understanding; not a signal."""
+    try:
+        today = cached("market_today", ttl_seconds=1800, producer=market_today)
+    except Exception as e:
+        raise HTTPException(503, f"Market context failed: {e}")
+    return {"today": today, "studies": load_market_studies(), "knowledge": KNOWLEDGE}
 
 
 @app.get("/api/bars/archive")

@@ -211,6 +211,11 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `storage/backup.py` | Verified, rotating backups of the forward log (SQLite online backup API) | A plain file copy — it can be torn mid-write |
 | `options/iv.py` | Black-76 implied vol; forward and discount read off put-call parity, no assumed rates | A regression slope believed without checking the rate it implies |
 | `backtest/iv_research.py` | Daily 30-day IV, its VIX check, IV description of every pattern, the one pre-registered filter test | Editing `PREREGISTERED` — a new hypothesis is a new test (a hash test guards it) |
+| `market_engine/drivers.py` | "Why it moved": NIFTY's return against global cues that closed before India opened, betas from earlier days only | A same-date US session — look-ahead |
+| `market_engine/who_wins.py` | The variance risk premium; the cost of buying options without a signal; SEBI's published figures | Showing the forward-looking study as a current signal |
+| `market_engine/positioning.py` | NSE participant-wise open interest, zero-sum checked | Reading overnight OI as intraday retail behaviour |
+| `market_engine/expiry.py` | Expiry-day footprint studies; unusual strike activity against the same point in past expiries | Calling a statistic evidence against a participant |
+| `market_engine/knowledge.py` | The research as sourced principles, for the dashboard and the copilot | Any unsourced claim, or advice |
 | `audit/` | Phase-by-phase deep audit on real data, with independent reference implementations; `scripts/audit.py`, `check_all.sh --deep` | Mocks and fixtures — that is what `tests/` is for |
 | `web/src/components/ui.tsx` | Shared primitives (Panel, Pill, Stat…) | Feature components |
 | `web/src/lib/api.ts` | Typed fetches. **No mock fallbacks (I2).** | Computation |

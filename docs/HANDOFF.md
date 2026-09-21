@@ -21,6 +21,13 @@ two CONDITIONAL verdicts, which the deep audit traced to a verdict ladder that
 skipped the significance test for small samples. The forward log is the real test
 now, and it needs calendar time.
 
+**A market context engine answers "who makes money, and why did it move"**
+(`api/market_engine/`, the dashboard's **Market** tab, `docs/MARKET_RESEARCH.md`). It
+measures the variance risk premium (options priced above what followed on 71% of days
+since 2018), attributes each day's move to global cues fitted only on earlier days,
+reads NSE's participant-wise positioning (1,913 sessions), and tests NIFTY's expiry days
+for manipulation footprints (none clear). The copilot answers market questions from it.
+
 **Implied volatility is computed from the options archive** (`options/iv.py`) and
 tracks India VIX at a correlation of 0.983. It describes every pattern's trades. Its
 one pre-registered test as a filter — buy only below the one-year median — was
@@ -83,6 +90,8 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
 | `api/data/iv.db` | Daily 30-day implied volatility from 2018 | `scripts/iv_research.py` (incremental) |
 | `api/data/iv_research.json` | IV description of every pattern, VIX check, the pre-registered test | `scripts/iv_research.py` |
+| `api/data/participant_oi.db` | NSE participant-wise open interest (Client/DII/FII/Pro), 2019→ | `scripts/backfill_participant_oi.py` |
+| `api/data/market_research.json` | The market engine's studies | `scripts/market_research.py` |
 | `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
 | **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt** — backed up nightly to `api/data/backups/` (30 kept). Set `BACKUP_DIR` in `api/.env` to a synced folder so a lost disk doesn't take it too. |
 
@@ -139,6 +148,15 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
   (d1aa408) before any IV number existed. Reading the per-pattern table first and then
   choosing a threshold would have been fitting the filter to the answer — and that
   table flips direction from pattern to pattern.
+- **A detector must be judged by how often it fires on ordinary days.** The first
+  unusual-activity monitor compared strikes with their own earlier days and flagged
+  everything the day before expiry; the second, at z ≥ 3, still fired on 40% of sessions,
+  because volume shares have fat tails. z ≥ 5 fires on 8%, measured.
+- **The same-date US session had not happened when India traded.** Global cues must be
+  the last session that closed *before* India opened, or they look far more explanatory
+  than they are.
+- **Open interest is what is held at the close.** Most retail option buying is intraday,
+  so participant OI cannot show retail losing — only SEBI's P&L studies can.
 - **Order matters in a verdict ladder.** A sample-size check that returns before the
   significance test hands small samples a better label than large ones.
 - **A test can pin a bug in place.** One asserted that a thin holdout with no t-stat

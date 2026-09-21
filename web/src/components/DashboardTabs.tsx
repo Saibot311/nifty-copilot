@@ -5,11 +5,12 @@ import { useState, type ReactNode } from "react";
 const TABS = [
   { id: "today", label: "Today", hint: "What the market is doing now" },
   { id: "research", label: "Research", hint: "What the historical record says" },
+  { id: "market", label: "Market", hint: "How this market works, and who is on the other side" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
-export function DashboardTabs({ today, research }: { today: ReactNode; research: ReactNode }) {
+export function DashboardTabs({ today, research, market }: { today: ReactNode; research: ReactNode; market: ReactNode }) {
   const [active, setActive] = useState<TabId>("today");
 
   return (
@@ -59,6 +60,15 @@ export function DashboardTabs({ today, research }: { today: ReactNode; research:
         className="flex flex-col gap-7"
       >
         {research}
+      </div>
+      <div
+        id="panel-market"
+        role="tabpanel"
+        aria-labelledby="tab-market"
+        hidden={active !== "market"}
+        className="flex flex-col gap-7"
+      >
+        {market}
       </div>
     </div>
   );

@@ -166,6 +166,12 @@ ROUTE_CASES = [
     ("off_topic", "write me a poem about the monsoon"),
     ("off_topic", "how do I open a demat account?"),
     ("today", "should I buy a call today?"),  # about the dashboard, even though it asks for advice
+    ("market", "who actually makes money trading options?"),
+    ("market", "why did nifty fall today?"),
+    ("market", "what are FIIs positioned for right now?"),
+    ("market", "can someone manipulate the index on expiry day?"),
+    ("market", "why do option buyers usually lose?"),
+    ("off_topic", "should I buy Tata Motors shares?"),
 ]
 
 

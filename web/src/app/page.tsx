@@ -3,6 +3,7 @@ import { CopilotCard } from "@/components/CopilotCard";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IVCard } from "@/components/IVCard";
+import { MarketTab } from "@/components/MarketCards";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { LivePatternsCard } from "@/components/LivePatternsCard";
 import { PatternOptionsTable, PatternsTodayCard } from "@/components/PatternCards";
@@ -19,6 +20,7 @@ import {
   fetchCopilotStatus,
   fetchForwardLog,
   fetchImpliedVol,
+  fetchMarket,
   fetchIndicators,
   fetchLivePatterns,
   fetchLiveQuote,
@@ -48,6 +50,7 @@ export default async function Home() {
     similarity,
     copilotStatus,
     impliedVol,
+    market,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -64,6 +67,7 @@ export default async function Home() {
     fetchSimilarity(),
     fetchCopilotStatus(),
     fetchImpliedVol(),
+    fetchMarket(),
   ]);
 
   const snap = snapshot.data;
@@ -220,6 +224,7 @@ export default async function Home() {
 
             </>
           }
+          market={<MarketTab data={market.data} />}
         />
 
         <footer className="mt-10 border-t border-zinc-900 pt-4 text-[11px] leading-relaxed text-zinc-600">

@@ -291,6 +291,56 @@ export interface ImpliedVol {
 
 export const fetchImpliedVol = () => get<ImpliedVol>("/api/iv");
 
+export interface MarketFactor { label: string; move_pct: number; beta: number; contribution_pct: number }
+export interface WhyItMoved {
+  available: boolean; reason?: string; date?: string; nifty_return_pct?: number; gap_pct?: number;
+  intraday_pct?: number; factors?: Record<string, MarketFactor>; explained_by_global_pct?: number;
+  unexplained_pct?: number; fit_r2_past_year?: number; fit_window?: string; note?: string;
+}
+export interface ParticipantNow {
+  index_futures_net: number; index_futures_long_share: number | null; index_calls_net: number;
+  index_puts_net: number; index_futures_net_change: number | null; futures_long_share_percentile_1y: number | null;
+  options_buyer_share: number | null;
+}
+export interface MarketToday {
+  why_it_moved: WhyItMoved;
+  options_price_now: { date: string; implied: number; delivered_last_21_sessions: number; note: string } | null;
+  expiry: { available: boolean; date?: string; was_expiry?: boolean; next_expiry?: string | null; morning_pct?: number;
+            afternoon_pct?: number; last30_pct?: number; sharp_reversal?: boolean; last30_percentile?: number | null;
+            pin_distance_points?: number; compared_with?: string };
+  unusual_strike_activity: { available: boolean; reason?: string; date?: string; expiry?: string; days_to_expiry?: number;
+                             cycles_compared?: number; unusual?: { moneyness_pct: number; type: string; strike_near: number;
+                             share_of_volume: number; usual_share: number; z: number }[]; note?: string };
+  positioning: { available: boolean; reason?: string; date?: string; by_participant?: Record<string, ParticipantNow>;
+                 note?: string };
+}
+export interface FootprintCompare {
+  expiry_sessions: number; other_sessions: number;
+  reversal: { expiry_share: number | null; other_share: number | null; z: number | null };
+  settlement_window: { expiry_avg_abs_move_pct: number | null; other_avg_abs_move_pct: number | null; t: number | null };
+  pinning: { expiry_share_near_strike: number | null; other_share_near_strike: number | null; chance: number; z: number | null };
+}
+export interface MarketStudies {
+  computed_at: string;
+  variance_risk_premium: { days: number; period: string; avg_implied: number; avg_delivered: number;
+    median_gap_points: number; options_overpriced_share: number;
+    by_year: Record<string, { days: number; avg_implied: number; avg_delivered: number; options_overpriced_share: number }>;
+    when_sellers_were_hurt: { date: string; implied: number; delivered: number }[]; note: string };
+  option_buyers_without_a_signal: { available: boolean; setups?: number; median_rupees_per_lot?: number;
+    setups_that_made_money?: number; note?: string };
+  global_cues_by_year: Record<string, { sessions: number; r2: number; sp500_beta: number }>;
+  expiry_footprints: { all: FootprintCompare; jan_2023_to_mar_2025: FootprintCompare; before_jan_2023: FootprintCompare;
+    after_mar_2025: FootprintCompare; definitions: Record<string, string>; caveat: string };
+  positioning_history: { available: boolean; days?: number; period?: string;
+    by_participant?: Record<string, { days_net_long_index_futures: number; median_options_buyer_share: number | null }>;
+    note?: string };
+  sebi: Record<string, Record<string, string>>;
+}
+export interface Principle { id: string; section: string; title: string; principle: string; for_you: string; sources: string[] }
+export interface MarketContext { today: MarketToday; studies: MarketStudies | null; knowledge: Principle[] }
+
+export const fetchMarket = () => get<MarketContext>("/api/market");
+
 export interface PatternOptionsResearch {
   computed_at: string;
   options_period: { start: string; split: string; end: string };

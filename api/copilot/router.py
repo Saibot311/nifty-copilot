@@ -22,7 +22,7 @@ is the behaviour we had before routing existed.
 
 from . import jev
 
-ROUTES = ("today", "pattern_record", "method", "off_topic")
+ROUTES = ("today", "pattern_record", "method", "market", "off_topic")
 
 QUESTION = {
     "route": {
@@ -42,11 +42,16 @@ QUESTION = {
                 "examples": ["how did Bollinger Band Reversion do?", "which pattern has the best option record?", "what does its t-stat mean for that one?"],
             },
             "method": {
-                "meaning": "About how the system works or what a term means — the tests, the evidence bar, the vocabulary, the data behind it.",
+                "meaning": "About how this system works or what one of its terms means — its tests, the evidence bar, its vocabulary, the data behind it.",
                 "examples": ["what is a holdout?", "why is the bar higher now?", "how do you decide something is rejected?"],
             },
+            "market": {
+                "meaning": "About how the NIFTY and Indian index-options market itself works or behaves: who makes or loses money, why NIFTY moved, what FIIs or retail traders are positioned for, option pricing and volatility, expiry days, manipulation, or the rules and regulators.",
+                "examples": ["who actually makes money in options?", "why did NIFTY fall today?", "what are FIIs doing?",
+                             "can the index be manipulated on expiry day?", "why do option buyers lose?"],
+            },
             "off_topic": {
-                "meaning": "Nothing this dashboard computed could answer it: other markets or stocks, tax or broker questions, general chat, or a request to do something unrelated.",
+                "meaning": "Nothing about NIFTY, Indian index options or this dashboard: individual stock tips, other markets, tax or broker account questions, general chat, or a request to do something unrelated.",
                 "examples": ["what do you think of Reliance?", "write me a poem", "how do I open a demat account?", "what's the weather"],
             },
         },

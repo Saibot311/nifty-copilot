@@ -11,6 +11,8 @@ first, and `scope` selects the view it needs:
                   not just the ones near firing today.
   method          how the system decides: its rules, the evidence bar, the
                   analog test's own verdict. No pattern lists, no live data.
+  market          how the market itself works: the market context engine's
+                  reading of today, its studies, and the sourced principles.
 
 The point is not smaller prompts. A question the context cannot answer gets
 answered anyway, from whatever happens to be in it — asked which pattern had
@@ -36,6 +38,7 @@ SCOPES = {
     "today": ("patterns", "live", "similarity", "forward"),
     "pattern_record": ("patterns", "all_records", "forward"),
     "method": ("similarity", "forward"),
+    "market": ("market", "forward"),
 }
 DEFAULT_SECTIONS = SCOPES["today"]
 
@@ -101,6 +104,36 @@ def _all_records(research: dict) -> list[dict]:
     )
 
 
+def _market_digest() -> dict:
+    """The engine's reading and the research behind it, trimmed to what an
+    answer can use. Imported here, not at the top: it is only loaded when a
+    question is about the market itself."""
+    from market_engine.engine import load_studies, today
+    from market_engine.knowledge import KNOWLEDGE
+
+    t = cached("market_today", ttl_seconds=1800, producer=today)
+    s = load_studies() or {}
+    vrp = s.get("variance_risk_premium") or {}
+    pos = t.get("positioning") or {}
+    return {
+        "why_the_latest_session_moved": {k: v for k, v in (t.get("why_it_moved") or {}).items() if k != "note"},
+        "options_price_now": t.get("options_price_now"),
+        "expiry": t.get("expiry"),
+        "unusual_strike_activity": (t.get("unusual_strike_activity") or {}).get("unusual"),
+        "positioning": {"date": pos.get("date"), "by_participant": pos.get("by_participant")},
+        "variance_risk_premium": {k: vrp.get(k) for k in ("days", "period", "avg_implied", "avg_delivered",
+                                                          "median_gap_points", "options_overpriced_share",
+                                                          "when_sellers_were_hurt")},
+        "option_buyers_without_a_signal": s.get("option_buyers_without_a_signal"),
+        "global_cues_by_year": s.get("global_cues_by_year"),
+        "expiry_footprints": {k: (s.get("expiry_footprints") or {}).get(k)
+                              for k in ("all", "jan_2023_to_mar_2025", "caveat")},
+        "positioning_history": s.get("positioning_history"),
+        "sebi_studies": s.get("sebi"),
+        "principles": [{k: p[k] for k in ("title", "principle", "for_you", "sources")} for p in KNOWLEDGE],
+    }
+
+
 def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | None = None) -> dict:
     sections = SCOPES.get(scope or "", DEFAULT_SECTIONS)
     rec = cached(f"recommendation:{symbol}", ttl_seconds=600, producer=lambda: build_recommendation(symbol))
@@ -163,6 +196,8 @@ def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | 
         }
     if "forward" in sections:
         ctx["forward_track_record"] = forward_report(symbol)["summary"]
+    if "market" in sections:
+        ctx["market"] = _market_digest()
     if "live" in sections and live and live.get("candle"):
         ctx["live_now"] = {
             "provisional_until_close": live.get("provisional"),

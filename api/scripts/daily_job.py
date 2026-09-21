@@ -15,6 +15,8 @@ remembering to open the dashboard.
 5. Recomputes pattern -> option research so verdicts include the newest data.
 6. Extends the implied-volatility series and re-runs its description and the
    pre-registered filter test (the hypothesis is fixed; only the data grows).
+7. Tops up NSE's participant-wise open interest and re-runs the market
+   context engine's studies.
 
 Each step runs independently: one failing doesn't stop the others. Output is
 appended to data/daily_job.log. Scheduled by a macOS LaunchAgent at 19:30 IST
@@ -96,6 +98,8 @@ def main() -> int:
         ("options archive", step_options),
         ("pattern -> option research", lambda: run_script("scripts/pattern_options.py")),
         ("implied volatility", lambda: run_script("scripts/iv_research.py")),
+        ("participant positioning", lambda: run_script("scripts/backfill_participant_oi.py")),
+        ("market context studies", lambda: run_script("scripts/market_research.py")),
     ]
     failed = []
     for name, fn in steps:

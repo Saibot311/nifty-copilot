@@ -7,6 +7,41 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**How the market works, who makes money, and a market context engine (2026-09-22).** Asked, after
+every pattern was rejected: people do make money here — how? Researched and built; the write-up is
+[MARKET_RESEARCH.md](MARKET_RESEARCH.md).
+
+*The answer, from SEBI's client-level studies:* individuals lose and institutions trading with
+algorithms win — 93% of individuals lost over FY22-FY24 (₹1.8 lakh crore); proprietary desks made
+₹33,000 crore and FPIs ₹28,000 crore in FY24, 96-97% through algorithms; in FY26 87.7% of
+individuals lost ₹91,685 crore, 92% of it on options, with 59% of index-options turnover in
+same-day contracts. *And measured on this system's data:* options were priced above the volatility
+that followed on 71% of 2,126 days since 2018, every year between 60% and 81% — the variance risk
+premium sellers collect and buyers pay, until a crash (Feb-Mar 2020: ~16-24% priced, ~80-88%
+delivered). Buying each pattern's option on a schedule with no signal lost a median ₹959 per lot.
+The patterns' rejection is the expected result for a buyer of index options on public information.
+
+*The engine* (`api/market_engine/`, the Market tab, `/api/market`): **why it moved** — NIFTY's
+return against the S&P 500, the rupee and Brent, each from the last session that closed before
+India opened, with betas fitted only on the year before; global cues explain 1-17% of daily
+movement depending on the year. **Who is on the other side** — the variance risk premium, SEBI's
+figures, and NSE's participant-wise open interest (1,913 sessions since 2019; longs equal shorts to
+within 2 contracts every day). **Expiry days** — tests of the footprints manipulation would leave:
+morning moves reversed in the afternoon (the pattern alleged in SEBI's Jane Street order, on Bank
+Nifty), the last-30-minute settlement window, and closes pinned at strikes. On NIFTY, none is clear:
+reversal z = -0.58 overall and 0.47 in Jan 2023-Mar 2025; pinning 22.5% vs 18.4% (z = 1.91), the
+direction the literature reports. **Unusual strike activity** — each strike's share of volume against
+the same point before expiry in the last 20 expiries; the first version flagged everything the day
+before expiry, and z >= 3 still fired on 40% of sessions, so the threshold is 5, which fires on 8%.
+**What the research says** — 13 sourced principles: how markets work, what moves NIFTY, the law
+(SEBI Act s.12A, PFUTP 2003, PIT 2015; Rakhi Trading 2018, Sadhna Broadcast 2023, Jane Street 2025),
+philosophy, and how manipulation works and reaches a retail trader.
+
+*The copilot* gained a `market` route and scope (16/16 labelled routes on the live model). Its first
+market answer was true sentence by sentence and graded 0.62 on honesty — it described option selling
+as a way to make money without the crash risk. A rule now requires the risk alongside any way of
+making money; the same question graded 0.95.
+
 **Implied volatility — a description, and one test that failed honestly (2026-09-21).** The top
 "trade recognition" recommendation from the audit. For someone buying options the volatility priced
 in at entry matters as much as direction, and the archive already held everything needed to compute
