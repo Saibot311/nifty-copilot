@@ -183,6 +183,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `backtest/research.py` | Rank all strategies vs. baseline | Validation verdicts |
 | `backtest/walkforward.py` | Folds, holdout, final verdict | Live recommendations |
 | `backtest/hypothesis_log.py` | Append-only audit trail (JSON Lines, OS file lock) | Rewriting the file — only ever append |
+| `stats/bootstrap.py` | 95% percentile intervals for a mean and for an edge over baseline, fixed seed | Changing the seed to move an interval |
 | `stats/multiple_comparisons.py` | Scaled evidence bar, at each result's degrees of freedom | Strategy logic |
 | `stats/student_t.py` | Student's t CDF and inverse, no scipy; checked against printed tables | Approximations — it is exact to table precision |
 | `backtest/pattern_info.py` | What each pattern checks and the idea behind it | Evidence — the numbers are elsewhere |

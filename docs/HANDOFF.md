@@ -33,6 +33,10 @@ pass**; NIFTY's best pattern failed on Midcap and SENSEX. SENSEX options only ex
 BSE's public archive, Midcap from Jan 2022. **GIFT Nifty** is live on the Market tab and snapshotted
 nightly (no free history exists).
 
+**Every holdout result carries a 95% bootstrap interval** (`stats/bootstrap.py`) and every holdout
+trade is stored with its research run. Each pattern's edge over no-signal includes zero — the
+intervals are the most honest thing on the dashboard.
+
 **A market context engine answers "who makes money, and why did it move"**
 (`api/market_engine/`, the dashboard's **Market** tab, `docs/MARKET_RESEARCH.md`). It
 measures the variance risk premium (options priced above what followed on 71% of days
@@ -51,7 +55,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 293 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 306 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -197,6 +201,13 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 - **The PCR pattern read NIFTY's option chain whatever index it ran on.** Anything replicated must be
   checked for hard-wired NIFTY inputs (`pcr_db=` now selects the archive).
 - **Yahoo does not carry NIFTY Midcap Select** — NSE's `ind_close_all_DDMMYYYY.csv` does, from Jan 2022.
+- **A row written after its entry session opened is not forward evidence.** Two were (17 and 21 Sep),
+  one of them while testing the Yahoo fix. `record_if_final` now refuses; late rows are marked and
+  excluded, never deleted. Beware of any code path that records while you are testing.
+- **launchd's PATH has no node**, so the nightly audit's build check failed on nothing. The agent now
+  carries a PATH, and the check SKIPs when npx is missing.
+- **Rounding a number for the copilot breaks the number guard.** Audit 12.2 caught a rounded interval
+  that no computed source contained. Hand the model full precision.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps

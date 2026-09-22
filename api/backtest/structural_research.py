@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from market_data.bar_archive import index_trading_days
+from stats.bootstrap import difference_ci, mean_ci
 from stats.multiple_comparisons import required_t
 from storage.participant_oi_db import load as load_participant_oi
 
@@ -268,6 +269,10 @@ def _period(trades_by_leg: dict, ctx, period_days: list[str], hold: int, pick) -
     t, base_mean = weighted_welch(rupees, legs)
     summary = _summarise([t_ for v in trades.values() for t_ in v])
     summary["by_leg"] = {k: len(v) for k, v in trades.items()}
+    summary["ci_95"] = mean_ci(rupees)
+    # The edge interval needs a baseline sample, so it is only shown when the
+    # hypothesis used one leg; with two, the baseline is a weighted blend.
+    summary["edge_ci_95"] = difference_ci(rupees, legs[0][1]) if len(legs) == 1 else None
     return {"summary": summary, "rupees": rupees, "t": t,
             "baseline_avg_profit_per_lot_rs": round(base_mean) if base_mean is not None else None}
 

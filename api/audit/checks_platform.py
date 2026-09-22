@@ -8,6 +8,7 @@ a stack trace into an error message, a bad tick into a live candle.
 import json
 import math
 import re
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -190,7 +191,13 @@ def next_build():
         return Result(SKIP, "dev server is running on :3000 — a production build would overwrite its .next")
     except Exception:
         pass
-    proc = subprocess.run(["npx", "next", "build"], cwd=ROOT / "web", capture_output=True, text=True, timeout=600)
+    # The nightly job runs from launchd, whose PATH has no node. A missing
+    # toolchain is not a broken build, and alerting on it nightly would
+    # teach everyone to ignore the alert.
+    npx = shutil.which("npx")
+    if npx is None:
+        return Result(SKIP, "npx is not on PATH (launchd's environment) — run the audit from a shell to build")
+    proc = subprocess.run([npx, "next", "build"], cwd=ROOT / "web", capture_output=True, text=True, timeout=600)
     tail = (proc.stdout + proc.stderr).strip().splitlines()[-12:]
     return Result(PASS if proc.returncode == 0 else FAIL,
                   "next build " + ("succeeded" if proc.returncode == 0 else "FAILED"), {"tail": tail})

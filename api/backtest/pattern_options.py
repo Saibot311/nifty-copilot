@@ -36,6 +36,8 @@ from .hypothesis_log import log_run
 from .options_engine import run_options_backtest
 from .pattern_info import PATTERN_INFO
 from .strategies import STRATEGY_REGISTRY, load_daily_data
+from stats.bootstrap import difference_ci, mean_ci
+
 from .walkforward import holdout_verdict, welch_t_stat
 
 MONEYNESS_PCT = [-2.0, -1.0, 0.0, 1.0, 2.0]  # negative = ITM, positive = OTM
@@ -203,7 +205,14 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
         baseline_label=f"buying this {option_type} with no signal", unit="₹",
     )
 
+    trades_detail = [{"entry_date": t.entry_date, "exit_date": t.exit_date, "expiry": t.expiry_date,
+                      "strike": t.strike, "entry_premium": t.entry_premium, "exit_premium": t.exit_premium,
+                      "net_return_pct": t.net_return_pct, "profit_per_lot_rs": round(_rupees(t))}
+                     for t in best["_holdout_trades"]]
     result.update(
+        holdout_ci_95=mean_ci(hol_rs),
+        edge_over_no_signal_ci_95=difference_ci(hol_rs, hol_base["rupees"]),
+        holdout_trades_detail=trades_detail,
         suggested_option={
             "type": option_type,
             "moneyness_pct": m,

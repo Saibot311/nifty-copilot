@@ -82,6 +82,8 @@ def _option_record(r: dict) -> dict | None:
         "win_rate": h.get("win_rate"),
         "avg_profit_per_lot_rs": h.get("avg_profit_per_lot_rs"),
         "no_signal_avg_rs": (r.get("baseline") or {}).get("holdout_avg_profit_per_lot_rs"),
+        "uncertainty_rs": _range(r.get("holdout_ci_95")),
+        "edge_could_be_zero": (r.get("edge_over_no_signal_ci_95") or {}).get("includes_zero"),
         "t_stat": r.get("holdout_t_stat"),
     }
 
@@ -137,6 +139,15 @@ def _market_digest() -> dict:
     }
 
 
+def _range(ci) -> str | None:
+    """A 95% bootstrap range, in the words the copilot may use."""
+    if not ci:
+        return None
+    # Full precision, not rounded: every number the copilot is handed has to
+    # be findable in the computed data, and a rounded one is not (audit 12.2).
+    return f"could have been anywhere from {ci['low']:,.2f} to {ci['high']:,.2f} with this many trades"
+
+
 def _structural_digest() -> dict | None:
     """The six pre-registered structural tests — volatility pricing,
     positioning, calendar, gaps — each a bought call or put."""
@@ -150,6 +161,7 @@ def _structural_digest() -> dict | None:
                    "status": h["status"], "reason": h["reason"],
                    "holdout_trades": h["holdout"].get("num_trades"),
                    "holdout_avg_profit_per_lot_rs": h["holdout"].get("avg_profit_per_lot_rs"),
+                   "uncertainty_rs": _range(h["holdout"].get("ci_95")),
                    "holdout_no_signal_avg_rs": h["holdout"].get("baseline_avg_profit_per_lot_rs")}
                   for h in r["hypotheses"]],
     }
@@ -169,6 +181,7 @@ def _replication_digest() -> dict | None:
         "tests": [{"name": h["label"], "status": h["status"], "reason": h["reason"],
                    "holdout_dates": h["pooled"]["holdout_dates"],
                    "holdout_avg_return_pct": h["pooled"]["holdout_avg_pct"],
+                   "uncertainty_pct": _range(h["pooled"].get("holdout_ci_95")),
                    "no_signal_avg_return_pct": h["pooled"]["baseline_holdout_avg_pct"],
                    "indices_beating_no_signal": f'{h["indices_beating_baseline_in_holdout"]} of '
                                                 f'{h["indices_with_holdout_trades"]}'}

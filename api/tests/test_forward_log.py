@@ -5,6 +5,7 @@ and (3) outcomes use the same next-open execution as the backtester."""
 from datetime import date, datetime
 
 import pandas as pd
+import pytest
 
 from briefing.forward_log import bar_is_final, score
 from market_data.kite_session import IST
@@ -60,3 +61,32 @@ def test_scored_actions_match_what_the_recommendation_actually_emits():
     source = inspect.getsource(rec_module)
     for action in DIRECTION:
         assert f'"{action}"' in source
+
+
+# --- a row written after its entry session opened is not forward evidence ----
+
+SESSIONS = ["2026-09-17", "2026-09-18", "2026-09-21", "2026-09-22"]
+
+
+@pytest.mark.parametrize("as_of,when,late", [
+    ("2026-09-17", "2026-09-17 19:30", False),   # the evening of the close: the normal path
+    ("2026-09-17", "2026-09-18 09:14", False),   # next session not open yet
+    ("2026-09-17", "2026-09-18 09:15", True),    # the entry price now exists
+    ("2026-09-17", "2026-09-18 10:23", True),    # what actually happened to this row
+    ("2026-09-18", "2026-09-19 12:00", False),   # Saturday: the next session is Monday
+    ("2026-09-18", "2026-09-21 09:30", True),
+    ("2026-09-22", "2026-09-22 17:51", False),   # no later session exists yet
+])
+def test_a_verdict_written_after_its_entry_session_opened_is_late(as_of, when, late):
+    from briefing.forward_log import outcome_has_started
+    now = datetime.fromisoformat(when).replace(tzinfo=IST)
+    assert outcome_has_started(date.fromisoformat(as_of), SESSIONS, now) is late
+
+
+def test_a_late_row_is_kept_but_never_counted():
+    from briefing.forward_log import forward_report, recorded_late
+    row = {"as_of": "2026-09-17", "recorded_at": "2026-09-18T04:53:25+00:00"}  # 10:23 IST on the 18th
+    assert recorded_late(row, SESSIONS) is True
+    on_time = {"as_of": "2026-09-17", "recorded_at": "2026-09-17T14:00:00+00:00"}  # 19:30 IST, same day
+    assert recorded_late(on_time, SESSIONS) is False
+    assert "days_excluded_recorded_late" in forward_report()["summary"]

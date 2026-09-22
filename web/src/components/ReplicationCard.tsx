@@ -36,7 +36,12 @@ export function ReplicationCard({ data }: { data: Replication }) {
             {rows.map((h) => (
               <tr key={h.name} className="border-t border-zinc-800/70 align-top">
                 <td className="py-1.5 pr-3 text-zinc-200">{h.label}<div className="text-[10px] text-zinc-600">{h.setup}</div></td>
-                <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-300">{pct(h.pooled.holdout_avg_pct)} vs {pct(h.pooled.baseline_holdout_avg_pct)}</td>
+                <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-300">
+                  {pct(h.pooled.holdout_avg_pct)} vs {pct(h.pooled.baseline_holdout_avg_pct)}
+                  {h.pooled.holdout_ci_95 && (
+                    <div className="text-[10px] text-zinc-600">could be {pct(h.pooled.holdout_ci_95.low)} to {pct(h.pooled.holdout_ci_95.high)}</div>
+                  )}
+                </td>
                 <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-400">{h.pooled.holdout_dates}</td>
                 <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-400">{h.pooled.holdout_t ?? "–"} ({h.pooled.required_t ?? "–"})</td>
                 {indices.map((u) => {
@@ -58,7 +63,8 @@ export function ReplicationCard({ data }: { data: Replication }) {
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
         Per-index columns: each index&apos;s 2024–26 edge over buying the same option with no signal, in return on premium.
-        {" "}{data.measure} The bar is corrected for {data.tests_counted} looks at the 2024–26 data. Plan fixed {data.registered}.
+        {" "}A &quot;could be&quot; range is the 95% bootstrap interval — where the average would land if these
+        same trades had come out differently. {data.measure} The bar is corrected for {data.tests_counted} looks at the 2024–26 data. Plan fixed {data.registered}.
       </p>
     </Panel>
   );

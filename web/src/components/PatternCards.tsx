@@ -22,11 +22,13 @@ export function TrackRecord({
   holdout,
   baselineRs,
   t,
+  ci,
 }: {
   option?: Pick<SuggestedOption, "description"> | null;
   holdout?: OptionPeriodStats | null;
   baselineRs?: number | null;
   t?: number | null;
+  ci?: { low: number; high: number } | null;
 }) {
   if (!option) return <p className="text-[11px] text-zinc-600">Too rare to test on options.</p>;
   return (
@@ -42,6 +44,11 @@ export function TrackRecord({
         </p>
       ) : (
         <p className="text-[11px] text-zinc-600">No trades in 2024–26 to judge it on.</p>
+      )}
+      {ci && (
+        <p className="font-mono text-[11px] tabular-nums text-zinc-600">
+          With so few trades, that average could as easily have been anywhere from {rupees(Math.round(ci.low))} to {rupees(Math.round(ci.high))} per lot.
+        </p>
       )}
     </div>
   );
@@ -106,7 +113,7 @@ function TodayRow({ p, lastClose }: { p: PatternToday; lastClose: number }) {
         </div>
       )}
       <div className="mt-2">
-        <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} />
+        <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} ci={p.holdout_ci_95} />
       </div>
       <Why p={p} />
     </div>
@@ -170,7 +177,7 @@ export function PatternOptionsTable({ data }: { data: PatternOptionsResearch | n
               <Pill tone={VERDICT_TONE[p.status]}>{p.status}</Pill>
             </div>
             <div className="mt-2">
-              <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} />
+              <TrackRecord option={p.suggested_option} holdout={p.holdout} baselineRs={p.baseline?.holdout_avg_profit_per_lot_rs} t={p.holdout_t_stat} ci={p.holdout_ci_95} />
             </div>
             {p.iv?.median_entry_iv_pct != null && (
               <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">

@@ -245,6 +245,9 @@ export interface OptionPeriodStats {
   total_profit_per_lot_rs?: number;
 }
 
+export interface MeanCI { mean: number; low: number; high: number; confidence: number; n: number }
+export interface EdgeCI { edge: number; low: number; high: number; includes_zero: boolean; confidence: number }
+
 export interface PatternOptionResult {
   strategy: string;
   label: string;
@@ -265,6 +268,8 @@ export interface PatternOptionResult {
     holdout_avg_profit_per_lot_rs: number;
   };
   holdout_t_stat?: number | null;
+  holdout_ci_95?: MeanCI | null;
+  edge_over_no_signal_ci_95?: EdgeCI | null;
   status: Verdict;
   reason: string;
   /** How implied volatility stood when this pattern's options were bought. Description only. */
@@ -370,6 +375,7 @@ export interface PatternToday {
   holdout?: OptionPeriodStats | null;
   baseline?: { holdout_avg_return_pct: number; holdout_avg_profit_per_lot_rs: number } | null;
   holdout_t_stat?: number | null;
+  holdout_ci_95?: MeanCI | null;
   status?: Verdict | null;
   reason?: string | null;
   forms_per_year?: number | null;
@@ -397,6 +403,7 @@ export interface LivePatternRow {
   status: Verdict | null;
   suggested_option: string | null;
   holdout: OptionPeriodStats | null;
+  holdout_ci_95?: MeanCI | null;
   baseline_rs: number | null;
   holdout_t_stat: number | null;
 }
@@ -511,6 +518,8 @@ export async function copilotRequest(path: string, question?: string): Promise<{
 }
 
 export type StructuralPeriod = {
+  ci_95?: MeanCI | null;
+  edge_ci_95?: EdgeCI | null;
   num_trades?: number;
   win_rate?: number;
   avg_profit_per_lot_rs?: number;
@@ -642,6 +651,7 @@ export type ReplicationHypothesis = {
     development_avg_pct: number; holdout_avg_pct: number;
     baseline_development_avg_pct: number; baseline_holdout_avg_pct: number;
     holdout_t: number | null; required_t: number | null;
+    holdout_ci_95: MeanCI | null; edge_ci_95: EdgeCI | null;
   };
   per_index: Record<string, { development: ReplicationSide; holdout: ReplicationSide;
     baseline_holdout_avg_pct: number | null; baseline_development_avg_pct: number | null }>;

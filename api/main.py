@@ -570,7 +570,7 @@ def patterns_today(symbol: str = SymbolQuery) -> dict:
     except HTTPException:
         research, computed_at = {}, None
 
-    keep = ("suggested_option", "holdout", "baseline", "holdout_t_stat", "status", "reason", "forms_per_year")
+    keep = ("suggested_option", "holdout", "baseline", "holdout_t_stat", "holdout_ci_95", "edge_over_no_signal_ci_95", "status", "reason", "forms_per_year")
     patterns = [{**p, **{k: research.get(p["strategy"], {}).get(k) for k in keep}} for p in prox["patterns"]]
     return {**prox, "patterns": patterns, "option_research_computed_at": computed_at}
 

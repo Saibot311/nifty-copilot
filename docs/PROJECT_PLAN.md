@@ -7,6 +7,24 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Confidence intervals, and what the first unattended night exposed (2026-09-23).** Every holdout
+result now carries a 95% bootstrap interval (`stats/bootstrap.py`, fixed seed, percentile method) and
+every holdout trade is stored with the research that produced it — both from AUDIT.md's list. The
+intervals say what a t-statistic does not: Bollinger Band Reversion's +₹8,267 per lot could as easily
+have been anywhere from −₹10,770 to +₹26,960, and **every pattern's edge over no-signal includes
+zero**. Shown on the pattern cards, the replication table and the structural card, and handed to the
+copilot at full precision — rounding them broke audit 12.2, which is the check working.
+
+The first fully unattended nightly run (22 Sep) found three things. **The forward-log fix worked**:
+22 Sep was recorded at 17:51 from NSE's index report while Yahoo still lacked the close. **The audit's
+FAIL was a false alarm** — launchd's PATH has no node, so the production-build check could not run;
+it now SKIPs when npx is absent, and the LaunchAgent carries a PATH. **And a real integrity problem:**
+two rows (17 and 21 Sep) had been written after their entry session had already opened, 21 Sep while
+the Yahoo fix was being tested. A row written then is not forward evidence — the outcome already
+existed. `record_if_final` now refuses once the next session has opened, `forward_report` marks such
+rows `recorded_late` and excludes them from the summary, and nothing is deleted or backfilled. Two of
+four rows count.
+
 **Replication on BANKNIFTY, SENSEX and Midcap Select; Phase 13 journal; GIFT Nifty (2026-09-22).**
 Asked to "train" on more indices to build confidence. Nothing is trained: the same rules and the same
 option setups (chosen on NIFTY 2018-23) were re-run on other indices to give each verdict more trades

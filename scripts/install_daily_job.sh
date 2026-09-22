@@ -40,6 +40,11 @@ cat > "$PLIST" <<EOF
         <string>$API_DIR/scripts/daily_job.py</string>
     </array>
     <key>WorkingDirectory</key><string>$API_DIR</string>
+    <!-- launchd starts with a bare PATH: without node the nightly audit
+         cannot run the production build, and reports a failure that is only
+         a missing toolchain. -->
+    <key>EnvironmentVariables</key>
+    <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
     <key>StartCalendarInterval</key>
     <array>$days
     </array>

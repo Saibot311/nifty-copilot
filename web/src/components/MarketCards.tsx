@@ -273,6 +273,7 @@ export function StructuralCard({ data }: { data: StructuralResearch }) {
               <span className="text-zinc-300">Record: </span>2018–23 {h.development.num_trades ?? 0} trades,{" "}
               {rupees(h.development.avg_profit_per_lot_rs)}/lot (no signal {rupees(h.development.baseline_avg_profit_per_lot_rs)});
               2024–26 {h.holdout.num_trades ?? 0} trades, won {pct(h.holdout.win_rate)}, t = {h.holdout.t ?? "–"} against a bar of {h.required_t ?? "–"}.
+              {h.holdout.ci_95 && ` With this few trades the average could have been anywhere from ${rupees(Math.round(h.holdout.ci_95.low))} to ${rupees(Math.round(h.holdout.ci_95.high))} per lot.`}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-zinc-300">{h.reason}</p>
           </details>

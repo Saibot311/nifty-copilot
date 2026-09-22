@@ -62,6 +62,7 @@ from market_data import YFinanceProvider
 from market_data.bar_archive import index_trading_days
 from quant.pipeline import candles_to_df
 from quant.regime import classify_regime_series
+from stats.bootstrap import difference_ci, mean_ci
 from stats.multiple_comparisons import required_t
 from storage.options_db import db_path_for
 
@@ -178,7 +179,9 @@ def judge(name: str, label: str, sig_by_index: dict, base_by_index: dict, tests:
         "pooled": {"development_dates": len(dev_s), "holdout_dates": n,
                    "development_avg_pct": mean(dev_s), "holdout_avg_pct": mean(hol_s),
                    "baseline_development_avg_pct": mean(dev_b), "baseline_holdout_avg_pct": mean(hol_b),
-                   "holdout_t": t, "required_t": bar},
+                   "holdout_t": t, "required_t": bar,
+                   "holdout_ci_95": mean_ci(list(hol_s.values())),
+                   "edge_ci_95": difference_ci(list(hol_s.values()), list(hol_b.values()))},
         "status": status, "reason": reason, "per_index": per_index,
         "indices_beating_baseline_in_holdout": sum(x > 0 for x in signs), "indices_with_holdout_trades": len(signs),
     }
