@@ -14,6 +14,7 @@ import { PlaybookCard } from "@/components/PlaybookCard";
 import { PriceChart } from "@/components/PriceChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
+import { SessionStatus } from "@/components/SessionStatus";
 import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
@@ -27,6 +28,7 @@ import {
   fetchStructural,
   fetchGiftNifty,
   fetchReplication,
+  fetchZerodhaStatus,
   fetchIndicators,
   fetchLivePatterns,
   fetchLiveQuote,
@@ -60,6 +62,7 @@ export default async function Home() {
     structural,
     gift,
     replication,
+    zerodha,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -80,6 +83,7 @@ export default async function Home() {
     fetchStructural(),
     fetchGiftNifty(),
     fetchReplication(),
+    fetchZerodhaStatus(),
   ]);
 
   const snap = snapshot.data;
@@ -141,6 +145,7 @@ export default async function Home() {
             <span className="text-[11px] text-zinc-600">
               {live ? live.market.trade_date : snap?.as_of}
             </span>
+            <SessionStatus status={zerodha.data} />
             {snap && <RegimeBadge regime={snap.regime} />}
           </div>
         </div>

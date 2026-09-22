@@ -122,6 +122,12 @@ def step_options() -> bool:
     return recent and gaps
 
 
+def step_login_record() -> bool:
+    """Record whether today had a Zerodha session. Never prompts at 19:30 —
+    the market is shut and a login then is worth nothing."""
+    return run_script("scripts/kite_login.py", "--check-only")
+
+
 def step_kite_bars() -> bool:
     from market_data.kite_session import session_status
 
@@ -142,6 +148,7 @@ def main() -> int:
         # when Yahoo does not have it yet.
         ("NSE index report", lambda: run_script("scripts/backfill_nse_indices.py", "--recent")),
         ("forward log", step_forward_log),
+        ("Zerodha session record", step_login_record),
         ("kite bars", step_kite_bars),
         ("options archive", step_options),
         ("other index options", lambda: run_script("scripts/backfill_other_indices.py", "--recent")),

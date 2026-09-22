@@ -15,7 +15,7 @@ from backtest.intraday import load_research as load_intraday_research
 from backtest.iv_research import load_iv_research, load_series as load_iv_series
 from backtest.structural_research import load_structural_research
 from briefing.journal import report as journal_report, system_action_for
-from storage import journal_db
+from storage import journal_db, login_log_db
 from market_engine.engine import load_studies as load_market_studies, today as market_today
 from market_engine.knowledge import KNOWLEDGE
 from backtest.pattern_options import load_research
@@ -514,7 +514,13 @@ def bars_archive() -> dict:
 
 @app.get("/api/zerodha/status")
 def zerodha_status() -> dict:
-    return kite_session.session_status()
+    """Whether today has a Kite session, and the record of which days did.
+    Zerodha requires a human login once a day; the days without one are the
+    days 15-minute bars and live tracking are missing."""
+    status = kite_session.session_status()
+    if status["logged_in"]:
+        login_log_db.record("LOGGED_IN", issued_at=status.get("issued_at"), user_id=status.get("user_id"))
+    return {**status, "history": login_log_db.summary()}
 
 
 @app.get("/api/zerodha/login")
@@ -531,7 +537,9 @@ def zerodha_callback(request_token: str | None = None, status: str | None = None
     if status != "success" or not request_token:
         raise HTTPException(400, f"Kite login did not succeed (status={status}).")
     try:
-        kite_session.complete_login(request_token)
+        done = kite_session.complete_login(request_token)
+        login_log_db.record("LOGGED_IN", issued_at=done["issued_at"], user_id=done.get("user_id"),
+                            note="logged in through Kite")
     except kite_session.KiteNotConfigured as e:
         raise HTTPException(503, str(e))
     except Exception as e:

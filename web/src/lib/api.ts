@@ -673,3 +673,30 @@ export type Replication = {
 };
 
 export const fetchReplication = () => get<Replication>("/api/replication");
+
+export type LoginDay = {
+  trade_date: string;
+  status: "LOGGED_IN" | "PROMPTED" | "MISSING";
+  issued_at: string | null;
+  checked_at: string;
+  note: string | null;
+};
+
+export type ZerodhaStatus = {
+  configured: { api_key: boolean; api_secret: boolean };
+  logged_in: boolean;
+  reason?: string;
+  issued_at?: string;
+  history: {
+    days_recorded: number;
+    days_logged_in: number;
+    days_without_a_session: number;
+    current_streak: number;
+    last_login: string | null;
+    last_login_at: string | null;
+    recent: LoginDay[];
+  };
+};
+
+export const fetchZerodhaStatus = () => get<ZerodhaStatus>("/api/zerodha/status");
+export const ZERODHA_LOGIN_URL = `${API_BASE}/api/zerodha/login`;

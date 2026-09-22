@@ -55,7 +55,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 306 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 312 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -85,6 +85,14 @@ research, IV, positioning, the structural tests, market studies). Verified runni
 tracking fall back or skip; everything else still works.
 Re-login: <http://127.0.0.1:8000/api/zerodha/login>
 
+A second LaunchAgent (`./scripts/install_login_check.sh`, weekdays 08:45 and 12:30) checks whether
+today has a session and, if not, opens that page and raises a notification — then records the
+outcome. **It is not an auto-login and must never become one:** that would mean keeping a broker
+password and a 2FA seed on this disk, and Zerodha requires a person. `tests/test_login_log.py` fails
+if `pyotp`, `selenium` or a password/TOTP name ever appears in that code path. The record of which
+days had a session is in `login_log.db`, summarised at `/api/zerodha/status` and in the header pill;
+the days without one are the days 15-minute bars are missing.
+
 ## Secrets
 
 All in `api/.env` (gitignored, never in chat or commits): `KITE_API_KEY`,
@@ -111,6 +119,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/nse_indices.db` | NSE's own daily all-index report, 2017→ — Midcap Select levels, and the close Yahoo sometimes lacks | `scripts/backfill_nse_indices.py` |
 | `api/data/replication.json` | The pooled multi-index replication | `scripts/replication.py` |
 | **`api/data/journal.db`** | **Your trade journal** | **Cannot be rebuilt** — backed up nightly with the forward log |
+| `api/data/login_log.db` | Which days had a Zerodha session, and when it started | Accrues daily; deletable |
 | `api/data/gift_nifty.db` | Nightly GIFT Nifty snapshots, from 2026-09-22 | Cannot be rebuilt (no free history exists) |
 | `api/data/participant_oi.db` | NSE participant-wise open interest (Client/DII/FII/Pro), 2019→ | `scripts/backfill_participant_oi.py` |
 | `api/data/market_research.json` | The market engine's studies | `scripts/market_research.py` |
