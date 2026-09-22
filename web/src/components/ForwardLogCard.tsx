@@ -23,7 +23,13 @@ export function ForwardLogCard({ log }: { log: ForwardLog | null }) {
   return (
     <Panel className="p-4">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Days logged" value={summary.days_logged} sub={summary.logging_since ? `since ${summary.logging_since}` : undefined} />
+        <Stat
+          label="Days logged"
+          value={summary.days_logged}
+          sub={[summary.logging_since ? `since ${summary.logging_since}` : null,
+                summary.days_excluded_recorded_late ? `${summary.days_excluded_recorded_late} not counted` : null]
+                .filter(Boolean).join(" · ") || undefined}
+        />
         <Stat
           label="Calls / puts / no trade"
           value={`${summary.by_action.CONSIDER_CALL} / ${summary.by_action.CONSIDER_PUT} / ${summary.by_action.NO_TRADE}`}
@@ -52,8 +58,15 @@ export function ForwardLogCard({ log }: { log: ForwardLog | null }) {
             </thead>
             <tbody className="font-mono tabular-nums text-zinc-300">
               {entries.slice(0, 15).map((e) => (
-                <tr key={e.as_of} className="border-t border-zinc-800/60">
-                  <td className="py-1.5">{e.as_of}</td>
+                <tr key={e.as_of} className={`border-t border-zinc-800/60 ${e.recorded_late ? "text-zinc-600" : ""}`}>
+                  <td className="py-1.5">
+                    {e.as_of}
+                    {e.recorded_late && (
+                      <span className="ml-1.5 font-sans text-[10px] text-amber-400/80" title="Written after its entry session had already opened, so the outcome already existed. Kept for the record, left out of the totals.">
+                        not counted
+                      </span>
+                    )}
+                  </td>
                   <td className="py-1.5">
                     <Pill tone={ACTION[e.action].tone}>{ACTION[e.action].label}</Pill>
                   </td>

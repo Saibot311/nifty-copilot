@@ -310,28 +310,33 @@ export function MarketTab({ data, structural, gift }: {
   if (!data) return <Offline what="Market context" />;
   return (
     <>
-      {gift && (
+      <div className="grid gap-6 xl:grid-cols-2">
+        {gift && (
+          <section>
+            <SectionLabel hint="NIFTY futures in GIFT City — context, not a signal">GIFT Nifty now</SectionLabel>
+            <GiftNiftyCard g={gift} />
+          </section>
+        )}
         <section>
-          <SectionLabel hint="NIFTY futures in GIFT City — context, not a signal">GIFT Nifty now</SectionLabel>
-          <GiftNiftyCard g={gift} />
+          <SectionLabel hint="attribution by association, not a cause">Why it moved</SectionLabel>
+          <WhyItMovedCard today={data.today} />
         </section>
-      )}
-      <section>
-        <SectionLabel hint="attribution by association, not a cause">Why it moved</SectionLabel>
-        <WhyItMovedCard today={data.today} />
-      </section>
-      {data.studies && (
-        <>
-          <section>
-            <SectionLabel hint="every option bought is one someone sold">Who is on the other side</SectionLabel>
-            <WhoWinsCard studies={data.studies} today={data.today} />
-          </section>
-          <section>
-            <SectionLabel hint="statistics about the market, not evidence against anyone">Expiry days and unusual activity</SectionLabel>
-            <ExpiryCard studies={data.studies} today={data.today} />
-          </section>
-        </>
-      )}
+        {data.studies && (
+          <>
+            <section className="xl:col-span-2">
+              <SectionLabel hint="every option bought is one someone sold">Who is on the other side</SectionLabel>
+              <WhoWinsCard studies={data.studies} today={data.today} />
+            </section>
+            <section className="xl:col-span-2">
+              <SectionLabel hint="statistics about the market, not evidence against anyone">
+                Expiry days and unusual activity
+              </SectionLabel>
+              <ExpiryCard studies={data.studies} today={data.today} />
+            </section>
+          </>
+        )}
+      </div>
+
       {structural && (
         <section>
           <SectionLabel hint="pre-registered, one look at 2024–26 each">Beyond chart patterns: six structural tests</SectionLabel>

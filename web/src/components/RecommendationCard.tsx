@@ -34,9 +34,6 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
     <Panel emphasis="raised" className={`${meta.border} overflow-hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/70 px-5 py-4">
         <div className="min-w-0">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-            Today&apos;s call
-          </div>
           <p className={`text-xl font-semibold tracking-tight ${meta.accent}`}>{rec.headline}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

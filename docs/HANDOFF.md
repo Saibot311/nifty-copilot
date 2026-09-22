@@ -117,6 +117,18 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
 | **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt** — backed up nightly (30 kept) to `BACKUP_DIR` in `api/.env` — set 2026-09-22 to iCloud Drive `NIFTY-Copilot-Backups/`, so a lost disk doesn't take it too. Falls back to `api/data/backups/` if unset. |
 
+## The dashboard
+
+Four tabs. **Today** answers one question — what is the call, and what would change it: the verdict
+and the chart side by side, the copilot, the patterns in play, then the forward record, implied
+volatility, the briefing and analogs in a two-column grid. **Research** is every pattern as one dense
+table with a 95% range bar per row on a shared scale (seeing every range touch ₹0 is the point), then
+the multi-index replication. **Market** is the context engine. **Journal** is yours to fill in daily.
+
+Rules that keep it readable: one card per idea, not one card per number; a caveat is stated once, not
+on every row; detail hides behind a row you click; two columns above 1100px. It was a 4,300px column
+of identical cards before 2026-09-23 — don't let it drift back.
+
 ## Traps that already cost real time
 
 - **pandas 3:** `bool_series.shift(1).fillna(False)` is object dtype, and `~` on it is

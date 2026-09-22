@@ -187,6 +187,8 @@ export interface ForwardOutcome {
 }
 
 export interface ForwardEntry {
+  /** Written after its entry session opened — kept, shown, never counted. */
+  recorded_late?: boolean;
   as_of: string;
   recorded_at: string;
   action: Recommendation["action"];
@@ -202,6 +204,7 @@ export interface ForwardLog {
   entries: ForwardEntry[];
   summary: {
     days_logged: number;
+  days_excluded_recorded_late?: number;
     logging_since: string | null;
     by_action: Record<Recommendation["action"], number>;
     completed_trades_10d: number;
