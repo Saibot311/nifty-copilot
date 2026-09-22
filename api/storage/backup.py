@@ -29,16 +29,27 @@ KEEP = 30
 
 def backup_forward_log(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
                        today: date | None = None) -> dict:
-    source = source or DB_PATH
+    return _backup(source or DB_PATH, "forward_log", "recommendation_log", dest_dir, keep, today)
+
+
+def backup_journal(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                   today: date | None = None) -> dict:
+    """The trade journal is the user's own record and, like the forward log,
+    cannot be rebuilt from anything else."""
+    from .journal_db import DB_PATH as JOURNAL_PATH
+    return _backup(source or JOURNAL_PATH, "journal", "journal", dest_dir, keep, today)
+
+
+def _backup(source: Path, stem: str, table: str, dest_dir: Path | None, keep: int, today: date | None) -> dict:
     if not source.exists():
-        return {"ok": True, "path": None, "rows": 0, "summary": "no forward log yet — nothing to back up"}
+        return {"ok": True, "path": None, "rows": 0, "summary": f"no {stem.replace('_', ' ')} yet — nothing to back up"}
     dest_dir = dest_dir or Path(_env("BACKUP_DIR") or DEFAULT_DIR).expanduser()
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"forward_log-{(today or date.today()).isoformat()}.db"
+    dest = dest_dir / f"{stem}-{(today or date.today()).isoformat()}.db"
 
     src = sqlite3.connect(source)
     try:
-        want = src.execute("SELECT COUNT(*) FROM recommendation_log").fetchone()[0]
+        want = src.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         out = sqlite3.connect(dest)
         try:
             src.backup(out)
@@ -49,7 +60,7 @@ def backup_forward_log(source: Path | None = None, dest_dir: Path | None = None,
 
     check = sqlite3.connect(dest)
     try:
-        got = check.execute("SELECT COUNT(*) FROM recommendation_log").fetchone()[0]
+        got = check.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         intact = check.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         check.close()
@@ -58,7 +69,7 @@ def backup_forward_log(source: Path | None = None, dest_dir: Path | None = None,
         return {"ok": False, "path": None, "rows": got,
                 "summary": f"BACKUP FAILED verification: {got} of {want} rows, integrity {'ok' if intact else 'bad'}"}
 
-    old = sorted(dest_dir.glob("forward_log-*.db"))[:-keep] if keep else []
+    old = sorted(dest_dir.glob(f"{stem}-*.db"))[:-keep] if keep else []
     for f in old:
         f.unlink()
     return {"ok": True, "path": str(dest), "rows": got,

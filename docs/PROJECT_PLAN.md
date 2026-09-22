@@ -7,6 +7,61 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Replication on BANKNIFTY, SENSEX and Midcap Select; Phase 13 journal; GIFT Nifty (2026-09-22).**
+Asked to "train" on more indices to build confidence. Nothing is trained: the same rules and the same
+option setups (chosen on NIFTY 2018-23) were re-run on other indices to give each verdict more trades
+without new ideas. Plan fixed first (`backtest/replication.py`, hash `01c923a162284ea7`, 12:10 UTC).
+New archives: BANKNIFTY options 2018→ (3.0M rows) and Midcap Select options Jan 2022→ (1.2M) from
+NSE's bhavcopy; SENSEX options Jan 2024→ (281k) from BSE's UDiFF file, where BSE's public archive
+begins; index levels from NSE's own all-index report (`nse_indices.db`, 2017→), since Yahoo has no
+Midcap Select at all. Indices move together, so a date counts once; returns are on premium (lot sizes
+differ); the bar counts every replication as another look (48 tests). On NIFTY alone the engine
+reproduced all 19 patterns' trade counts and returns exactly.
+
+**Result: 0 of 22 pass on the pooled 2024-26 data.** The replication did what it is for: NIFTY's best
+result, Bollinger Band Reversion (+28%/trade on 13 holdout trades), was +0.2% on BANKNIFTY, −44% on
+Midcap and −41% on SENSEX — NIFTY-specific luck. RSI Overbought Reversal beat no-signal on all four
+indices in 2024-26 but lost on every index in 2018-23: a few large 2024-26 winners, not a pattern.
+Nothing reached a pooled t above 1.5 against bars of 3.1-3.9.
+
+Also built: **Phase 13, the trade journal** (Journal tab, `/api/journal`) — each session's decision
+(stayed out / waited / bought), the system's verdict looked up from the forward log (never typed),
+P&L computed with the backtests' cost model, followed-vs-overrode comparison; backed up nightly with
+the forward log. **GIFT Nifty** — live quote on the Market tab from NSE IX's public feed, snapshotted
+nightly; NSE IX publishes no free history, so it accumulates from today. **Forward-log fix** — daily
+bars are topped up from NSE's all-index report when Yahoo lacks the latest close (lost 21 Sep; 22 Sep
+now available at 17:00 while Yahoo still lacked it). Missed days are not backfilled: an entry must be
+written before its outcome. **Audit 8.2** now judges the research against the data it was run on.
+**Nightly audit** runs last in the daily job and raises a macOS notification on any FAIL.
+
+**Beyond chart patterns: six structural tests for an option buyer (2026-09-22).** Asked for more
+than beginner patterns, and told the user trades only by *buying* calls and puts, so every idea is
+framed as a bought CE or PE. Six hypotheses about market structure rather than chart shape were
+written into `backtest/structural_research.py` and logged in the hypothesis log (hash
+`6f8cf90f4c351b4a`, 11:04 UTC) before any of them was computed; a tripwire test holds the hash as a
+literal. Each has one fixed setup — at-the-money, nearest expiry at least 7 days out, fixed hold — so
+nothing is chosen from a grid, and the same verdict ladder as the patterns.
+
+| Test | Family | 2024-26: ₹/lot vs no signal | Trades | Verdict |
+|---|---|---|---|---|
+| Cheap options (IV below 21-day realised), follow 20-day trend | volatility pricing | −3,577 vs −131 | 39 | REJECTED |
+| Follow FII index-futures positioning extremes | positioning | +1,322 vs +281, t 0.33 (bar 3.12) | 33 | REJECTED |
+| Fade retail (Client) positioning extremes | positioning | −1,692 vs +336 | 48 | REJECTED |
+| Turn of the month (call) | calendar | −3,811 vs −951 | 32 | REJECTED |
+| Day before a holiday (call) | calendar | −2,219 vs −234 | 39 | REJECTED |
+| Opening gap of 0.75%+ pushed back during the session | overnight vs intraday | −4,762 vs −583 | 28 | REJECTED |
+
+Turn of the month looked good on 2018-23 (+₹2,302/lot, t 1.74) and lost on 2024-26 — the pattern
+the holdout exists to catch. Only FII-following made money in both periods, by an amount luck
+explains. **0 of 6.** With them, 26 hypotheses have had their look at the holdout (19 patterns, the
+IV filter, these six), and the recommendation gate's bar is now corrected for all 26 — 2.89 in the
+large-sample limit, up from 2.79. Also measured: since 2015 NIFTY's compounded move from the previous
+close to the *opening print* is +2,142% and from open to close −88% — much of it the opening print
+sitting above where the index trades minutes later, and none of it buyable with end-of-day option
+prices. Found on the way: an unsure copilot route was sent the "today" slice, not everything —
+ambiguous questions lost the pattern records and market studies. Fixed; the test that pinned it was
+rewritten to its stated intent.
+
 **How the market works, who makes money, and a market context engine (2026-09-22).** Asked, after
 every pattern was rejected: people do make money here — how? Researched and built; the write-up is
 [MARKET_RESEARCH.md](MARKET_RESEARCH.md).

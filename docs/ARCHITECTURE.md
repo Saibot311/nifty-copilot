@@ -134,7 +134,7 @@ This is the core framework. A strategy climbs a ladder; **it can never skip a ru
 ```
 
 **Current population of the ladder:** 26 registered (13 symmetric call/put pairs) · 26 validated ·
-0 APPROVED · 2 CONDITIONAL (Hammer, Shooting Star — both on <15 holdout trades) · 24 REJECTED.
+0 APPROVED · 0 CONDITIONAL · 26 REJECTED (the two earlier CONDITIONALs were a verdict-ladder bug; see AUDIT.md).
 APPROVED now also requires the holdout edge over baseline to be statistically distinguishable
 from luck (t ≥ 2).
 
@@ -157,9 +157,10 @@ candles against every pattern.
 **Yardstick: ₹ profit per lot** (today's lot size, 65). Average % return was tried first and
 steered almost every pattern to the cheapest far-OTM weekly option — big percentages, little money.
 
-**Current state:** 0 APPROVED · 2 CONDITIONAL (Bollinger Band Reversion → 2% ITM call, 10 days,
-+₹3,667/lot vs −₹6,160 with no signal; RSI Overbought Reversal → 2% OTM put, one big winner in 11) ·
-24 REJECTED. Both CONDITIONAL on ~11 holdout trades, t < 1.
+**Current state:** 0 APPROVED · 0 CONDITIONAL · 26 REJECTED. The closest, Bollinger Band Reversion
+(2% ITM call, 10 days), made +₹8,267/lot on 13 holdout trades against −₹5,669 with no signal, but
+t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
+(`structural_research.py`) were then tested the same way as bought options: also 0 of 6.
 
 ---
 
@@ -202,7 +203,7 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `copilot/context.py` · `assistant.py` | Compact digest of computed results → explain/ask | Computing anything new |
 | `backtest/similarity.py` | Phase 11: 5-feature nearest-neighbour analogs + walk-forward test | More features without evidence they help |
 | `backtest/live_patterns.py` | Phase 10: today's candle from 15-min closes → which patterns would form now | Anything final before 15:30 |
-| `storage/options_db.py` | Options archive (655 MB, 4.5 M rows) | Strategy verdicts |
+| `storage/options_db.py` | Options archives — NIFTY (4.6 M rows) and, via `db_path_for()`, BANKNIFTY, MIDCPNIFTY, SENSEX in their own files | Strategy verdicts |
 | `storage/strategy_status_db.py` | The Playbook — verdict history | Live recomputation |
 | `briefing/research_briefing.py` | Rule-based evidence for/against | Verdicts |
 | `briefing/recommendation.py` | The gate → CALL/PUT/NO_TRADE | New statistics |
@@ -211,6 +212,11 @@ steered almost every pattern to the cheapest far-OTM weekly option — big perce
 | `storage/backup.py` | Verified, rotating backups of the forward log (SQLite online backup API) | A plain file copy — it can be torn mid-write |
 | `options/iv.py` | Black-76 implied vol; forward and discount read off put-call parity, no assumed rates | A regression slope believed without checking the rate it implies |
 | `backtest/iv_research.py` | Daily 30-day IV, its VIX check, IV description of every pattern, the one pre-registered filter test | Editing `PREREGISTERED` — a new hypothesis is a new test (a hash test guards it) |
+| `backtest/structural_research.py` | Six pre-registered structural hypotheses for an option buyer (volatility pricing, positioning, calendar, gaps), one fixed setup each; `holdout_tests_judged()` — the count the evidence bar corrects for | Editing `PREREGISTERED`, or choosing a setup from a grid |
+| `backtest/replication.py` | Pre-registered replication of judged patterns and three structural tests on BANKNIFTY, SENSEX, Midcap Select; one observation per entry date | Re-choosing a setup per index — that is a new test |
+| `market_data/nse_indices.py` · `storage/nse_index_db.py` | NSE's daily all-index report: Midcap Select levels, and the close Yahoo sometimes lacks | Replacing Yahoo's history — it only tops up later sessions |
+| `market_data/gift_nifty.py` · `storage/gift_nifty_db.py` | GIFT Nifty live quote from NSE IX, nightly snapshots | Treating it as a signal — an option bought at the close can't act on the evening |
+| `storage/journal_db.py` · `briefing/journal.py` | Phase 13: the user's decisions next to the system's verdict; P&L computed, never typed | Letting the user type the system's verdict |
 | `market_engine/drivers.py` | "Why it moved": NIFTY's return against global cues that closed before India opened, betas from earlier days only | A same-date US session — look-ahead |
 | `market_engine/who_wins.py` | The variance risk premium; the cost of buying options without a signal; SEBI's published figures | Showing the forward-looking study as a current signal |
 | `market_engine/positioning.py` | NSE participant-wise open interest, zero-sum checked | Reading overnight OI as intraday retail behaviour |

@@ -19,6 +19,16 @@ from market_data.nse_bhavcopy import OptionBar
 
 DB_PATH = Path(__file__).parent.parent / "data" / "nifty_options.db"
 
+# Other underlyings live in their own files, same schema, so the NIFTY
+# archive — and every query written against it — is untouched.
+UNDERLYINGS = ("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "SENSEX")
+
+
+def db_path_for(underlying: str) -> Path:
+    if underlying not in UNDERLYINGS:
+        raise ValueError(f"unknown underlying {underlying!r}")
+    return DB_PATH if underlying == "NIFTY" else DB_PATH.with_name(f"options_{underlying.lower()}.db")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS option_bars (
     trade_date   TEXT NOT NULL,
@@ -50,7 +60,7 @@ CREATE TABLE IF NOT EXISTS ingested_days (
 def connect(db_path: Path | None = None):
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30)  # parallel backfills share the file
     conn.row_factory = sqlite3.Row
     try:
         yield conn

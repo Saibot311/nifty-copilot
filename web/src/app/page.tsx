@@ -4,6 +4,8 @@ import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IVCard } from "@/components/IVCard";
 import { MarketTab } from "@/components/MarketCards";
+import { JournalTab } from "@/components/JournalTab";
+import { ReplicationCard } from "@/components/ReplicationCard";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { LivePatternsCard } from "@/components/LivePatternsCard";
 import { PatternOptionsTable, PatternsTodayCard } from "@/components/PatternCards";
@@ -21,6 +23,9 @@ import {
   fetchForwardLog,
   fetchImpliedVol,
   fetchMarket,
+  fetchStructural,
+  fetchGiftNifty,
+  fetchReplication,
   fetchIndicators,
   fetchLivePatterns,
   fetchLiveQuote,
@@ -51,6 +56,9 @@ export default async function Home() {
     copilotStatus,
     impliedVol,
     market,
+    structural,
+    gift,
+    replication,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -68,6 +76,9 @@ export default async function Home() {
     fetchCopilotStatus(),
     fetchImpliedVol(),
     fetchMarket(),
+    fetchStructural(),
+    fetchGiftNifty(),
+    fetchReplication(),
   ]);
 
   const snap = snapshot.data;
@@ -212,6 +223,13 @@ export default async function Home() {
                 <PatternOptionsTable data={patternOptions.data} />
               </section>
 
+              {replication.data && (
+                <section>
+                  <SectionLabel hint="same rules, more trades — BANKNIFTY, Sensex, Midcap">Replicated on other indices</SectionLabel>
+                  <ReplicationCard data={replication.data} />
+                </section>
+              )}
+
               <section>
                 <SectionLabel hint="index-return verdicts, stored as history">Strategy Playbook</SectionLabel>
                 <PlaybookCard entries={playbook.data?.strategies ?? null} />
@@ -224,7 +242,8 @@ export default async function Home() {
 
             </>
           }
-          market={<MarketTab data={market.data} />}
+          market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} />}
+          journal={<JournalTab />}
         />
 
         <footer className="mt-10 border-t border-zinc-900 pt-4 text-[11px] leading-relaxed text-zinc-600">

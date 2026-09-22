@@ -61,12 +61,57 @@ def step_forward_log() -> bool:
     return True
 
 
+def notify(message: str) -> None:
+    """A macOS notification — the nightly job runs unattended, and a failure
+    nobody sees is the same as no check at all. Best effort: never fails the job."""
+    safe = message.replace('"', "'")[:220]
+    try:
+        subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "NIFTY Copilot"'],
+                       capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
+def step_gift_nifty() -> bool:
+    from market_data.gift_nifty import fetch
+    from storage.gift_nifty_db import count, save
+
+    q = fetch()
+    if q is None:
+        log("    no traded near-month contract")
+        return True
+    save(q)
+    log(f"    {q['symbol']} {q['last']} ({q['change_pct']}%) at {q['last_trade_time']}; {count()} snapshots")
+    return True
+
+
+def step_audit() -> bool:
+    """The phase-by-phase audit on real data, after everything is refreshed.
+    Every bug the audit ever found had hidden for a while unnoticed."""
+    import json
+
+    ok = run_script("scripts/audit.py")
+    try:
+        results = json.loads((API_DIR / "data" / "audit_results.json").read_text())
+        rows = results if isinstance(results, list) else []
+        failed = [r.get("id") for r in rows if r.get("status") == "FAIL"]
+    except Exception:
+        failed = []
+    if not ok or failed:
+        notify(f"Nightly audit FAILED: {', '.join(map(str, failed)) or 'see daily_job.log'}")
+    return ok
+
+
 def step_backup() -> bool:
     from storage.backup import backup_forward_log
 
-    r = backup_forward_log()
-    log(f"    {r['summary']}")
-    return r["ok"]
+    from storage.backup import backup_journal
+
+    ok = True
+    for r in (backup_forward_log(), backup_journal()):
+        log(f"    {r['summary']}")
+        ok = ok and r["ok"]
+    return ok
 
 
 def step_options() -> bool:
@@ -92,14 +137,23 @@ def step_kite_bars() -> bool:
 def main() -> int:
     log("daily job start")
     steps = [
-        ("forward log backup", step_backup),
+        ("forward log + journal backup", step_backup),
+        # Before the forward log: NSE's index report carries today's close
+        # when Yahoo does not have it yet.
+        ("NSE index report", lambda: run_script("scripts/backfill_nse_indices.py", "--recent")),
         ("forward log", step_forward_log),
         ("kite bars", step_kite_bars),
         ("options archive", step_options),
+        ("other index options", lambda: run_script("scripts/backfill_other_indices.py", "--recent")),
         ("pattern -> option research", lambda: run_script("scripts/pattern_options.py")),
         ("implied volatility", lambda: run_script("scripts/iv_research.py")),
         ("participant positioning", lambda: run_script("scripts/backfill_participant_oi.py")),
+        # After positioning: two of the six read today's participant file.
+        ("structural hypotheses", lambda: run_script("scripts/structural_research.py")),
+        ("replication on other indices", lambda: run_script("scripts/replication.py")),
         ("market context studies", lambda: run_script("scripts/market_research.py")),
+        ("GIFT Nifty snapshot", step_gift_nifty),
+        ("audit", step_audit),
     ]
     failed = []
     for name, fn in steps:
@@ -111,6 +165,8 @@ def main() -> int:
             failed.append(name)
             log("    " + traceback.format_exc().strip().replace("\n", "\n    "))
     log(f"daily job done{' — FAILED: ' + ', '.join(failed) if failed else ''}")
+    if failed and failed != ["audit"]:  # the audit step sends its own alert
+        notify(f"Nightly job: {', '.join(failed)} failed — see api/data/daily_job.log")
     return 1 if failed else 0
 
 

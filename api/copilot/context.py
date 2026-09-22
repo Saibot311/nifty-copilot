@@ -24,6 +24,7 @@ Kept small enough to fit free-tier per-minute token limits either way.
 """
 
 from backtest.iv_research import load_iv_research
+from backtest.structural_research import load_structural_research
 from backtest.pattern_options import LOT_SIZE, load_research
 from backtest.pattern_proximity import pattern_proximity
 from backtest.similarity import run_similarity
@@ -31,16 +32,18 @@ from briefing.forward_log import forward_report
 from briefing.recommendation import build_recommendation
 from cache import cached
 
-# What each scope carries on top of the core. "today" and the default are
-# the same thing: the daily explanation needs the whole dashboard, and
-# there is no honest saving to make there.
+# What each scope carries on top of the core. The daily explanation asks
+# for "today" by name: it needs the whole dashboard, and nothing more.
 SCOPES = {
     "today": ("patterns", "live", "similarity", "forward"),
-    "pattern_record": ("patterns", "all_records", "forward"),
-    "method": ("similarity", "forward"),
+    "pattern_record": ("patterns", "all_records", "structural", "replication", "forward"),
+    "method": ("similarity", "structural", "forward"),
     "market": ("market", "forward"),
 }
-DEFAULT_SECTIONS = SCOPES["today"]
+# An unsure or missing scope gets every section. It used to get "today",
+# which has no pattern records, market studies or structural tests — so an
+# ambiguous question lost exactly the facts a narrower route would have had.
+DEFAULT_SECTIONS = tuple(dict.fromkeys(s for secs in SCOPES.values() for s in secs))
 
 HOW_IT_DECIDES = {
     "verdicts": {
@@ -134,6 +137,45 @@ def _market_digest() -> dict:
     }
 
 
+def _structural_digest() -> dict | None:
+    """The six pre-registered structural tests — volatility pricing,
+    positioning, calendar, gaps — each a bought call or put."""
+    r = load_structural_research()
+    if not r:
+        return None
+    return {
+        "what_these_are": "Ideas about market structure rather than chart shapes, each tested once, as a bought "
+                          "call or put, with its rule fixed before any result existed.",
+        "tests": [{"name": h.get("label") or h["name"].replace("_", " "), "family": h["family"], "rule": h["signal"],
+                   "status": h["status"], "reason": h["reason"],
+                   "holdout_trades": h["holdout"].get("num_trades"),
+                   "holdout_avg_profit_per_lot_rs": h["holdout"].get("avg_profit_per_lot_rs"),
+                   "holdout_no_signal_avg_rs": h["holdout"].get("baseline_avg_profit_per_lot_rs")}
+                  for h in r["hypotheses"]],
+    }
+
+
+def _replication_digest() -> dict | None:
+    """The same rules on BANKNIFTY, SENSEX and Midcap Select, pooled by date."""
+    from backtest.replication import load_replication
+    r = load_replication()
+    if not r:
+        return None
+    return {
+        "what_this_is": "Each judged pattern, and three structural tests, re-run with the same option setup on "
+                        "other indices to get more trades. Returns are on premium, in per cent; a date traded on "
+                        "several indices counts once.",
+        "indices": list(r["coverage"]),
+        "tests": [{"name": h["label"], "status": h["status"], "reason": h["reason"],
+                   "holdout_dates": h["pooled"]["holdout_dates"],
+                   "holdout_avg_return_pct": h["pooled"]["holdout_avg_pct"],
+                   "no_signal_avg_return_pct": h["pooled"]["baseline_holdout_avg_pct"],
+                   "indices_beating_no_signal": f'{h["indices_beating_baseline_in_holdout"]} of '
+                                                f'{h["indices_with_holdout_trades"]}'}
+                  for h in r["hypotheses"]],
+    }
+
+
 def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | None = None) -> dict:
     sections = SCOPES.get(scope or "", DEFAULT_SECTIONS)
     rec = cached(f"recommendation:{symbol}", ttl_seconds=600, producer=lambda: build_recommendation(symbol))
@@ -158,7 +200,8 @@ def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | 
         "regime": prox["regime"],
         "recommendation": {
             "action": rec["action"], "headline": rec["headline"], "reason": rec["reason"],
-            "bar": {"min_t": rec["evidence_bar"]["min_t"], "patterns_judged": rec["evidence_bar"]["patterns_judged"]},
+            "bar": {"min_t": rec["evidence_bar"]["min_t"], "patterns_judged": rec["evidence_bar"]["patterns_judged"],
+                    "hypotheses_judged": rec["evidence_bar"].get("tests_judged")},
         },
         "how_it_decides": HOW_IT_DECIDES,
     }
@@ -194,6 +237,10 @@ def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | 
             "predictive_test": {"correlation": wf.get("rank_correlation"), "t": wf.get("t_stat"),
                                 "direction_right_pct": wf.get("direction_hit_rate"), "verdict": wf.get("verdict")},
         }
+    if "structural" in sections:
+        ctx["beyond_chart_patterns"] = _structural_digest()
+    if "replication" in sections:
+        ctx["replicated_on_other_indices"] = _replication_digest()
     if "forward" in sections:
         ctx["forward_track_record"] = forward_report(symbol)["summary"]
     if "market" in sections:

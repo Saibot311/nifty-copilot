@@ -43,6 +43,8 @@ def stub(monkeypatch):
     monkeypatch.setattr(ctxmod, "pattern_proximity", lambda symbol: PROX)
     monkeypatch.setattr(ctxmod, "load_research", lambda: RESEARCH)
     monkeypatch.setattr(ctxmod, "forward_report", lambda symbol: {"summary": {"days_logged": 2}})
+    # Unsure routes now carry the market digest too; keep the network out of unit tests.
+    monkeypatch.setattr(ctxmod, "_market_digest", lambda: {"available": True})
 
     def similarity(symbol):
         calls["similarity"] += 1
@@ -60,10 +62,15 @@ def test_the_core_is_in_every_view(scope):
     assert CORE <= set(ctxmod.build_context(scope=scope))
 
 
-def test_an_unknown_or_missing_scope_gets_the_full_dashboard():
-    # The daily explanation passes no scope, and must not be narrowed.
-    assert set(ctxmod.build_context()) == set(ctxmod.build_context(scope="today"))
-    assert set(ctxmod.build_context(scope="nonsense")) == set(ctxmod.build_context(scope="today"))
+def test_an_unknown_or_missing_scope_gets_every_section():
+    # An unsure router passes no scope, and must not be narrowed. This test
+    # used to assert that "no scope" meant the "today" slice — which pinned
+    # the bug: an ambiguous question lost the pattern records and market
+    # studies that a confident route would have carried.
+    everything = set(ctxmod.build_context())
+    for scope in ctxmod.SCOPES:
+        assert set(ctxmod.build_context(live=LIVE, scope=scope)) - {"live_now"} <= everything
+    assert set(ctxmod.build_context(scope="nonsense")) == everything
 
 
 def test_the_record_view_carries_every_pattern_not_just_todays():

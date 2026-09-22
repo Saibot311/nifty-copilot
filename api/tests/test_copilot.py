@@ -112,7 +112,7 @@ def test_retry_that_fixes_the_numbers_is_shown(monkeypatch):
 def test_explanation_is_saved_per_day_and_not_regenerated(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(assistant, "CACHE_PATH", tmp_path / "explain.json")
-    monkeypatch.setattr(assistant, "build_context", lambda symbol, live=None: DATA)
+    monkeypatch.setattr(assistant, "build_context", lambda symbol, live=None, scope=None: DATA)
     monkeypatch.setattr(assistant, "chat", lambda messages: calls.append(1) or "It closed at 23,270.6.")
     first, second = assistant.explain_today(), assistant.explain_today()
     assert first["ok"] and not first["cached"] and second["cached"]
@@ -451,7 +451,7 @@ def test_the_summary_surfaces_withheld_answers_as_candidate_cases():
 @pytest.fixture
 def explain_setup(tmp_path, monkeypatch):
     monkeypatch.setattr(assistant, "CACHE_PATH", tmp_path / "explain.json")
-    monkeypatch.setattr(assistant, "build_context", lambda symbol, live=None: DATA)
+    monkeypatch.setattr(assistant, "build_context", lambda symbol, live=None, scope=None: DATA)
     monkeypatch.setattr(assistant, "compose", lambda data: "Composed: it closed at 23,270.6.")
     monkeypatch.setattr(assistant, "review_answer", lambda text, data: _review(honesty=2.0, clarity=1.4))
 

@@ -18,6 +18,7 @@ failure this is built to avoid.
 
 from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
+from backtest.structural_research import holdout_tests_judged
 from cache import cached
 from stats.multiple_comparisons import FAMILY_ALPHA, required_t
 
@@ -27,16 +28,22 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
     research = load_research()
     by_name = {p["strategy"]: p for p in (research or {}).get("patterns", [])}
     judged = sum(1 for p in by_name.values() if (p.get("holdout") or {}).get("num_trades"))
+    # The bar is corrected for every hypothesis that has had its look at the
+    # holdout, not just the patterns: the IV filter and the structural tests
+    # took theirs too, and each one was another chance for luck to clear it.
+    tests = holdout_tests_judged(research)
     # The large-sample bar: the lowest it can be. Each candidate is held to
     # the bar for its own sample size, which is higher.
-    min_t = required_t(judged)
+    min_t = required_t(tests)
 
     base = {"as_of": prox["as_of"], "regime": prox["regime"]}
     bar = {
         "min_t": min_t,
         "patterns_judged": judged,
+        "tests_judged": tests,
         "methodology_note": (
-            f"{judged} patterns were each judged once on 2024-26 option data. To keep the chance of any "
+            f"{tests} hypotheses have each been judged once on 2024-26 option data — {judged} patterns, and "
+            f"{tests - judged} other tests (implied volatility, structural). To keep the chance of any "
             f"false recommendation across all of them near {FAMILY_ALPHA:.0%}, a pattern needs APPROVED and "
             f"a holdout t of at least {min_t} (Bonferroni) — more when it rests on few trades, because the "
             "bar is Student's t at the pattern's own degrees of freedom."
@@ -55,7 +62,7 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
         r = by_name.get(p["strategy"], {})
         t = r.get("holdout_t_stat")
         n = (r.get("holdout") or {}).get("num_trades", 0)
-        own_bar = required_t(judged, df=n - 1) if n >= 2 else None
+        own_bar = required_t(tests, df=n - 1) if n >= 2 else None
         status = r.get("status", "REJECTED")
         if status != "APPROVED":
             why_not = f"option verdict {status}"

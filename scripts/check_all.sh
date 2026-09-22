@@ -132,6 +132,10 @@ if ! $FAST; then
         api/similarity
         api/intraday/research
         api/iv
+        api/structural
+        api/journal
+        api/replication
+        api/gift-nifty
         api/market
         api/copilot/status
         api/copilot/record

@@ -1,6 +1,6 @@
 # Handoff — read this first
 
-Written 2026-09-21. Start here, then `ARCHITECTURE.md` (how it's built, the five
+Written 2026-09-21, updated 2026-09-22. Start here, then `ARCHITECTURE.md` (how it's built, the five
 invariants) and `PROJECT_PLAN.md` (what was decided and when, newest first).
 
 ## What this is
@@ -11,8 +11,8 @@ manufacture a signal — most days it says NO TRADE, and that is the product wor
 
 ## Where it stands
 
-**Phases 1–12 done.** Phase 13 (trade journal) is next; 14–15 (paper observation,
-deployment) after.
+**Phases 1–13 done.** Phase 13, the trade journal, is the dashboard's **Journal** tab — log every
+session's decision there, including "stayed out". 14–15 (paper observation, deployment) next.
 
 **The honest result so far: nothing has a proven edge.** 26 patterns, each judged
 once on 2024–26 option data it never saw: **0 approved, 0 conditional, 26 rejected.**
@@ -20,6 +20,18 @@ Four apparent edges have now turned out to be bugs — two in earlier phases, an
 two CONDITIONAL verdicts, which the deep audit traced to a verdict ladder that
 skipped the significance test for small samples. The forward log is the real test
 now, and it needs calendar time.
+
+**The user only BUYS options (calls or puts).** Frame every idea that way. Six structural
+hypotheses beyond chart patterns — volatility pricing, FII and retail positioning, turn of month,
+pre-holiday, opening gaps — were pre-registered and tested as bought options
+(`backtest/structural_research.py`, Market tab, `/api/structural`): **0 of 6 approved.** The evidence
+bar is now corrected for all 26 holdout tests, not just the 19 patterns.
+
+**Replicated on BANKNIFTY, SENSEX and Midcap Select** (`backtest/replication.py`, Research tab,
+`/api/replication`): the same rules and option setups on four indices, a date counted once. **0 of 22
+pass**; NIFTY's best pattern failed on Midcap and SENSEX. SENSEX options only exist from Jan 2024 in
+BSE's public archive, Midcap from Jan 2022. **GIFT Nifty** is live on the Market tab and snapshotted
+nightly (no free history exists).
 
 **A market context engine answers "who makes money, and why did it move"**
 (`api/market_engine/`, the dashboard's **Market** tab, `docs/MARKET_RESEARCH.md`). It
@@ -39,7 +51,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 28 checks, 230 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 293 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -62,7 +74,7 @@ because every cache is cold.
 
 **Daily:** a LaunchAgent runs `api/scripts/daily_job.py` at 19:30 on weekdays (forward
 log backup, forward log, bar top-ups, option top-ups plus any gap since 2018, option
-research). Verified running unattended. Logs:
+research, IV, positioning, the structural tests, market studies). Verified running unattended. Logs:
 `api/data/daily_job.log`. Remove with `./scripts/install_daily_job.sh --remove`.
 
 **Zerodha login expires every day at ~6 AM IST.** Without it, 15-minute bars and live
@@ -90,10 +102,16 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/intraday_research.json` | Execution studies on the 15-min archive | `scripts/intraday_research.py` |
 | `api/data/iv.db` | Daily 30-day implied volatility from 2018 | `scripts/iv_research.py` (incremental) |
 | `api/data/iv_research.json` | IV description of every pattern, VIX check, the pre-registered test | `scripts/iv_research.py` |
+| `api/data/structural_research.json` | The six pre-registered structural tests | `scripts/structural_research.py` |
+| `api/data/options_banknifty.db` · `options_midcpnifty.db` · `options_sensex.db` | Other indices' option archives (NSE 2018→ / Jan 2022→; BSE Jan 2024→) | `scripts/backfill_other_indices.py` (resumable; `--recent` nightly) |
+| `api/data/nse_indices.db` | NSE's own daily all-index report, 2017→ — Midcap Select levels, and the close Yahoo sometimes lacks | `scripts/backfill_nse_indices.py` |
+| `api/data/replication.json` | The pooled multi-index replication | `scripts/replication.py` |
+| **`api/data/journal.db`** | **Your trade journal** | **Cannot be rebuilt** — backed up nightly with the forward log |
+| `api/data/gift_nifty.db` | Nightly GIFT Nifty snapshots, from 2026-09-22 | Cannot be rebuilt (no free history exists) |
 | `api/data/participant_oi.db` | NSE participant-wise open interest (Client/DII/FII/Pro), 2019→ | `scripts/backfill_participant_oi.py` |
 | `api/data/market_research.json` | The market engine's studies | `scripts/market_research.py` |
 | `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
-| **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt** — backed up nightly to `api/data/backups/` (30 kept). Set `BACKUP_DIR` in `api/.env` to a synced folder so a lost disk doesn't take it too. |
+| **`api/data/forward_log.db`** | **Each day's verdict, written before the outcome** | **Cannot be rebuilt** — backed up nightly (30 kept) to `BACKUP_DIR` in `api/.env` — set 2026-09-22 to iCloud Drive `NIFTY-Copilot-Backups/`, so a lost disk doesn't take it too. Falls back to `api/data/backups/` if unset. |
 
 ## Traps that already cost real time
 
@@ -164,12 +182,27 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
   "fixing" the code to satisfy it.
 - **The normal distribution is not Student's t at n = 11.** The Bonferroni bar was
   2.79 where it should have been 3.55.
+- **Yahoo is missing real sessions.** 12 since 2018 — 1 January sessions, Budget-day and Muhurat
+  specials, two ordinary days. Ask the Zerodha archive whether a session happened (holidays, calendar
+  effects); Yahoo stays the trading calendar only so results match the pattern research.
+- **An unsure router must get everything.** "No scope" silently meant the "today" slice, so an
+  ambiguous question lost the pattern records and market studies. A test asserted exactly that.
+- **Audit 8.2 fails when a new session lands before the nightly research re-runs** — it recomputes
+  the baseline on today's data and compares with last night's stored t. Re-run
+  `scripts/pattern_options.py` before believing it.
+- **A server stuck in reload is not a code bug.** A hung request can hold uvicorn's reload at
+  "Waiting for background tasks"; every endpoint then times out. Restart the preview server.
+- **Five parallel downloaders got ~46 days refused** (a solid July–August 2025 run). Missing days are
+  never marked done, so one slow rerun (`--delay 1.0`) filled them. Keep backfills to 2–3 streams.
+- **The PCR pattern read NIFTY's option chain whatever index it ran on.** Anything replicated must be
+  checked for hard-wired NIFTY inputs (`pcr_db=` now selects the archive).
+- **Yahoo does not carry NIFTY Midcap Select** — NSE's `ind_close_all_DDMMYYYY.csv` does, from Jan 2022.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps
 
-1. **Phase 13 — trade journal.** Record what the user actually did (take / skip / wait)
-   against what the system said. Pairs with the forward log. No API needed.
+1. **Use the journal every session.** It and the forward log are the only evidence that can't be
+   fooled by better backtesting; both need calendar time.
 2. **Let the forward log accrue.** It is the only out-of-sample evidence that can't be
    fooled by better backtesting.
 3. **Intraday: mining for edge, if you still want to.** The execution studies are done

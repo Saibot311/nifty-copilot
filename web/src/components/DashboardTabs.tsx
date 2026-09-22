@@ -6,11 +6,14 @@ const TABS = [
   { id: "today", label: "Today", hint: "What the market is doing now" },
   { id: "research", label: "Research", hint: "What the historical record says" },
   { id: "market", label: "Market", hint: "How this market works, and who is on the other side" },
+  { id: "journal", label: "Journal", hint: "What you did, next to what the system said" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
-export function DashboardTabs({ today, research, market }: { today: ReactNode; research: ReactNode; market: ReactNode }) {
+export function DashboardTabs({ today, research, market, journal }: {
+  today: ReactNode; research: ReactNode; market: ReactNode; journal: ReactNode;
+}) {
   const [active, setActive] = useState<TabId>("today");
 
   return (
@@ -69,6 +72,15 @@ export function DashboardTabs({ today, research, market }: { today: ReactNode; r
         className="flex flex-col gap-7"
       >
         {market}
+      </div>
+      <div
+        id="panel-journal"
+        role="tabpanel"
+        aria-labelledby="tab-journal"
+        hidden={active !== "journal"}
+        className="flex flex-col gap-7"
+      >
+        {journal}
       </div>
     </div>
   );

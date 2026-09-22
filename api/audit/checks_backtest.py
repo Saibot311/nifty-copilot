@@ -256,13 +256,22 @@ def dev_holdout_purged():
                   {"leaky": leaky})
 
 
+def _research_end() -> str:
+    """The last session the stored research saw. Recomputing on data that has
+    grown since then compares tonight's numbers with last night's and fails
+    on every new session — the audit must judge the research as it was run."""
+    return ((load_research() or {}).get("options_period") or {}).get("end") or "9999-12-31"
+
+
 def _baseline_trades(d):
     from backtest.pattern_options import _run
     _, _, ctx = _data()
     opt = d["pattern"]["suggested_option"]
-    days = [x for x in ctx[2] if x >= SPLIT_DATE]
-    return _run(days[:: opt["hold_days"] + 1], ctx, opt["type"], opt["moneyness_pct"],
-                opt["min_days_to_expiry"], opt["hold_days"])
+    end = _research_end()
+    days = [x for x in ctx[2] if SPLIT_DATE <= x <= end]
+    trades = _run(days[:: opt["hold_days"] + 1], ctx, opt["type"], opt["moneyness_pct"],
+                  opt["min_days_to_expiry"], opt["hold_days"])
+    return [t for t in trades if t.exit_date <= end]
 
 
 @check("8", "8.2", "The significance test treats the no-signal baseline as the estimate it is")
@@ -272,7 +281,8 @@ def welch_vs_one_sample():
     Checks that the stored t is the Welch one."""
     rows, mismatched = {}, {}
     for name, d in _chosen_trades().items():
-        hol = [_rupees(t) for t in d["trades"] if t.entry_date >= SPLIT_DATE]
+        end = _research_end()
+        hol = [_rupees(t) for t in d["trades"] if t.entry_date >= SPLIT_DATE and t.exit_date <= end]
         base = [_rupees(t) for t in _baseline_trades(d)]
         if len(hol) < 3 or len(base) < 3:
             continue
@@ -295,7 +305,7 @@ def critical_value_small_samples():
     from stats.multiple_comparisons import required_t
     research = load_research() or {}
     judged = [p for p in research.get("patterns", []) if (p.get("holdout") or {}).get("num_trades")]
-    n_tests = build_recommendation()["evidence_bar"]["patterns_judged"]
+    n_tests = build_recommendation()["evidence_bar"]["tests_judged"]
     normal = required_t(n_tests)
     rows = {}
     for x in judged:

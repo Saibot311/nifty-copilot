@@ -234,6 +234,10 @@ def context_traces_to_source():
     from briefing.forward_log import forward_report
     sources |= numbers_in_data(forward_report())
     sources |= numbers_in_data(load_iv_research() or {})
+    from backtest.structural_research import load_structural_research
+    sources |= numbers_in_data(load_structural_research() or {})
+    from backtest.replication import load_replication
+    sources |= numbers_in_data(load_replication() or {})
     from backtest.pattern_options import LOT_SIZE
     sources |= {float(LOT_SIZE), 15.0, 30.0, 2024.0, 2026.0}
     orphan = sorted(v for v in numbers_in_data(ctx) if v not in sources and not (float(v).is_integer() and abs(v) <= 10))

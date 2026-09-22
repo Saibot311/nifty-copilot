@@ -23,12 +23,13 @@ LOW_PCR_THRESHOLD = 0.5   # call-heavy complacency -> contrarian CALL (higher co
 HIGH_PCR_THRESHOLD = 1.5  # put-heavy fear -> contrarian PUT (lower confidence, see module docstring)
 
 
-def daily_pcr_series(symbol: str = "NIFTY") -> pd.Series:
+def daily_pcr_series(symbol: str = "NIFTY", db_path=None) -> pd.Series:
     """One PCR value per trading day: total put OI / total call OI, summed
     across every strike of the NEAREST expiry on file that day (the
     front-month contract is where OI concentrates and is what most PCR
-    commentary actually means)."""
-    with connect() as conn:
+    commentary actually means). `db_path` picks another index's archive:
+    replicated on BANKNIFTY, the pattern must read BANKNIFTY's chain."""
+    with connect(db_path) as conn:
         rows = conn.execute(
             """
             WITH nearest AS (
@@ -67,16 +68,16 @@ def align_pcr_to_df(df: pd.DataFrame, pcr: pd.Series) -> pd.Series:
     return pd.Series(pcr.reindex(trading_days).values, index=df.index)
 
 
-def pcr_capitulation_call_signals(df: pd.DataFrame, regime_series: pd.Series) -> pd.Series:
-    pcr = align_pcr_to_df(df, daily_pcr_series())
+def pcr_capitulation_call_signals(df: pd.DataFrame, regime_series: pd.Series, pcr_db=None) -> pd.Series:
+    pcr = align_pcr_to_df(df, daily_pcr_series(db_path=pcr_db))
     was_below = (pcr.shift(1) < LOW_PCR_THRESHOLD).fillna(False)
     still_below = (pcr < LOW_PCR_THRESHOLD).fillna(False)
     just_entered = was_below & ~(pcr.shift(2) < LOW_PCR_THRESHOLD).fillna(False)
     return (just_entered & still_below).fillna(False)
 
 
-def pcr_exhaustion_put_signals(df: pd.DataFrame, regime_series: pd.Series) -> pd.Series:
-    pcr = align_pcr_to_df(df, daily_pcr_series())
+def pcr_exhaustion_put_signals(df: pd.DataFrame, regime_series: pd.Series, pcr_db=None) -> pd.Series:
+    pcr = align_pcr_to_df(df, daily_pcr_series(db_path=pcr_db))
     was_above = (pcr.shift(1) > HIGH_PCR_THRESHOLD).fillna(False)
     still_above = (pcr > HIGH_PCR_THRESHOLD).fillna(False)
     just_entered = was_above & ~(pcr.shift(2) > HIGH_PCR_THRESHOLD).fillna(False)

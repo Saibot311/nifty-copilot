@@ -173,7 +173,7 @@ def composed_explanation(data: dict) -> dict:
 def explain_today(symbol: str = "^NSEI", live: dict | None = None) -> dict:
     """One explanation per trading day, saved — reloading the page costs no
     extra API calls. Live data is left out so the saved answer stays true."""
-    data = build_context(symbol)
+    data = build_context(symbol, scope="today")
     key = f"{symbol}:{data['as_of_close']}"
     with _LOCK:
         saved = json.loads(CACHE_PATH.read_text()) if CACHE_PATH.exists() else {}

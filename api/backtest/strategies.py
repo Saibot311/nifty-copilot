@@ -133,6 +133,35 @@ def load_daily_data(symbol: str = "^NSEI", days: int = 7000) -> tuple[pd.DataFra
     candles = provider.get_ohlc(symbol, "1d", date.today() - timedelta(days=days), date.today())
     if len(candles) < 100:
         raise ValueError(f"Only got {len(candles)} daily bars for {symbol} — need 100+ to backtest.")
-    df = candles_to_df(candles)
+    df = _top_up_from_nse(candles_to_df(candles), symbol)
     regime_series = classify_regime_series(df)
     return df, regime_series
+
+
+# Yahoo symbol -> the option underlying whose index NSE reports daily.
+_NSE_UNDERLYING = {"^NSEI": "NIFTY", "^NSEBANK": "BANKNIFTY"}
+
+
+def _top_up_from_nse(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """Append any final sessions NSE has published that Yahoo hasn't yet.
+
+    Yahoo sometimes lacks the day's close at 19:30; on 21 Sep 2026 that cost
+    the forward log a day it can never get back. NSE's own all-index report
+    is out by early evening, and a day it reports is over. Only sessions
+    after Yahoo's last one are added — history stays one source."""
+    underlying = _NSE_UNDERLYING.get(symbol)
+    if underlying is None or df.empty:
+        return df
+    try:
+        from storage.nse_index_db import load as load_nse
+        nse = load_nse(underlying)
+    except Exception:
+        return df
+    last = df.index[-1].normalize()
+    extra = nse[(nse.index > last) & nse[["open", "high", "low"]].notna().all(axis=1)]
+    if extra.empty:
+        return df
+    extra = extra.assign(volume=0.0, provisional=False)[df.columns]
+    extra.index = extra.index.astype(df.index.dtype)
+    extra.index.name = df.index.name
+    return pd.concat([df, extra])

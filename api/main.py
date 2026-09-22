@@ -4,13 +4,18 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from backtest.research import run_all_strategies
 from cache import cached
 from backtest.walkforward import evaluate_strategy
 from backtest.intraday import load_research as load_intraday_research
 from backtest.iv_research import load_iv_research, load_series as load_iv_series
+from backtest.structural_research import load_structural_research
+from briefing.journal import report as journal_report, system_action_for
+from storage import journal_db
 from market_engine.engine import load_studies as load_market_studies, today as market_today
 from market_engine.knowledge import KNOWLEDGE
 from backtest.pattern_options import load_research
@@ -52,7 +57,7 @@ PROVIDERS = {
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -387,6 +392,107 @@ def implied_volatility() -> dict:
     }
 
 
+class JournalEntry(BaseModel):
+    trade_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    decision: Literal["TOOK", "SKIPPED", "WAITED"]
+    underlying: Literal["NIFTY", "BANKNIFTY", "SENSEX", "MIDCPNIFTY"] | None = None
+    option_type: Literal["CE", "PE"] | None = None
+    strike: float | None = Field(default=None, gt=0)
+    expiry: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    quantity: int | None = Field(default=None, gt=0, le=100000)
+    entry_premium: float | None = Field(default=None, gt=0)
+    reason: str | None = Field(default=None, max_length=2000)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class JournalClose(BaseModel):
+    exit_premium: float = Field(ge=0)
+    exit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+@app.get("/api/journal")
+def journal() -> dict:
+    """Phase 13: what you did, next to what the system said that session."""
+    return journal_report()
+
+
+@app.post("/api/journal")
+def journal_add(entry: JournalEntry) -> dict:
+    if entry.decision == "TOOK" and not all([entry.underlying, entry.option_type, entry.strike, entry.expiry,
+                                             entry.quantity, entry.entry_premium]):
+        raise HTTPException(422, "A trade you took needs the index, CE/PE, strike, expiry, quantity and entry premium.")
+    # The system's verdict is looked up, never typed: the comparison is only
+    # honest if the user cannot restate what the system said.
+    entry_id = journal_db.add({**entry.model_dump(), "system_action": system_action_for(entry.trade_date)})
+    return {"id": entry_id}
+
+
+@app.post("/api/journal/{entry_id}/close")
+def journal_close(entry_id: int, body: JournalClose) -> dict:
+    if not journal_db.close(entry_id, body.exit_premium, body.exit_date):
+        raise HTTPException(404, "No open trade with that id.")
+    return {"ok": True}
+
+
+@app.delete("/api/journal/{entry_id}")
+def journal_delete(entry_id: int) -> dict:
+    if not journal_db.delete(entry_id):
+        raise HTTPException(404, "No journal entry with that id.")
+    return {"ok": True}
+
+
+@app.get("/api/gift-nifty")
+def gift_nifty() -> dict:
+    """GIFT Nifty — NIFTY futures trading in GIFT City while India is shut.
+    Context about the evening, not a signal: an option bought at the close
+    cannot act on it before the next open."""
+    from market_data.gift_nifty import fetch as fetch_gift
+    from storage.gift_nifty_db import count as gift_snapshots
+    try:
+        q = cached("gift_nifty", ttl_seconds=60, producer=fetch_gift)
+    except Exception as e:
+        raise HTTPException(503, f"GIFT Nifty unavailable: {e}")
+    if q is None:
+        raise HTTPException(503, "GIFT Nifty: no traded near-month contract right now.")
+    return {**q, "snapshots_archived": gift_snapshots(),
+            "note": ("USD-settled NIFTY futures on NSE IX, trading about 21 hours a day. Its change is against its "
+                     "own previous close. A future trades at a premium to the index, so its level is not NIFTY's "
+                     "level. Context about the evening — not a forecast, and not something an option bought at "
+                     "the close can act on. History is being recorded nightly from 22 Sep 2026; NSE IX publishes "
+                     "no free archive.")}
+
+
+@app.get("/api/replication")
+def replication() -> dict:
+    """Every judged pattern and three structural tests, re-run with their
+    fixed setups on BANKNIFTY, SENSEX and Midcap Select alongside NIFTY,
+    pooled by entry date. Saved by scripts/replication.py."""
+    from backtest.replication import load_replication
+    r = load_replication()
+    if r is None:
+        raise HTTPException(503, "Replication not run yet — python scripts/replication.py")
+    return {k: r[k] for k in ("computed_at", "prereg_hash", "tests_counted", "coverage", "hypotheses")} | {
+        "registered": r["preregistered"]["registered"], "measure": r["preregistered"]["measure"],
+        "unit": r["preregistered"]["unit"]}
+
+
+@app.get("/api/structural")
+def structural() -> dict:
+    """Six pre-registered ideas about market structure — volatility pricing,
+    positioning, the calendar, opening gaps — each tested as a bought call or
+    put on 2024-26 option prices it never saw. Saved by
+    scripts/structural_research.py."""
+    r = load_structural_research()
+    if r is None:
+        raise HTTPException(503, "Structural research not run yet — python scripts/structural_research.py")
+    keep = ("name", "label", "family", "signal", "why", "hold_sessions", "signals_per_year", "status", "reason",
+            "required_t", "development", "holdout")
+    return {"computed_at": r["computed_at"], "period": r["period"], "registered": r["preregistered"]["registered"],
+            "trade": r["preregistered"]["trade"], "tests_in_family": r["tests_in_family"],
+            "hypotheses": [{k: h[k] for k in keep} for h in r["hypotheses"]],
+            "overnight_vs_intraday": r["descriptions"]["overnight_vs_intraday"]}
+
+
 @app.get("/api/market")
 def market() -> dict:
     """The market context engine: why the latest session moved, what options
@@ -526,7 +632,7 @@ def copilot_composed() -> dict:
     Runs beside the model's version every day and is graded by the same
     judge; it is what gets served if the provider is down."""
     from copilot.context import build_context
-    return copilot.composed_explanation(build_context())
+    return copilot.composed_explanation(build_context(scope="today"))
 
 
 @app.get("/api/copilot/record")

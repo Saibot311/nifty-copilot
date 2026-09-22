@@ -509,3 +509,154 @@ export async function copilotRequest(path: string, question?: string): Promise<{
     return { error: "Backend not reachable." };
   }
 }
+
+export type StructuralPeriod = {
+  num_trades?: number;
+  win_rate?: number;
+  avg_profit_per_lot_rs?: number;
+  baseline_avg_profit_per_lot_rs: number | null;
+  t: number | null;
+  by_leg?: Record<string, number>;
+};
+
+export type StructuralHypothesis = {
+  name: string;
+  label: string;
+  family: string;
+  signal: string;
+  why: string;
+  hold_sessions: number;
+  signals_per_year: number;
+  status: "APPROVED" | "CONDITIONAL" | "REJECTED";
+  reason: string;
+  required_t: number | null;
+  development: StructuralPeriod;
+  holdout: StructuralPeriod;
+};
+
+export type StructuralResearch = {
+  computed_at: string;
+  period: { start: string; split: string; end: string };
+  registered: string;
+  trade: string;
+  tests_in_family: number;
+  hypotheses: StructuralHypothesis[];
+  overnight_vs_intraday: {
+    since: string;
+    sessions: number;
+    overnight_total_pct: number;
+    intraday_total_pct: number;
+    overnight_up_share: number;
+    intraday_up_share: number;
+  };
+};
+
+export const fetchStructural = () => get<StructuralResearch>("/api/structural");
+
+export type JournalDecision = "TOOK" | "SKIPPED" | "WAITED";
+
+export type JournalRow = {
+  id: number;
+  trade_date: string;
+  system_action: string | null;
+  decision: JournalDecision;
+  underlying: string | null;
+  option_type: "CE" | "PE" | null;
+  strike: number | null;
+  expiry: string | null;
+  quantity: number | null;
+  entry_premium: number | null;
+  exit_premium: number | null;
+  exit_date: string | null;
+  reason: string | null;
+  notes: string | null;
+  pnl: { gross_rs: number; costs_rs: number; net_rs: number; return_pct: number } | null;
+  followed_system: boolean | null;
+};
+
+export type JournalGroup = { trades: number; net_rs: number; avg_rs: number | null };
+
+export type JournalReport = {
+  entries: JournalRow[];
+  summary: {
+    entries: number;
+    by_decision: Record<JournalDecision, number>;
+    open_trades: number;
+    closed_trades: number;
+    net_rs: number;
+    win_rate: number | null;
+    followed_system: JournalGroup;
+    overrode_system: JournalGroup;
+    decisions_matching_system: number;
+    decisions_with_a_system_verdict: number;
+  };
+  note: string;
+};
+
+/** Browser-side calls for the journal, which the user writes to. */
+export async function journalRequest<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown):
+  Promise<{ data?: T; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      cache: "no-store",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = await res.json();
+    if (res.ok) return { data: json as T };
+    const detail = Array.isArray(json.detail) ? json.detail.map((d: { msg: string }) => d.msg).join("; ") : json.detail;
+    return { error: detail ?? `HTTP ${res.status}` };
+  } catch {
+    return { error: "Backend not reachable." };
+  }
+}
+
+export type GiftNifty = {
+  symbol: string;
+  expiry: string;
+  last: number;
+  previous_close: number | null;
+  change_pct: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  last_trade_time: string;
+  snapshots_archived: number;
+  note: string;
+};
+
+export const fetchGiftNifty = () => get<GiftNifty>("/api/gift-nifty");
+
+export type ReplicationSide = { trades: number; avg_return_pct: number | null; win_rate: number | null };
+
+export type ReplicationHypothesis = {
+  kind: "pattern" | "structural";
+  name: string;
+  label: string;
+  setup: string;
+  status: "APPROVED" | "CONDITIONAL" | "REJECTED";
+  reason: string;
+  pooled: {
+    development_dates: number; holdout_dates: number;
+    development_avg_pct: number; holdout_avg_pct: number;
+    baseline_development_avg_pct: number; baseline_holdout_avg_pct: number;
+    holdout_t: number | null; required_t: number | null;
+  };
+  per_index: Record<string, { development: ReplicationSide; holdout: ReplicationSide;
+    baseline_holdout_avg_pct: number | null; baseline_development_avg_pct: number | null }>;
+  indices_beating_baseline_in_holdout: number;
+  indices_with_holdout_trades: number;
+};
+
+export type Replication = {
+  computed_at: string;
+  registered: string;
+  measure: string;
+  unit: string;
+  tests_counted: number;
+  coverage: Record<string, { index_days: number; first: string; last: string }>;
+  hypotheses: ReplicationHypothesis[];
+};
+
+export const fetchReplication = () => get<Replication>("/api/replication");

@@ -126,6 +126,7 @@ def run_options_backtest(
     min_open_interest: float = 1000,
     cost_model: OptionsCostModel | None = None,
     strike_offset_pct: float | None = None,
+    db_path=None,
 ) -> list[OptionTrade]:
     """For each signal date, buy one option and hold it `hold_days` trading
     days. Entry is at the *close* of the session after the signal: the
@@ -146,7 +147,7 @@ def run_options_backtest(
     day_index = {d: i for i, d in enumerate(trading_days)}
 
     trades: list[OptionTrade] = []
-    with connect() as conn:
+    with connect(db_path) as conn:  # None is the NIFTY archive; see storage.options_db.db_path_for
         for signal_date in signal_dates:
             i = day_index.get(signal_date)
             if i is None or i + 1 >= len(trading_days):

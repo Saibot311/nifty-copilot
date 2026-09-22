@@ -71,23 +71,35 @@ def fetch_option_bars(day: date, symbol: str = "NIFTY", timeout: int = 30) -> li
     An empty list means no trading that day (weekend/holiday) — NSE returns
     404 for those, which is expected and not an error worth raising.
     """
+    return fetch_option_bars_multi(day, (symbol,), timeout).get(symbol, [])
+
+
+def fetch_option_bars_multi(day: date, symbols: tuple[str, ...], timeout: int = 30) -> dict[str, list[OptionBar]]:
+    """One download, several underlyings: NSE's file for a day holds every
+    index and stock option, so BANKNIFTY and MIDCPNIFTY cost no extra
+    requests. An empty dict means no file for that day (404)."""
     resp = requests.get(bhavcopy_url(day), headers=_HEADERS, timeout=timeout)
     if resp.status_code == 404:
-        return []
+        return {}
     resp.raise_for_status()
 
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         name = zf.namelist()[0]
         text = zf.read(name).decode("utf-8", errors="replace")
+    return parse_option_bars(text, symbols)
 
+
+def parse_option_bars(text: str, symbols: tuple[str, ...]) -> dict[str, list[OptionBar]]:
+    """Index option rows for each symbol, from either NSE format or BSE's
+    (which uses the same UDiFF columns as NSE's current one)."""
     lines = text.splitlines()
+    out: dict[str, list[OptionBar]] = {s: [] for s in symbols}
     if not lines:
-        return []
+        return out
 
     header = [h.strip() for h in lines[0].split(",")]
     legacy = "INSTRUMENT" in header
 
-    bars: list[OptionBar] = []
     for line in lines[1:]:
         if not line.strip():
             continue
@@ -97,14 +109,15 @@ def fetch_option_bars(day: date, symbol: str = "NIFTY", timeout: int = 30) -> li
         row = dict(zip(header, parts))
 
         if legacy:
-            if row.get("SYMBOL", "").strip() != symbol:
+            sym = row.get("SYMBOL", "").strip()
+            if sym not in out:
                 continue
             if row.get("INSTRUMENT", "").strip() != "OPTIDX":
                 continue
             opt_type = row.get("OPTION_TYP", "").strip()
             if opt_type not in ("CE", "PE"):
                 continue
-            bars.append(OptionBar(
+            out[sym].append(OptionBar(
                 trade_date=_parse_legacy_date(row["TIMESTAMP"]),
                 expiry_date=_parse_legacy_date(row["EXPIRY_DT"]),
                 strike=float(row["STRIKE_PR"]),
@@ -117,12 +130,13 @@ def fetch_option_bars(day: date, symbol: str = "NIFTY", timeout: int = 30) -> li
                 change_in_oi=float(row["CHG_IN_OI"] or 0),
             ))
         else:
-            if row.get("TckrSymb", "").strip() != symbol:
+            sym = row.get("TckrSymb", "").strip()
+            if sym not in out:
                 continue
             opt_type = row.get("OptnTp", "").strip()
             if opt_type not in ("CE", "PE"):
                 continue
-            bars.append(OptionBar(
+            out[sym].append(OptionBar(
                 trade_date=row["TradDt"].strip(),
                 expiry_date=row["XpryDt"].strip(),
                 strike=float(row["StrkPric"]),
@@ -135,4 +149,32 @@ def fetch_option_bars(day: date, symbol: str = "NIFTY", timeout: int = 30) -> li
                 change_in_oi=float(row["ChngInOpnIntrst"] or 0),
             ))
 
-    return bars
+    return out
+
+
+# --- BSE (SENSEX) ------------------------------------------------------------
+# BSE publishes the same UDiFF layout. Its archive has these files from
+# January 2024; earlier dates return an HTML page, not a CSV. SENSEX options
+# were relaunched in May 2023 and were thinly traded before, so this loses
+# little — but SENSEX can only ever add evidence to the 2024+ holdout.
+
+_BSE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "Referer": "https://www.bseindia.com/",
+    "Accept": "*/*",
+}
+
+
+def bse_bhavcopy_url(day: date) -> str:
+    return ("https://www.bseindia.com/download/Bhavcopy/Derivative/"
+            f"BhavCopy_BSE_FO_0_0_0_{day:%Y%m%d}_F_0000.CSV")
+
+
+def fetch_bse_option_bars(day: date, symbol: str = "SENSEX", timeout: int = 30) -> list[OptionBar] | None:
+    """SENSEX option rows for `day`. None when BSE has no CSV for the day
+    (holiday, not yet published, or before its archive begins)."""
+    resp = requests.get(bse_bhavcopy_url(day), headers=_BSE_HEADERS, timeout=timeout)
+    if resp.status_code == 404 or not resp.text.startswith("TradDt"):
+        return None
+    resp.raise_for_status()
+    return parse_option_bars(resp.text, (symbol,))[symbol]
