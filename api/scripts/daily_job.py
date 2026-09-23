@@ -85,6 +85,19 @@ def step_gift_nifty() -> bool:
     return True
 
 
+def step_paper() -> bool:
+    """Phase 14: open, mark and close the paper positions for today. Runs
+    after the options archive so the entry session's premiums exist."""
+    from briefing.paper import observe
+
+    r = observe()
+    log(f"    entry session {r.get('entry_session')}: opened {len(r['opened'])}, marked {r['marked']}, "
+        f"closed {len(r['closed'])}" + (f" — {r['note']}" if r.get("note") else ""))
+    for name in r["opened"] + r["closed"]:
+        log(f"      {name}")
+    return True
+
+
 def step_audit() -> bool:
     """The phase-by-phase audit on real data, after everything is refreshed.
     Every bug the audit ever found had hidden for a while unnoticed."""
@@ -105,10 +118,10 @@ def step_audit() -> bool:
 def step_backup() -> bool:
     from storage.backup import backup_forward_log
 
-    from storage.backup import backup_journal
+    from storage.backup import backup_journal, backup_paper
 
     ok = True
-    for r in (backup_forward_log(), backup_journal()):
+    for r in (backup_forward_log(), backup_journal(), backup_paper()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
@@ -143,7 +156,7 @@ def step_kite_bars() -> bool:
 def main() -> int:
     log("daily job start")
     steps = [
-        ("forward log + journal backup", step_backup),
+        ("forward log, journal and paper backup", step_backup),
         # Before the forward log: NSE's index report carries today's close
         # when Yahoo does not have it yet.
         ("NSE index report", lambda: run_script("scripts/backfill_nse_indices.py", "--recent")),
@@ -158,6 +171,7 @@ def main() -> int:
         # After positioning: two of the six read today's participant file.
         ("structural hypotheses", lambda: run_script("scripts/structural_research.py")),
         ("replication on other indices", lambda: run_script("scripts/replication.py")),
+        ("paper observation", step_paper),
         ("market context studies", lambda: run_script("scripts/market_research.py")),
         ("GIFT Nifty snapshot", step_gift_nifty),
         ("audit", step_audit),

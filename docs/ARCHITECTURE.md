@@ -218,6 +218,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `backtest/replication.py` | Pre-registered replication of judged patterns and three structural tests on BANKNIFTY, SENSEX, Midcap Select; one observation per entry date | Re-choosing a setup per index — that is a new test |
 | `market_data/nse_indices.py` · `storage/nse_index_db.py` | NSE's daily all-index report: Midcap Select levels, and the close Yahoo sometimes lacks | Replacing Yahoo's history — it only tops up later sessions |
 | `market_data/gift_nifty.py` · `storage/gift_nifty_db.py` | GIFT Nifty live quote from NSE IX, nightly snapshots | Treating it as a signal — an option bought at the close can't act on the evening |
+| `storage/paper_db.py` · `briefing/paper.py` | Phase 14: hypothetical positions at real premiums, opened forward only, with a weekly no-signal control | Opening one for a past signal date — that is a backtest |
 | `storage/journal_db.py` · `briefing/journal.py` | Phase 13: the user's decisions next to the system's verdict; P&L computed, never typed | Letting the user type the system's verdict |
 | `market_engine/drivers.py` | "Why it moved": NIFTY's return against global cues that closed before India opened, betas from earlier days only | A same-date US session — look-ahead |
 | `market_engine/who_wins.py` | The variance risk premium; the cost of buying options without a signal; SEBI's published figures | Showing the forward-looking study as a current signal |
@@ -295,8 +296,7 @@ rather than decorative.
 
 **Phases 1–12 complete** (Phase 12 awaiting an API key). Phase 10 is live trigger tracking: during the session, today's candle
 is built from completed 15-minute bars (Kite) and every pattern is run on it — "would form if
-today closed now", provisional until 15:30. Phase 13+ (journal,
-paper observation, deployment) not started. Phase 11, historical similarity: 20 past days nearest
+today closed now", provisional until 15:30. Phases 13-14 (journal, paper observation) are done; Phase 15 (deployment) is not started. Phase 11, historical similarity: 20 past days nearest
 to today on 5 features, shown against the base rate, with a walk-forward test of whether analogs
 predict anything (currently: no — t 0.03 over 410 tests; shown as context, not a forecast).
 

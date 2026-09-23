@@ -700,3 +700,44 @@ export type ZerodhaStatus = {
 
 export const fetchZerodhaStatus = () => get<ZerodhaStatus>("/api/zerodha/status");
 export const ZERODHA_LOGIN_URL = `${API_BASE}/api/zerodha/login`;
+
+export type PaperPnl = { gross_pct: number; net_pct: number; profit_per_lot_rs: number; realised: boolean };
+
+export type PaperTrade = {
+  id: number;
+  source: "pattern" | "control";
+  strategy: string;
+  label: string;
+  signal_date: string;
+  option_type: "CE" | "PE";
+  strike: number;
+  expiry: string;
+  entry_date: string;
+  entry_premium: number;
+  hold_days: number;
+  planned_exit: string | null;
+  exit_date: string | null;
+  exit_premium: number | null;
+  mark_date: string | null;
+  mark_premium: number | null;
+  status: "OPEN" | "CLOSED";
+  pnl: PaperPnl | null;
+};
+
+export type PaperSide = {
+  closed: number; avg_net_pct: number | null; total_per_lot_rs: number; win_rate: number | null; open: number;
+};
+
+export type PaperReport = {
+  trades: PaperTrade[];
+  summary: {
+    observing_since: string | null;
+    started: string;
+    patterns: PaperSide;
+    control: PaperSide;
+    sessions_needed_before_this_means_anything: number;
+  };
+  note: string;
+};
+
+export const fetchPaper = () => get<PaperReport>("/api/paper");

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { journalRequest, type JournalDecision, type JournalReport, type JournalRow } from "@/lib/api";
+import { journalRequest, type JournalDecision, type JournalReport, type JournalRow, type PaperReport } from "@/lib/api";
+import { PaperCard } from "./PaperCard";
 import { Panel, Pill, SectionLabel } from "./ui";
 
 const inputCls =
@@ -26,7 +27,7 @@ type Form = {
 const EMPTY: Form = { trade_date: today(), decision: "SKIPPED", underlying: "NIFTY", option_type: "CE", strike: "",
   expiry: "", quantity: "", entry_premium: "", reason: "" };
 
-export function JournalTab() {
+export function JournalTab({ paper }: { paper?: PaperReport | null }) {
   const [report, setReport] = useState<JournalReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(EMPTY);
@@ -153,6 +154,11 @@ export function JournalTab() {
           </div>
         </section>
       )}
+      <section>
+        <SectionLabel hint="real premiums, no money, no orders — Phase 14">Paper observation</SectionLabel>
+        <PaperCard data={paper ?? null} />
+      </section>
+
       {report && report.entries.length === 0 && (
         <p className="text-sm text-zinc-500">No entries yet. Log today&apos;s decision — including &quot;stayed out&quot; — every session.
           Skipped days matter as much as trades: they&apos;re how the journal learns whether following the system helps.</p>

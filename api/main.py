@@ -410,6 +410,14 @@ class JournalClose(BaseModel):
     exit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
+@app.get("/api/paper")
+def paper() -> dict:
+    """Phase 14: hypothetical positions at real premiums, opened forward and
+    never backfilled. Zero execution — nothing here reaches a broker."""
+    from briefing.paper import report as paper_report
+    return paper_report()
+
+
 @app.get("/api/journal")
 def journal() -> dict:
     """Phase 13: what you did, next to what the system said that session."""

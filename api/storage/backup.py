@@ -40,6 +40,13 @@ def backup_journal(source: Path | None = None, dest_dir: Path | None = None, kee
     return _backup(source or JOURNAL_PATH, "journal", "journal", dest_dir, keep, today)
 
 
+def backup_paper(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                 today: date | None = None) -> dict:
+    """Paper observation is forward evidence: it cannot be recreated either."""
+    from .paper_db import DB_PATH as PAPER_PATH
+    return _backup(source or PAPER_PATH, "paper", "paper_trades", dest_dir, keep, today)
+
+
 def _backup(source: Path, stem: str, table: str, dest_dir: Path | None, keep: int, today: date | None) -> dict:
     if not source.exists():
         return {"ok": True, "path": None, "rows": 0, "summary": f"no {stem.replace('_', ' ')} yet — nothing to back up"}

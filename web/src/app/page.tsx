@@ -29,6 +29,7 @@ import {
   fetchGiftNifty,
   fetchReplication,
   fetchZerodhaStatus,
+  fetchPaper,
   fetchIndicators,
   fetchLivePatterns,
   fetchLiveQuote,
@@ -63,6 +64,7 @@ export default async function Home() {
     gift,
     replication,
     zerodha,
+    paper,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -84,6 +86,7 @@ export default async function Home() {
     fetchGiftNifty(),
     fetchReplication(),
     fetchZerodhaStatus(),
+    fetchPaper(),
   ]);
 
   const snap = snapshot.data;
@@ -257,7 +260,7 @@ export default async function Home() {
             </>
           }
           market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} />}
-          journal={<JournalTab />}
+          journal={<JournalTab paper={paper.data} />}
         />
 
         <footer className="mt-10 border-t border-zinc-900 pt-4 text-[11px] leading-relaxed text-zinc-600">

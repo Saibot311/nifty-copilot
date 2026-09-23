@@ -11,8 +11,14 @@ manufacture a signal — most days it says NO TRADE, and that is the product wor
 
 ## Where it stands
 
-**Phases 1–13 done.** Phase 13, the trade journal, is the dashboard's **Journal** tab — log every
-session's decision there, including "stayed out". 14–15 (paper observation, deployment) next.
+**Phases 1–14 done.** Phase 13, the trade journal, and Phase 14, paper observation, are both in the
+dashboard's **Journal** tab — log every session's decision there, including "stayed out". Phase 15
+(deployment) is next, and only once there is something worth deploying.
+
+**Paper observation runs itself** (`briefing/paper.py`, nightly): each pattern that forms opens a
+hypothetical position at the real closing premium, marked and closed on its tested schedule, against a
+weekly no-signal control. Zero execution. It may never open a position for a session before
+`FIRST_SIGNAL_DATE` — a paper trade on a past signal is a backtest in disguise.
 
 **The honest result so far: nothing has a proven edge.** 26 patterns, each judged
 once on 2024–26 option data it never saw: **0 approved, 0 conditional, 26 rejected.**
@@ -55,7 +61,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 312 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 321 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -119,6 +125,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | `api/data/nse_indices.db` | NSE's own daily all-index report, 2017→ — Midcap Select levels, and the close Yahoo sometimes lacks | `scripts/backfill_nse_indices.py` |
 | `api/data/replication.json` | The pooled multi-index replication | `scripts/replication.py` |
 | **`api/data/journal.db`** | **Your trade journal** | **Cannot be rebuilt** — backed up nightly with the forward log |
+| **`api/data/paper.db`** | **Paper positions, opened forward** | **Cannot be rebuilt** — backed up nightly |
 | `api/data/login_log.db` | Which days had a Zerodha session, and when it started | Accrues daily; deletable |
 | `api/data/gift_nifty.db` | Nightly GIFT Nifty snapshots, from 2026-09-22 | Cannot be rebuilt (no free history exists) |
 | `api/data/participant_oi.db` | NSE participant-wise open interest (Client/DII/FII/Pro), 2019→ | `scripts/backfill_participant_oi.py` |
@@ -233,7 +240,9 @@ of identical cards before 2026-09-23 — don't let it drift back.
 
 ## Next steps
 
-1. **Use the journal every session.** It and the forward log are the only evidence that can't be
+1. **Let the paper record and the journal run.** Paper observation gives the rejected setups a live,
+   out-of-sample test at zero risk; it needs about 15 closed trades before it says anything.
+2. **Use the journal every session.** It and the forward log are the only evidence that can't be
    fooled by better backtesting; both need calendar time.
 2. **Let the forward log accrue.** It is the only out-of-sample evidence that can't be
    fooled by better backtesting.

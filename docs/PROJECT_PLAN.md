@@ -7,6 +7,25 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Phase 14 — paper observation (2026-09-23).** Live markets, zero execution, as specified. Every
+evening (`briefing/paper.py`, after the options archive tops up) it opens a hypothetical position for
+each pattern that formed on the previous close — the pattern's own tested setup, bought at the entry
+session's real NSE closing premium — marks every open position to that day's premium, and closes the
+ones whose hold is up. Costs are charged exactly as in the backtests.
+
+Two design points carry the weight. **Nothing may be opened for a session before observation began**
+(`FIRST_SIGNAL_DATE = 2026-09-22`), because a "paper trade" placed on a past signal is a backtest in
+disguise; the store refuses a duplicate signal date and a test asserts the guard. **A control runs
+beside it** — one at-the-money call and one put a week, no signal involved — so the comparison the
+research uses ("beat buying the same option with no signal") exists forward too.
+
+Why it matters: the recommendation says NO TRADE nearly every day, so the forward log accrues almost
+nothing, while 19 patterns have a tested setup that history rejected. This runs those setups forward
+on live premiums at zero risk. A rehearsal on 22 Sep prices picked real contracts (23350 CE at ₹149.60,
+PE at ₹110.10, 29 Sep expiry) and marked them; the real record starts with tonight's job. Shown in the
+Journal tab beside the user's own decisions, at `/api/paper`, and backed up nightly with the forward
+log and the journal — it cannot be rebuilt either.
+
 **Confidence intervals, and what the first unattended night exposed (2026-09-23).** Every holdout
 result now carries a 95% bootstrap interval (`stats/bootstrap.py`, fixed seed, percentile method) and
 every holdout trade is stored with the research that produced it — both from AUDIT.md's list. The
@@ -588,7 +607,7 @@ class MarketDataProvider(Protocol):
 | 11 | Historical similarity | **Start with 3-5 features + nearest-neighbor. Expand only if needed.** |
 | 12 | LLM copilot | Explains results only; never generates numbers. |
 | 13 | Journal | TAKE/SKIP/WAIT tracking, mistake analysis. |
-| 14 | Paper observation | Live markets, zero execution. |
+| 14 | Paper observation | ✅ Done (2026-09-23). `briefing/paper.py`: hypothetical positions at real NSE premiums, opened forward only, marked and closed nightly, with a weekly no-signal control. Zero execution. |
 | 15 | Deployment | Only once stable. |
 | 16 (candidate, not yet approved) | News context layer | User idea (2026-09-14): explain how the market is reacting to financial news. Scope: a **qualitative context add-on to the WHY panel** — LLM summarizes recent relevant headlines (free RSS: Economic Times, Moneycontrol, NSE/BSE corporate announcements) alongside the already-computed scenario. Explicitly NOT a backtested numeric input to the regime/setup engine unless/until historical news-sentiment data is sourced and validated separately (reliable historical sentiment datasets are paid — e.g. RavenPack — and out of scope for now). Natural home: after Phase 10 (needs live data) / alongside Phase 12 (LLM copilot). |
 

@@ -134,6 +134,7 @@ if ! $FAST; then
         api/iv
         api/structural
         api/journal
+        api/paper
         api/replication
         api/gift-nifty
         api/market
