@@ -17,6 +17,8 @@ wearing a disguise.
 """
 
 import sqlite3
+
+from .sqlite_open import open_db
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -78,7 +80,7 @@ _MIGRATIONS = (
 def connect(db_path: Path | None = None):
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = open_db(path)
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(SCHEMA)

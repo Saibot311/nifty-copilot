@@ -2,6 +2,8 @@
 since NSE IX publishes no free daily file."""
 
 import sqlite3
+
+from .sqlite_open import open_db
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,7 +18,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
 
 
 def save(q: dict, db_path: Path | None = None) -> None:
-    conn = sqlite3.connect(db_path or DB_PATH)
+    conn = open_db(db_path or DB_PATH)
     try:
         conn.executescript(SCHEMA)
         conn.execute("INSERT OR REPLACE INTO snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -32,7 +34,7 @@ def count(db_path: Path | None = None) -> int:
     path = db_path or DB_PATH
     if not path.exists():
         return 0
-    conn = sqlite3.connect(path)
+    conn = open_db(path)
     try:
         conn.executescript(SCHEMA)
         return conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]

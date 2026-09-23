@@ -1,5 +1,5 @@
 import type { ZerodhaStatus } from "@/lib/api";
-import { ZERODHA_LOGIN_URL } from "@/lib/api";
+import { zerodhaLoginUrl } from "@/lib/api";
 
 function time(iso?: string | null) {
   if (!iso) return null;
@@ -27,7 +27,7 @@ export function SessionStatus({ status }: { status: ZerodhaStatus | null }) {
 
   return (
     <a
-      href={ZERODHA_LOGIN_URL}
+      href={zerodhaLoginUrl()}
       className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300 hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
       title={status.reason ?? "No Kite session today — 15-minute bars and live tracking are skipped until you log in."}
     >

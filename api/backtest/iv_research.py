@@ -19,6 +19,8 @@ Three outputs:
 import json
 import math
 import sqlite3
+
+from storage.sqlite_open import open_db
 import statistics
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -83,7 +85,7 @@ CREATE TABLE IF NOT EXISTS iv_daily (
 # --- 1. the daily series -----------------------------------------------------
 
 def _options_conn():
-    conn = sqlite3.connect(OPTIONS_DB)
+    conn = open_db(OPTIONS_DB)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -127,7 +129,7 @@ def day_iv(conn, trade_date: str, spot: float) -> dict | None:
 
 def compute_series(spot: dict[str, float]) -> int:
     """Fills iv_daily for every archived day not yet in it. Returns rows added."""
-    out = sqlite3.connect(IV_DB)
+    out = open_db(IV_DB)
     out.executescript(SCHEMA)
     have = {r[0] for r in out.execute("SELECT trade_date FROM iv_daily")}
     conn = _options_conn()
@@ -153,7 +155,7 @@ def load_series() -> pd.DataFrame:
     against itself and the days before it, never the days after."""
     if not IV_DB.exists():
         return pd.DataFrame()
-    conn = sqlite3.connect(IV_DB)
+    conn = open_db(IV_DB)
     try:
         df = pd.read_sql("SELECT * FROM iv_daily ORDER BY trade_date", conn, index_col="trade_date")
     finally:

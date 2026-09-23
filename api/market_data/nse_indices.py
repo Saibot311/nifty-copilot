@@ -8,6 +8,8 @@ missing that day's close at 19:30 (21 Sep 2026 was lost that way).
 """
 
 import sqlite3
+
+from storage.sqlite_open import open_db
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -85,7 +87,7 @@ def load_archive(underlying: str, db_path: Path | None = None) -> pd.DataFrame:
     path = db_path or ARCHIVE_PATH
     if not path.exists():
         return pd.DataFrame()
-    conn = sqlite3.connect(path)
+    conn = open_db(path)
     try:
         df = pd.read_sql("SELECT trade_date, open, high, low, close FROM index_daily WHERE index_name = ? "
                          "ORDER BY trade_date", conn, params=(INDEX_NAMES[underlying],))

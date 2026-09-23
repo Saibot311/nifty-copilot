@@ -27,6 +27,8 @@ hedging and option-sellers' delta adjustments among them.
 
 import math
 import sqlite3
+
+from storage.sqlite_open import open_db
 import statistics
 
 from backtest.intraday import load_intraday
@@ -43,7 +45,7 @@ SEBI_WINDOW = ("2023-01-01", "2025-03-31")  # the period the Jane Street order c
 
 
 def expiry_dates() -> set[str]:
-    conn = sqlite3.connect(OPTIONS_DB)
+    conn = open_db(OPTIONS_DB)
     try:
         return {r[0] for r in conn.execute("SELECT DISTINCT expiry_date FROM option_bars")}
     finally:
@@ -242,7 +244,7 @@ def unusual_option_activity(top: int = 5, z_min: float = UNUSUAL_Z, cycles: int 
     than usual; it is not evidence of anything more."""
     from datetime import date, timedelta
 
-    conn = sqlite3.connect(OPTIONS_DB)
+    conn = open_db(OPTIONS_DB)
     conn.row_factory = sqlite3.Row
     spot: dict[str, float] = {}
     try:

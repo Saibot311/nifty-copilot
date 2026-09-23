@@ -7,6 +7,29 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Phone access, and staying up (2026-09-23).** Asked to use it from a phone, and then to focus on
+running safely without crashes.
+
+*Phone.* `--lan` binds both services to every interface; `api/access.py` then admits this Mac and
+demands a token from everything else (header, query or cookie, compared with `hmac.compare_digest`).
+The token is generated on first pairing into `api/.env` at mode 600, shown only as a QR code on the
+Mac's own screen, and refused to remote callers even when they present it — pairing is a local-only
+endpoint. `/health` and `/api/access/check` stay open so an unpaired phone is told what is wrong
+rather than watching everything fail; `PairingNotice` says it on the page. The client picks its API
+host from `window.location`, so one build works from the Mac and from a phone. Audit 15.1 now fails
+only for the arrangement that must never exist: reachable from the network **with no token**.
+Verified with requests from the LAN address: unpaired 401, correct token 200, wrong token 401,
+pairing refused. Two limits stated rather than hidden: no TLS (a lock on a door, not a security
+system), and for outside the house use a private network rather than opening a port.
+
+*Staying up.* Every SQLite store now opens through `storage/sqlite_open.py` — WAL plus a 30-second
+busy timeout — because the API service and the 19:30 job write the same files and SQLite's defaults
+produce "database is locked"; four threads writing the journal at once is now a test. A watchdog
+(`scripts/health_watch.py`, every 10 minutes) restarts a service that has stopped answering, which
+KeepAlive cannot see: verified by SIGSTOPping the API — one miss watched, the second restarted it,
+new process answering. One more real bug: an `HTTPException` raised inside middleware never reaches
+FastAPI's handler and became a 500, so the gate returns its refusal instead.
+
 **Phase 15 — deployment, on this Mac (2026-09-23).** "Only once stable", as the plan said, and stable
 means it runs without a session and without anyone starting it. `scripts/install_app_services.sh`
 builds the dashboard and installs two LaunchAgents: uvicorn (no reload, one worker — the caches and

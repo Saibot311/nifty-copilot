@@ -28,6 +28,8 @@ survives here is a reason to look, never a result to trade.
 import json
 import math
 import sqlite3
+
+from storage.sqlite_open import open_db
 import statistics
 from collections import defaultdict
 from pathlib import Path
@@ -78,7 +80,7 @@ def load_intraday(symbol: str = "^NSEI", db_path: Path | None = None) -> dict[st
     average over days whose clock was different. Bars reaching beyond the
     day's official high or low are clamped to it (see clamp_to_daily).
     """
-    conn = sqlite3.connect(db_path or DB_PATH)
+    conn = open_db(db_path or DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(

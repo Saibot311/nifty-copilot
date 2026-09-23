@@ -1,4 +1,50 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** Where the API is, from wherever this code is running.
+ *
+ *  On the Mac (server render, or a browser at localhost) that is localhost.
+ *  On a phone, "localhost" would be the phone itself — so a browser on any
+ *  other host talks to that same host on the API's port. One build works
+ *  from the Mac and from a paired phone without being rebuilt per address. */
+const CONFIGURED = process.env.NEXT_PUBLIC_API_URL;
+
+function apiBase(): string {
+  if (CONFIGURED) return CONFIGURED;
+  if (typeof window === "undefined") return "http://localhost:8000";
+  const { protocol, hostname } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:8000";
+  return `${protocol}//${hostname}:8000`;
+}
+
+const TOKEN_KEY = "copilot_token";
+
+/** The pairing token, kept in this browser only. A link carrying ?token=...
+ *  stores it once and is stripped from the address bar, so it does not sit
+ *  in history or get shared by accident. */
+function token(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const url = new URL(window.location.href);
+    const fromLink = url.searchParams.get("token");
+    if (fromLink) {
+      localStorage.setItem(TOKEN_KEY, fromLink);
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      return fromLink;
+    }
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function isPaired(): boolean {
+  return !!token();
+}
+
+function authHeaders(extra?: HeadersInit): HeadersInit | undefined {
+  const t = token();
+  if (!t) return extra;
+  return { ...(extra as Record<string, string> | undefined), "X-Copilot-Token": t };
+}
 
 export type Regime = "TREND_BULL" | "TREND_BEAR" | "RANGE" | "TRANSITION";
 
@@ -13,7 +59,7 @@ export interface ApiResult<T> {
  *  with a warning banner attached. */
 export async function get<T>(path: string): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+    const res = await fetch(`${apiBase()}${path}`, { cache: "no-store", headers: authHeaders() });
     if (!res.ok) throw new Error(`API returned ${res.status}`);
     return { data: (await res.json()) as T, live: true };
   } catch {
@@ -510,9 +556,9 @@ export const fetchCopilotStatus = () => get<CopilotStatus>("/api/copilot/status"
 /** Browser-side calls: these hit a rate-limited free tier, so only on click. */
 export async function copilotRequest(path: string, question?: string): Promise<{ data?: CopilotAnswer; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, question
-      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }
-      : { cache: "no-store" });
+    const res = await fetch(`${apiBase()}${path}`, question
+      ? { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ question }) }
+      : { cache: "no-store", headers: authHeaders() });
     const body = await res.json();
     return res.ok ? { data: body as CopilotAnswer } : { error: body.detail ?? `HTTP ${res.status}` };
   } catch {
@@ -609,10 +655,10 @@ export type JournalReport = {
 export async function journalRequest<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown):
   Promise<{ data?: T; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${apiBase()}${path}`, {
       method,
       cache: "no-store",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: authHeaders(body ? { "Content-Type": "application/json" } : undefined),
       body: body ? JSON.stringify(body) : undefined,
     });
     const json = await res.json();
@@ -699,7 +745,7 @@ export type ZerodhaStatus = {
 };
 
 export const fetchZerodhaStatus = () => get<ZerodhaStatus>("/api/zerodha/status");
-export const ZERODHA_LOGIN_URL = `${API_BASE}/api/zerodha/login`;
+export const zerodhaLoginUrl = () => `${apiBase()}/api/zerodha/login`;
 
 export type PaperPnl = {
   gross_pct: number; net_pct: number | null; profit_rs: number; invested_rs: number; lots: number;
@@ -781,3 +827,15 @@ export type LiveTick = {
 };
 
 export const fetchTick = () => get<LiveTick>("/api/live/tick");
+
+
+export type Pairing = {
+  token: string;
+  hosts: string[];
+  links: string[];
+  note: string;
+  exposed: boolean;
+};
+
+/** Only answers on the Mac — the token is shown where it belongs. */
+export const fetchPairing = () => get<Pairing>("/api/access/pairing");

@@ -11,6 +11,8 @@ was supposed to close.
 
 import json
 import sqlite3
+
+from .sqlite_open import open_db
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,7 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_strategy_status_checked_at ON strategy_status_his
 def connect(db_path: Path | None = None):
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = open_db(path)
     conn.row_factory = sqlite3.Row
     try:
         yield conn

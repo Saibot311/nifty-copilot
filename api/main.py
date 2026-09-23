@@ -1,9 +1,11 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+import access
+from access import TokenGate
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -38,6 +40,19 @@ from quant import build_analysis
 
 app = FastAPI(title="NIFTY Copilot API")
 
+
+def _allowed_origins() -> list[str]:
+    """This Mac, both spellings — a browser opened at 127.0.0.1 sends that as
+    its origin and every client-side fetch fails CORS if only "localhost" is
+    listed. Plus this Mac's own addresses when the dashboard is deliberately
+    reachable from a phone (DASHBOARD_HOSTS in api/.env, set by
+    install_app_services.sh --lan). Never a wildcard."""
+    origins = [f"http://{h}:3000" for h in ("localhost", "127.0.0.1")]
+    extra = access._env("DASHBOARD_HOSTS") or ""
+    for host in (h.strip() for h in extra.split(",") if h.strip()):
+        origins += [f"http://{host}:3000", f"https://{host}:3000"]
+    return origins
+
 # Only NIFTY 50 is researched. Every endpoint that takes a symbol is limited
 # to it, so malformed input is refused up front (422) instead of being passed
 # to Yahoo and failing as a 503 — or quietly fetching some other market.
@@ -54,13 +69,17 @@ PROVIDERS = {
 }
 
 # Phase 3: only the Next.js dev server needs access, and only during local development.
+# Anything that is not this Mac must present the token (access.py). Added
+# before CORS so the browser still gets its headers on a refusal.
+app.add_middleware(TokenGate)
+
 app.add_middleware(
     CORSMiddleware,
     # Both spellings of this Mac: a browser opened at 127.0.0.1 sends that as
     # its origin, and every client-side fetch (the live tick, the journal,
     # the paper book) fails CORS if only "localhost" is listed. Nothing else
     # is admitted — this is not going on a network.
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_allowed_origins(),
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
@@ -429,6 +448,49 @@ def _previous_close() -> float | None:
     if open_now and today and len(closes) > 1:
         return float(closes[-2])
     return float(closes[-1])
+
+
+@app.get("/api/access/check")
+def access_check(request: Request) -> dict:
+    """Does this caller already have what it needs? The phone asks this
+    before anything else, so an unpaired device gets a clear answer rather
+    than a wall of failed fetches."""
+    return {"local": access.is_local(request), "token_required": not access.is_local(request),
+            "paired": access.is_local(request) or bool(request.headers.get(access.HEADER))}
+
+
+@app.get("/api/access/pairing")
+def access_pairing(request: Request) -> dict:
+    """The pairing link, for the QR code on the Mac's screen.
+
+    Refused unless the caller is this Mac: the token is the whole lock, so it
+    is shown on the machine that owns it and nowhere else. It is never
+    logged, and never returned to a remote caller even with a valid token."""
+    if not access.is_local(request):
+        raise HTTPException(403, "Pairing can only be started on the Mac itself.")
+    value = access.ensure_token()
+    hosts = [h.strip() for h in (access._env("DASHBOARD_HOSTS") or "").split(",") if h.strip()]
+    return {
+        "token": value,
+        "hosts": hosts,
+        "links": [f"http://{h}:3000/?token={value}" for h in hosts],
+        "note": ("Scan this on the phone once. The dashboard stores the token in that browser and sends it "
+                 "with every request. Anyone holding this link can read your journal and paper book, so treat "
+                 "it like a password: it is not shown anywhere else, and re-pairing replaces it."),
+        "exposed": bool(hosts),
+    }
+
+
+@app.post("/api/access/rotate")
+def access_rotate(request: Request) -> dict:
+    """Forget the old token — every paired device stops working."""
+    if not access.is_local(request):
+        raise HTTPException(403, "Only the Mac can do this.")
+    lines = [ln for ln in access.ENV_PATH.read_text().splitlines() if not ln.startswith(f"{access.TOKEN_KEY}=")]
+    access.ENV_PATH.write_text("\n".join(lines) + "\n")
+    access.ENV_PATH.chmod(0o600)
+    access.ensure_token()
+    return {"ok": True, "note": "Old devices are locked out. Pair them again from the Mac."}
 
 
 @app.get("/api/live/tick")

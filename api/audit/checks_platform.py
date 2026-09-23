@@ -272,25 +272,34 @@ LAUNCH_AGENTS = Path.home() / "Library" / "LaunchAgents"
 SERVICES = ("com.niftycopilot.api", "com.niftycopilot.web")
 
 
-@check("15", "15.1", "The deployed app listens to this Mac and nothing else")
+@check("15", "15.1", "Nothing but this Mac can reach the dashboard without the pairing token")
 def services_are_local_only():
     """It holds a live broker session, a personal journal and a paper book.
-    Bound to 0.0.0.0 it would answer anything on the network — a coffee-shop
-    Wi-Fi included. Both services must name 127.0.0.1 explicitly, and the API
-    must admit only the local dashboard."""
+
+    Either it listens to 127.0.0.1 alone, or — when it has deliberately been
+    opened to a phone — a token stands in front of it. Open to the network
+    with no token is the one arrangement that must never exist, and CORS must
+    never carry a wildcard."""
     plists = {s: LAUNCH_AGENTS / f"{s}.plist" for s in SERVICES}
     installed = {s: p for s, p in plists.items() if p.exists()}
     if not installed:
         return Result(SKIP, "services not installed — ./scripts/install_app_services.sh")
 
-    problems, detail = [], {}
+    import access
+
+    has_token = bool(access.token())
+    problems, detail, exposed = [], {"token_set": has_token}, False
     for name, path in installed.items():
         text = path.read_text()
         local = "127.0.0.1" in text
         wide = "0.0.0.0" in text
         detail[name] = {"binds_localhost": local, "binds_all_interfaces": wide}
-        if not local or wide:
-            problems.append(name)
+        if wide:
+            exposed = True
+            if not has_token:
+                problems.append(f"{name} is on the network with no token")
+        elif not local:
+            problems.append(f"{name} names no address")
 
     cors = (ROOT / "api" / "main.py").read_text()
     origins = re.search(r"allow_origins=\[(.*?)\]", cors, re.S)
@@ -303,12 +312,15 @@ def services_are_local_only():
     for port in ("3000", "8000"):
         for line in listening.splitlines():
             if f":{port} (LISTEN)" in line and "127.0.0.1" not in line:
-                problems.append(f"port {port} listening beyond localhost")
+                exposed = True
                 detail[f"port_{port}"] = line.split()[-2:]
+                if not has_token:
+                    problems.append(f"port {port} is on the network with no token")
 
+    where = "reachable from the network, token required" if exposed else "this Mac only"
     return Result(FAIL if problems else PASS,
-                  f"{len(installed)} service(s) installed; "
-                  + ("local only" if not problems else f"exposed: {', '.join(problems)}"),
+                  f"{len(installed)} service(s) installed; {where}"
+                  + ("" if not problems else f" — {', '.join(problems)}"),
                   detail)
 
 

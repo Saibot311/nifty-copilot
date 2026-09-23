@@ -17,6 +17,8 @@ import { RegimeBadge } from "@/components/RegimeBadge";
 import { SessionStatus } from "@/components/SessionStatus";
 import { LiveTicker } from "@/components/LiveTicker";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { PairPhone } from "@/components/PairPhone";
+import { PairingNotice } from "@/components/PairingNotice";
 import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
@@ -102,6 +104,7 @@ export default async function Home() {
   return (
     <div className="min-h-full bg-zinc-950">
       <AutoRefresh />
+      <PairingNotice />
       <header className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-8">
           <div className="flex items-baseline gap-3">
@@ -234,7 +237,11 @@ export default async function Home() {
           journal={<JournalTab paper={paper.data} />}
         />
 
-        <footer className="mt-10 border-t border-zinc-900 pt-4 text-[11px] leading-relaxed text-zinc-600">
+        <div className="mt-10 flex flex-wrap items-center gap-3">
+          <PairPhone />
+        </div>
+
+        <footer className="mt-6 border-t border-zinc-900 pt-4 text-[11px] leading-relaxed text-zinc-600">
           Every figure here is computed from real market data — nothing is estimated or filled in.
           Where a number isn&apos;t available, the section says so rather than showing a placeholder.
           No automatic trading, ever: this is decision support, and the trade decision stays yours.

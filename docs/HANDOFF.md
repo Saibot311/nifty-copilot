@@ -77,7 +77,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 35 checks, 341 tests — run before and after changes
+./scripts/check_all.sh          # 35 checks, 357 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -97,10 +97,24 @@ cd api && .venv/bin/python scripts/check_guards.py   # forecast | claims | route
 start at login and restart on crash, bound to `127.0.0.1` only.
 
 ```bash
-./scripts/install_app_services.sh            # build + install (re-run after ANY code change)
-./scripts/install_app_services.sh --status   # services, endpoints, whether the build is stale
+./scripts/install_app_services.sh            # build + install, this Mac only
+./scripts/install_app_services.sh --lan      # also reachable from your phone (token required)
+./scripts/install_app_services.sh --status   # services, endpoints, network, stale build
 ./scripts/install_app_services.sh --remove   # frees :3000 and :8000 for dev servers
 ```
+
+**Phone access** (`--lan`): both services bind every interface, and `api/access.py` then demands a
+token from anything that is not this Mac. Pair from the dashboard *on the Mac* — "Use this on my
+phone" shows a QR code; the token is written to `api/.env` and shown nowhere else, not in a log and
+not to a remote caller even with a valid token. "Forget paired devices" rotates it. Only do this on a
+network you trust — there is no TLS, so treat it as a lock on a door, not a security system. For
+outside the house, put both devices on a private network (Tailscale or similar) rather than opening a
+port.
+
+**A watchdog** (`com.niftycopilot.watchdog`, every 10 minutes) restarts a service that has stopped
+answering. launchd's KeepAlive covers a process that dies; this covers one that is alive and wedged —
+verified by SIGSTOPping the API and watching it come back. One miss is treated as a cold start; two
+in a row is a restart plus a notification. Log: `api/data/health_watch.log`.
 
 The services serve a *build*, so edited code is not live until the installer runs again — `--status`
 says when the build is stale. They also hold the ports: **run `--remove` before starting dev servers**
@@ -270,6 +284,11 @@ of identical cards before 2026-09-23 — don't let it drift back.
   sent that origin, the API's CORS list had only `localhost:3000`, and every client-side fetch failed
   while the server-rendered page looked perfect. Both spellings are allowed now; audit 15.1 guards the
   list against a wildcard.
+- **Two processes write these SQLite files** — the API service and the 19:30 job. Every store opens
+  through `storage/sqlite_open.py` (WAL + a 30s busy timeout); the defaults gave "database is locked".
+- **KeepAlive does not catch a wedged process**, only a dead one. That is what the watchdog is for.
+- **An exception raised inside a middleware never reaches FastAPI's handler** — it becomes an opaque
+  500. The token gate returns its refusal instead, so a phone is told what to do.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps

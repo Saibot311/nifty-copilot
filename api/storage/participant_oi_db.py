@@ -14,6 +14,8 @@ and directions across time, not raw counts.
 import csv
 import io
 import sqlite3
+
+from .sqlite_open import open_db
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -45,7 +47,7 @@ CREATE TABLE IF NOT EXISTS participant_oi (
 def connect(db_path: Path | None = None):
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = open_db(path)
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(SCHEMA)

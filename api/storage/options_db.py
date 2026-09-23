@@ -11,6 +11,8 @@ stopped rather than starting over.
 """
 
 import sqlite3
+
+from .sqlite_open import open_db
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,7 +62,7 @@ CREATE TABLE IF NOT EXISTS ingested_days (
 def connect(db_path: Path | None = None):
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30)  # parallel backfills share the file
+    conn = open_db(path)  # parallel backfills share the file
     conn.row_factory = sqlite3.Row
     try:
         yield conn
