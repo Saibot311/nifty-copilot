@@ -21,9 +21,13 @@ still end-of-day by design: option premiums come from NSE's nightly file.
 
 **The paper book has allocated funds and a daily policy.** Set the amount on the Journal tab; positions
 size in whole lots against it, at most 20% each. Three policies are measured apart: patterns that
-formed; `best_read` when nothing formed — one 2% out-of-the-money option, one direction, from the
+formed; `best_read` when nothing formed — one 2% in-the-money option, one direction, from the
 best-evidenced signal firing that day (all of them rejected; a negative t is never followed), falling
-back to the 20-session trend; and a weekly no-signal control that buys both sides as the yardstick.
+back to the 20-session trend; and a weekly no-signal control, one lot each way, as the yardstick.
+An in-the-money lot runs ~₹28,000, so the per-trade cap is 40% of the book — at 20% nothing could
+open. A skipped position reports why. **The book compounds:** wins and losses change its value and
+positions are sized off that value, and the Journal tab shows the curve and the stated goal. That
+scoreboard reaches nothing else — a test asserts the recommendation gate cannot see it.
 `best_read` has no proven edge and says so on the row.
 
 **Paper observation runs itself** (`briefing/paper.py`, nightly): each pattern that forms opens a
@@ -72,7 +76,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 336 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 341 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```

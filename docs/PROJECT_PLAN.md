@@ -11,6 +11,14 @@ integration and the pattern → option reframe built out of phase order on reque
 three things: take a trade even when nothing qualifies, size it against money the user allocates, and
 stop showing stale prices.
 
+*Compounding, and a stated goal.* A closed trade's profit or loss goes into the book, and positions
+are sized off the book **as it stands** rather than off what was first put in: a win raises the next
+position, a loss lowers it, and a book at zero cannot trade. `equity_curve()` is the record of that —
+money in, then every win and loss — and `objective()` states what the book is for: grow what was
+allocated to it, without inventing a signal to do so. The containment is the point and is tested:
+`briefing/recommendation.py` cannot see the paper book at all, so a system that is behind on its own
+scoreboard still says NO TRADE.
+
 *Funds.* `paper_funds` rows hold what the user allocates (`POST /api/paper/funds`, or the field on the
 card). Positions are sized in whole lots of 65 against the cash on hand, capped at 20% of the
 allocation per position; a premium that does not fit is skipped rather than shrunk. Cash, realised
@@ -18,10 +26,13 @@ profit and open-position value give the book's equity. Nothing is ever sized aga
 never allocated.
 
 *The daily policy.* Three rows, measured separately: `pattern` (a setup formed → its tested option),
-`best_read` (nothing formed → **one 2% out-of-the-money option, one direction only**, taken from the
+`best_read` (nothing formed → **one 2% in-the-money option, one direction only**, taken from the
 signal with the most evidence firing that day — the highest holdout t among the rejected hypotheses,
 falling back to the 20-session trend when none fires or none has positive evidence) and `control` (a
-call and a put weekly, no signal — the direction-neutral yardstick, not a trade). A negative t means
+call and a put weekly, one lot each, no signal — the direction-neutral yardstick, not a trade).
+An in-the-money lot costs about ₹28,000 against ₹1,000 for a far out-of-the-money one, so the
+per-trade cap is 40% of the allocation: at 20% the daily trade could never have opened, and a
+position that does not fit now says why instead of being skipped silently. A negative t means
 the signal did worse than doing nothing, so those are never followed. The middle row is what the user
 asked for and the system has no proven edge behind it — the label says so, and the recommendation on
 the Today tab is untouched. The point is to measure what "take something every day" actually costs,

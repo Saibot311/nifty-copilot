@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { LiveTick, PaperReport, PaperSide, PaperTrade } from "@/lib/api";
+import type { EquityPoint, LiveTick, PaperReport, PaperSide, PaperTrade } from "@/lib/api";
 import { fetchTick, journalRequest } from "@/lib/api";
 import { Offline, Panel, Pill } from "./ui";
 
@@ -18,6 +18,29 @@ function money(v: number | null | undefined) {
 
 function pct(v: number | null | undefined) {
   return v == null ? "–" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%`;
+}
+
+/** The book's value after each event: money in, then every win and loss.
+ *  The dashed line is what was put in — above it the book has made money. */
+function EquityCurve({ curve, allocated }: { curve: EquityPoint[]; allocated: number }) {
+  if (curve.length < 2) return null;
+  const W = 260, H = 54, pad = 3;
+  const values = curve.map((p) => p.equity_rs);
+  const lo = Math.min(...values, allocated), hi = Math.max(...values, allocated);
+  const span = hi - lo || 1;
+  const x = (i: number) => pad + (i / (curve.length - 1)) * (W - 2 * pad);
+  const y = (v: number) => H - pad - ((v - lo) / span) * (H - 2 * pad);
+  const path = curve.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.equity_rs).toFixed(1)}`).join(" ");
+  const last = curve[curve.length - 1].equity_rs;
+  const up = last >= allocated;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
+      aria-label={`Paper book value over ${curve.length} events, now ${Math.round(last)} rupees against ${allocated} put in`}>
+      <line x1={pad} x2={W - pad} y1={y(allocated)} y2={y(allocated)} stroke="#3f3f46" strokeWidth="1" strokeDasharray="3 3" />
+      <path d={path} fill="none" stroke={up ? "#34d399" : "#fb7185"} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(curve.length - 1)} cy={y(last)} r="3.5" fill={up ? "#34d399" : "#fb7185"} stroke="#09090b" strokeWidth="1.5" />
+    </svg>
+  );
 }
 
 function Side({ title, side, hint }: { title: string; side: PaperSide; hint: string }) {
@@ -160,9 +183,26 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           )}
         </div>
         <Side title="Patterns, on paper" side={summary.patterns} hint="setups that formed" />
-        <Side title="Best reading" side={summary.best_read} hint="nothing formed → one 2% out-of-the-money option, strongest signal" />
-        <Side title="No signal (control)" side={summary.control} hint="a call and a put weekly — the yardstick, not a trade" />
+        <Side title="Best reading" side={summary.best_read} hint="nothing formed → one 2% in-the-money option, strongest signal" />
+        <Side title="No signal (control)" side={summary.control} hint="one lot each way, weekly — the yardstick, not a trade" />
       </div>
+      {data.equity_curve.length > 1 && (
+        <div className="mt-4 rounded-lg bg-zinc-950/50 p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-zinc-500">The book, win by win</span>
+            <span className="font-mono text-[11px] tabular-nums text-zinc-500">
+              high {money(data.objective.high_water_rs)}
+              {data.objective.below_high_water_rs > 0 && ` · ${rs(-data.objective.below_high_water_rs)} from it`}
+            </span>
+          </div>
+          <EquityCurve curve={data.equity_curve} allocated={account.allocated_rs} />
+          <p className="text-[11px] leading-relaxed text-zinc-500">
+            <span className="text-zinc-300">Goal: </span>{data.objective.goal} {data.objective.sizing_note}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">{data.objective.containment}</p>
+        </div>
+      )}
+
       {account.allocated_rs === 0 && (
         <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-200">
           No paper funds allocated yet, so nothing can be sized or opened. Set an amount below — it is paper money

@@ -18,7 +18,7 @@ Three policies run side by side, each on its own row, each measured
 separately:
 
     pattern     a pattern formed -> its own tested setup
-    best_read   nothing formed -> one 2% out-of-the-money option, in one
+    best_read   nothing formed -> one 2% in-the-money option, in one
                 direction only, taken from whichever signal has the most
                 evidence behind it that day — the highest holdout t, even
                 though every one of them was rejected. When no rejected
@@ -52,15 +52,25 @@ COST_FRACTION = OptionsCostModel().round_trip_cost_fraction()
 # date may ever be opened: those signals' outcomes already exist.
 FIRST_SIGNAL_DATE = "2026-09-22"
 MIN_OPEN_INTEREST = 1000
-CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0}
-# The daily trade is out of the money by the research grid's own step, and
-# one-sided: a call or a put, never both.
-OTM_PCT = 2.0
-BEST_READ = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": OTM_PCT}
+# The control is a yardstick, not a position to win on: one lot a side, so
+# it cannot crowd out the policies it is there to measure.
+CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0, "max_lots": 1}
+# The daily trade is in the money by the research grid's own step, and
+# one-sided: a call or a put, never both. Negative is in the money, as in
+# pattern_options — above spot for a put, below it for a call.
+ITM_PCT = -2.0
+BEST_READ = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": ITM_PCT}
 
-# At most this share of the allocated funds goes into any one position, so a
-# single expensive premium cannot swallow the book.
-MAX_PER_TRADE = 0.2
+# At most this share of the book goes into any one position, so a single
+# premium cannot swallow it. An in-the-money option carries real intrinsic
+# value — around Rs 28,000 a lot at current levels against Rs 1,000 for a far
+# out-of-the-money one — so the cap has to leave room for one whole lot or the
+# daily trade never opens at all.
+#
+# The share is of the book's *current* value, not of what was first
+# allocated: a winning run sizes up and a losing one sizes down, which is the
+# only honest way a paper book can be said to compound.
+MAX_PER_TRADE = 0.4
 
 
 def _costs(premium: float, lots: int) -> float:
@@ -70,10 +80,11 @@ def _costs(premium: float, lots: int) -> float:
     return premium * lots * LOT_SIZE * COST_FRACTION
 
 
-def _lots_for(premium: float, cash: float, allocated_rs: float) -> int:
-    """Whole lots only, inside both the cash on hand and the per-trade cap."""
+def _lots_for(premium: float, cash: float, book_rs: float) -> int:
+    """Whole lots only, inside both the cash on hand and the per-trade cap.
+    `book_rs` is the book's value now — profits raise it, losses lower it."""
     per_lot = premium * LOT_SIZE * (1 + COST_FRACTION)
-    budget = min(cash, allocated_rs * MAX_PER_TRADE) if allocated_rs else cash
+    budget = min(cash, book_rs * MAX_PER_TRADE) if book_rs > 0 else 0
     return int(budget // per_lot) if per_lot > 0 else 0
 
 
@@ -92,6 +103,28 @@ def _premium(conn, trade_date: str, expiry: str, strike: float, option_type: str
         """SELECT close FROM option_bars WHERE trade_date = ? AND expiry_date = ?
            AND strike = ? AND option_type = ?""", (trade_date, expiry, strike, option_type)).fetchone()
     return float(row["close"]) if row and row["close"] else None
+
+
+def _why_not(conn, spec: dict, entry_date: str, planned_exit: str | None) -> str | None:
+    """Why a position did not open. A silent skip looks identical to a quiet
+    market, and the usual cause — one lot costing more than the per-trade cap
+    — is worth saying out loud."""
+    spot = spec["spot"]
+    picked = select_contract(entry_date, spot, spec["option_type"],
+                             _strike_offset(spot, spec["moneyness_pct"], spec["option_type"]),
+                             spec["min_days_to_expiry"], planned_exit or entry_date, MIN_OPEN_INTEREST, conn)
+    if picked is None:
+        return f"{spec['strategy']}: no contract in the archive for that strike and expiry"
+    premium = _premium(conn, entry_date, picked[1], picked[0], spec["option_type"])
+    if premium is None:
+        return f"{spec['strategy']}: that contract has no closing price"
+    book = cash_and_equity()
+    lot = premium * LOT_SIZE * (1 + COST_FRACTION)
+    if not book["allocated_rs"]:
+        return f"{spec['strategy']}: no paper funds allocated"
+    return (f"{spec['strategy']}: one lot costs ₹{lot:,.0f} — more than the ₹{book['max_per_trade_rs']:,} "
+            f"per-trade cap ({int(MAX_PER_TRADE * 100)}% of the ₹{book['equity_rs']:,} book) "
+            f"or the ₹{book['cash_rs']:,} cash")
 
 
 def _strike_offset(spot: float, moneyness_pct: float, option_type: str) -> float:
@@ -124,7 +157,7 @@ def cash_and_equity(marks: dict[int, float] | None = None) -> dict:
             "open_positions_value_rs": round(open_value), "equity_rs": round(cash + open_value),
             "realised_rs": round(realised),
             "return_pct": round((cash + open_value - allocated_rs) / allocated_rs * 100, 2) if allocated_rs else None,
-            "max_per_trade_rs": round(allocated_rs * MAX_PER_TRADE) if allocated_rs else 0}
+            "max_per_trade_rs": round(max(cash + open_value, 0) * MAX_PER_TRADE)}
 
 
 def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit: str | None) -> bool:
@@ -142,7 +175,9 @@ def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit:
     if premium is None:
         return False
     book = cash_and_equity()
-    lots = _lots_for(premium, book["cash_rs"], book["allocated_rs"])
+    lots = _lots_for(premium, book["cash_rs"], book["equity_rs"])
+    if spec.get("max_lots"):
+        lots = min(lots, spec["max_lots"])
     if lots < 1:
         return False  # no allocated funds, or this premium does not fit
     return paper_db.open_position({
@@ -162,7 +197,7 @@ def observe(now: datetime | None = None) -> dict:
         return {"opened": [], "marked": 0, "closed": [], "note": "not enough sessions"}
 
     entry_date, signal_date = td[-1], td[-2]
-    opened, closed = [], []
+    opened, closed, skipped = [], [], []
 
     with options_connect() as conn:
         archived = conn.execute("SELECT MAX(trade_date) AS d FROM option_bars").fetchone()["d"]
@@ -199,7 +234,9 @@ def observe(now: datetime | None = None) -> dict:
                             "label": f"Most confident signal — {read['why']}", "option_type": kind,
                             **BEST_READ, "spot": closes[entry_date]}
                     if _open_one(conn, spec, signal_date, entry_date, planned):
-                        opened.append(f"best read {kind} 2% OTM ({read['why']})")
+                        opened.append(f"best read {kind} 2% ITM ({read['why']})")
+                    else:
+                        skipped.append(_why_not(conn, spec, entry_date, planned))
 
             # The control: one call and one put a week, no signal involved.
             if not _control_this_week(td, entry_date):
@@ -234,7 +271,7 @@ def observe(now: datetime | None = None) -> dict:
                 paper_db.mark(t["id"], day, premium)
                 marked += 1
 
-    return {"opened": opened, "marked": marked, "closed": closed,
+    return {"opened": opened, "marked": marked, "closed": closed, "skipped": [s for s in skipped if s],
             "entry_session": entry_date, "signal_session": signal_date,
             "note": None if can_open else "waiting for the entry session's option prices"}
 
@@ -377,6 +414,66 @@ def live_marks() -> dict:
     }
 
 
+def equity_curve(marks: dict[int, float] | None = None) -> list[dict]:
+    """The book's value after each event, oldest first: money allocated,
+    then every closed trade's profit or loss, then today's open marks.
+
+    Money is added when a trade wins and taken away when it loses — that is
+    the whole curve, and it is the only scoreboard this project keeps that
+    goes up and down with money rather than with evidence."""
+    events: list[tuple[str, float, str]] = []
+    for f in reversed(paper_db.fund_flows()):
+        events.append((f["ts"][:10], float(f["amount"]), "funded" if f["amount"] > 0 else "withdrawn"))
+    trades = paper_db.all_trades()
+    for t in trades:
+        if t["status"] == "CLOSED" and t["exit_premium"] is not None:
+            pnl = _pnl(t)
+            if pnl:
+                events.append((t["exit_date"] or t["entry_date"], float(pnl["profit_rs"]), t["strategy"]))
+    events.sort(key=lambda e: e[0])
+
+    running, curve = 0.0, []
+    for day, amount, what in events:
+        running += amount
+        curve.append({"date": day, "equity_rs": round(running), "change_rs": round(amount), "what": what})
+    unrealised = sum((_pnl(t, (marks or {}).get(t["id"])) or {}).get("profit_rs", 0)
+                     for t in trades if t["status"] == "OPEN")
+    if curve and unrealised:
+        curve.append({"date": "now", "equity_rs": round(running + unrealised),
+                      "change_rs": round(unrealised), "what": "open positions, marked"})
+    return curve
+
+
+def objective(curve: list[dict], book: dict) -> dict:
+    """What the book is trying to do, and how it is doing at it.
+
+    Stated plainly because the goal is a real one — grow the money allocated
+    to it — and stating it is also how it stays contained: this scoreboard
+    moves the paper book only. It has no path into the recommendation, which
+    still says NO TRADE unless something clears the evidence bar. A system
+    that could talk itself into a signal to make its own number go up would
+    be worth nothing.
+    """
+    values = [p["equity_rs"] for p in curve] or [book["equity_rs"]]
+    high = max(values) if values else 0
+    allocated = book["allocated_rs"]
+    equity = book["equity_rs"]
+    return {
+        "goal": "Grow what has been allocated to the paper book, without inventing a signal to do it.",
+        "allocated_rs": allocated,
+        "equity_rs": equity,
+        "profit_rs": round(equity - allocated),
+        "growth_pct": round((equity - allocated) / allocated * 100, 2) if allocated else None,
+        "high_water_rs": round(high),
+        "below_high_water_rs": round(max(high - equity, 0)),
+        "sizing_note": (f"Positions are sized off the book as it stands (₹{equity:,}), not off what was first "
+                        f"put in: a win raises the next position, a loss lowers it. At most "
+                        f"{int(MAX_PER_TRADE * 100)}% of the book goes into one position."),
+        "containment": ("This number moves the paper book alone. The recommendation on the Today tab "
+                        "is computed from the evidence bar and never from how the paper book is doing."),
+    }
+
+
 def report(marks: dict[int, float] | None = None) -> dict:
     trades = [{**t, "pnl": _pnl(t, (marks or {}).get(t["id"]))} for t in paper_db.all_trades()]
 
@@ -392,10 +489,13 @@ def report(marks: dict[int, float] | None = None) -> dict:
                 "open": sum(1 for t in trades if t["source"] == source and t["status"] == "OPEN")}
 
     first = min((t["signal_date"] for t in trades), default=None)
+    book = cash_and_equity(marks)
+    curve = equity_curve(marks)
     return {
         "trades": trades,
-        "account": {**cash_and_equity(marks), "flows": paper_db.fund_flows(),
-                    "max_per_trade_share": MAX_PER_TRADE},
+        "account": {**book, "flows": paper_db.fund_flows(), "max_per_trade_share": MAX_PER_TRADE},
+        "equity_curve": curve,
+        "objective": objective(curve, book),
         "summary": {
             "observing_since": first, "started": FIRST_SIGNAL_DATE,
             "patterns": side("pattern"), "best_read": side("best_read"), "control": side("control"),

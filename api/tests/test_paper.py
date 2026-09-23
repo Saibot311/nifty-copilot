@@ -110,18 +110,18 @@ def test_observe_is_safe_to_run_twice(monkeypatch):
 # --- allocated funds, sizing, and the "take something every day" policy -------
 
 def test_nothing_is_sized_against_money_that_was_never_allocated():
-    assert paper._lots_for(premium=150.0, cash=0, allocated_rs=0) == 0
+    assert paper._lots_for(premium=150.0, cash=0, book_rs=0) == 0
 
 
 def test_a_position_never_takes_more_than_the_per_trade_share():
-    lots = paper._lots_for(premium=150.0, cash=1_000_000, allocated_rs=100_000)
+    lots = paper._lots_for(premium=150.0, cash=1_000_000, book_rs=100_000)
     per_lot = 150.0 * 65 * (1 + paper.COST_FRACTION)
     assert lots == int(100_000 * paper.MAX_PER_TRADE // per_lot)
     assert lots * per_lot <= 100_000 * paper.MAX_PER_TRADE
 
 
 def test_whole_lots_only_and_a_premium_that_does_not_fit_is_skipped():
-    assert paper._lots_for(premium=3000.0, cash=100_000, allocated_rs=100_000) == 0  # a lot costs ~Rs 195k
+    assert paper._lots_for(premium=3000.0, cash=100_000, book_rs=100_000) == 0  # a lot costs ~Rs 195k
 
 
 def test_funds_can_be_added_and_taken_back():
@@ -175,11 +175,17 @@ def test_the_best_reading_is_never_presented_as_a_proven_edge():
 
 # --- the daily trade: out of the money, one side, best-evidenced signal -----
 
-def test_the_daily_trade_is_out_of_the_money_on_whichever_side_it_takes():
-    assert paper.BEST_READ["moneyness_pct"] == paper.OTM_PCT == 2.0
-    # A call above spot and a put below it are both out of the money.
-    assert paper._strike_offset(23000, paper.OTM_PCT, "CE") == pytest.approx(460.0)
-    assert paper._strike_offset(23000, paper.OTM_PCT, "PE") == pytest.approx(-460.0)
+def test_the_daily_trade_is_in_the_money_on_whichever_side_it_takes():
+    assert paper.BEST_READ["moneyness_pct"] == paper.ITM_PCT == -2.0
+    # In the money is below spot for a call and above it for a put.
+    assert paper._strike_offset(23000, paper.ITM_PCT, "CE") == pytest.approx(-460.0)
+    assert paper._strike_offset(23000, paper.ITM_PCT, "PE") == pytest.approx(460.0)
+
+
+def test_the_per_trade_cap_leaves_room_for_a_whole_in_the_money_lot():
+    # One 2% in-the-money lot ran about Rs 28,000 at 23,329; a 20% cap on a
+    # Rs 1,00,000 book would have meant the daily trade never opened.
+    assert paper._lots_for(premium=422.4, cash=100_000, book_rs=100_000) >= 1
 
 
 def test_it_follows_the_firing_signal_with_the_most_evidence(monkeypatch):
@@ -212,3 +218,43 @@ def test_only_one_direction_is_taken_each_day(monkeypatch):
     read = paper._confident_read("2026-09-22", {}, [])
     assert read["direction"] in ("CE", "PE")  # one side, never both
     assert read["source"] == "a"
+
+
+# --- money in, money out, and the drive that must stay contained ------------
+
+def test_a_win_raises_the_next_position_and_a_loss_lowers_it():
+    at_start = paper._lots_for(premium=150.0, cash=100_000, book_rs=100_000)
+    after_win = paper._lots_for(premium=150.0, cash=150_000, book_rs=150_000)
+    after_loss = paper._lots_for(premium=150.0, cash=50_000, book_rs=50_000)
+    assert after_win > at_start > after_loss >= 0
+
+
+def test_a_broke_book_cannot_trade():
+    assert paper._lots_for(premium=150.0, cash=0, book_rs=-500) == 0
+
+
+def test_the_curve_adds_a_win_and_subtracts_a_loss():
+    paper_db.add_funds(100_000, "start")
+    paper_db.open_position(_row(lots=1, entry_cost_rs=214.0))
+    tid = paper_db.all_trades()[0]["id"]
+    paper_db.close_position(tid, "2026-09-28", 150.0)          # +Rs 3,250 gross
+    paper_db.open_position(_row(signal_date="2026-09-29", lots=1, entry_cost_rs=214.0))
+    tid2 = [t for t in paper_db.all_trades() if t["status"] == "OPEN"][0]["id"]
+    paper_db.close_position(tid2, "2026-10-05", 60.0)          # -Rs 2,600 gross
+    curve = paper.equity_curve()
+    assert [p["what"] for p in curve][0] == "funded"
+    assert curve[1]["change_rs"] > 0 and curve[2]["change_rs"] < 0
+    assert curve[-1]["equity_rs"] == round(paper.cash_and_equity()["equity_rs"])
+
+
+def test_the_objective_is_stated_and_cannot_reach_the_recommendation():
+    import inspect
+
+    import briefing.recommendation as rec
+    paper_db.add_funds(100_000, "start")
+    o = paper.objective(paper.equity_curve(), paper.cash_and_equity())
+    assert o["goal"] and o["containment"]
+    assert o["equity_rs"] == 100_000 and o["growth_pct"] == 0.0
+    # The gate must not be able to see the paper book at all.
+    source = inspect.getsource(rec)
+    assert "paper" not in source.lower()

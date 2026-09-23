@@ -739,9 +739,18 @@ export type PaperAccount = {
   max_per_trade_share: number; flows: { id: number; ts: string; amount: number; note: string | null }[];
 };
 
+export type EquityPoint = { date: string; equity_rs: number; change_rs: number; what: string };
+
+export type PaperObjective = {
+  goal: string; allocated_rs: number; equity_rs: number; profit_rs: number; growth_pct: number | null;
+  high_water_rs: number; below_high_water_rs: number; sizing_note: string; containment: string;
+};
+
 export type PaperReport = {
   trades: PaperTrade[];
   account: PaperAccount;
+  equity_curve: EquityPoint[];
+  objective: PaperObjective;
   summary: {
     observing_since: string | null;
     started: string;
