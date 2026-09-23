@@ -72,3 +72,16 @@ def test_bad_input_is_refused():
         main.JournalEntry(trade_date="2026-09-18", decision="TOOK", quantity=-5)
     with pytest.raises(HTTPException):
         main.journal_close(999, main.JournalClose(exit_premium=1, exit_date="2026-09-23"))
+
+
+def test_a_decision_logged_before_the_evening_verdict_is_matched_up_later(monkeypatch):
+    # Logged at 13:00; the forward log writes that session's verdict at 19:30.
+    # The row must not stay blank once the verdict exists.
+    monkeypatch.setattr(journal, "all_recommendations", lambda: [])
+    _add(trade_date="2026-09-23", decision="SKIPPED")
+    assert main.journal()["entries"][0]["system_action"] is None
+
+    monkeypatch.setattr(journal, "all_recommendations",
+                        lambda: [{"as_of": "2026-09-23", "action": "NO_TRADE"}])
+    row = main.journal()["entries"][0]
+    assert row["system_action"] == "NO_TRADE" and row["followed_system"] is True

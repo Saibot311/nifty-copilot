@@ -45,6 +45,12 @@ def followed(e: dict) -> bool | None:
 def report() -> dict:
     entries = []
     for e in journal_db.all_entries():
+        # A decision logged during the session has no verdict yet — the
+        # forward log writes it that evening. Look it up on every read so the
+        # comparison appears once it exists, rather than staying blank for a
+        # row that was simply logged early. Still never typed by the user.
+        if not e.get("system_action"):
+            e = {**e, "system_action": system_action_for(e["trade_date"])}
         entries.append({**e, "pnl": pnl(e), "followed_system": followed(e)})
     closed = [e for e in entries if e["pnl"]]
     net = [e["pnl"]["net_rs"] for e in closed]
