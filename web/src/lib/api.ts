@@ -830,6 +830,36 @@ export type LiveTick = {
 
 export const fetchTick = () => get<LiveTick>("/api/live/tick");
 
+/** One poller for the whole page.
+ *
+ *  Three components used to run three timers against the same endpoint. This
+ *  keeps a single interval, hands every subscriber the same tick, and stops
+ *  when the last one goes away. Cadence follows the market: 2s open, 60s shut. */
+type TickListener = (tick: LiveTick) => void;
+const listeners = new Set<TickListener>();
+let timer: ReturnType<typeof setTimeout> | null = null;
+let latest: LiveTick | null = null;
+
+async function pump() {
+  const r = await fetchTick();
+  if (r.data) {
+    latest = r.data;
+    listeners.forEach((fn) => fn(r.data as LiveTick));
+  }
+  if (listeners.size === 0) { timer = null; return; }
+  timer = setTimeout(pump, r.data?.market?.is_open ? 2000 : 60000);
+}
+
+export function subscribeToTick(fn: TickListener): () => void {
+  listeners.add(fn);
+  if (latest) fn(latest);
+  if (!timer) timer = setTimeout(pump, 0);
+  return () => {
+    listeners.delete(fn);
+    if (listeners.size === 0 && timer) { clearTimeout(timer); timer = null; }
+  };
+}
+
 
 export type Pairing = {
   token: string;

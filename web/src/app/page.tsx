@@ -132,19 +132,12 @@ export default async function Home() {
         <DashboardTabs
           today={
             <>
-              {livePatterns.data?.candle && (
-                <section>
-                  <SectionLabel hint="updates every 15-minute close">Live — during the session</SectionLabel>
-                  <LivePatternsCard initial={livePatterns.data} />
-                </section>
-              )}
-
               <div className="grid gap-6 lg:grid-cols-12">
-                <section className="lg:col-span-7">
+                <section className="min-w-0 lg:col-span-7">
                   <SectionLabel hint="the only thing on this page that is a decision">Today&apos;s call</SectionLabel>
                   <RecommendationCard rec={recommendation.data} />
                 </section>
-                <section className="lg:col-span-5">
+                <section className="min-w-0 lg:col-span-5">
                   <SectionLabel hint="with 20- and 50-day EMAs">Price</SectionLabel>
                   <PriceChart candles={candles.data?.candles ?? null} />
                   <div className="mt-3">
@@ -153,10 +146,12 @@ export default async function Home() {
                 </section>
               </div>
 
-              <section>
-                <SectionLabel hint="explains the numbers above; never makes its own">Copilot</SectionLabel>
-                <CopilotCard status={copilotStatus.data} />
-              </section>
+              {livePatterns.data?.candle && (
+                <section>
+                  <SectionLabel hint="provisional until 15:30 — never a signal">Live — during the session</SectionLabel>
+                  <LivePatternsCard initial={livePatterns.data} />
+                </section>
+              )}
 
               <section>
                 <SectionLabel hint={patternsToday.data ? `from the close of ${patternsToday.data.as_of} (${patternsToday.data.last_close.toLocaleString("en-IN")})` : undefined}>
@@ -172,37 +167,37 @@ export default async function Home() {
                 )}
               </section>
 
+              <section>
+                <SectionLabel hint="explains the numbers above; never makes its own">Copilot</SectionLabel>
+                <CopilotCard status={copilotStatus.data} />
+              </section>
+
               <div className="grid gap-6 lg:grid-cols-2">
-                <section>
+                <section className="min-w-0">
                   <SectionLabel hint="recorded before the outcome existed — never edited">
                     Forward track record
                   </SectionLabel>
                   <ForwardLogCard log={forwardLog.data} />
                 </section>
-                <section>
+                <section className="min-w-0">
                   <SectionLabel hint="what options cost, from NSE closing prices">
                     Implied volatility
                   </SectionLabel>
                   <IVCard data={impliedVol.data} />
                 </section>
-                <section>
-                  <SectionLabel hint={briefing.data?.as_of?.slice(0, 10)}>Research briefing</SectionLabel>
-                  <BriefingCard briefing={briefing.data} />
-                </section>
-                <section>
-                  <SectionLabel hint="past markets that looked like this one, and what followed">
-                    Similar past days
-                  </SectionLabel>
-                  <SimilarityCard data={similarity.data} />
-                </section>
               </div>
+
+              <section>
+                <SectionLabel hint={briefing.data?.as_of?.slice(0, 10)}>Research briefing</SectionLabel>
+                <BriefingCard briefing={briefing.data} />
+              </section>
             </>
           }
           research={
             <>
               <section>
-                <SectionLabel hint="ranked by real option profit on data the choice never saw">
-                  Every pattern, and the option it points to
+                <SectionLabel hint="2024–26, data the choice never saw">
+                  What each pattern&apos;s option actually made
                 </SectionLabel>
                 {patternOptions.data ? (
                   <PatternTable
@@ -216,21 +211,40 @@ export default async function Home() {
 
               {replication.data && (
                 <section>
-                  <SectionLabel hint="same rules, more trades — BANKNIFTY, Sensex, Midcap">Replicated on other indices</SectionLabel>
+                  <SectionLabel hint="a date traded on several indices counts once">
+                    The same rules on four indices
+                  </SectionLabel>
                   <ReplicationCard data={replication.data} />
                 </section>
               )}
 
-              <div className="grid gap-6 lg:grid-cols-2">
-                <section>
-                  <SectionLabel hint="index-return verdicts, stored as history">Strategy Playbook</SectionLabel>
-                  <PlaybookCard entries={playbook.data?.strategies ?? null} />
-                </section>
-                <section>
-                  <SectionLabel>Strategy comparison</SectionLabel>
-                  <ResearchCompare result={compare.data} />
-                </section>
-              </div>
+              <section>
+                <SectionLabel hint="past markets that looked like this one, and what followed">
+                  Days like this one
+                </SectionLabel>
+                <SimilarityCard data={similarity.data} />
+              </section>
+
+              <details className="group rounded-xl border border-zinc-800/80 bg-zinc-900/40">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm text-zinc-300 hover:text-zinc-100">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                    Older work ▾
+                  </span>
+                  <span className="ml-2 text-[11px] text-zinc-600">
+                    index-return verdicts, superseded by the option record above
+                  </span>
+                </summary>
+                <div className="flex flex-col gap-6 border-t border-zinc-800/60 p-4">
+                  <section>
+                    <SectionLabel hint="index-return verdicts, stored as history">Strategy playbook</SectionLabel>
+                    <PlaybookCard entries={playbook.data?.strategies ?? null} />
+                  </section>
+                  <section>
+                    <SectionLabel hint="same costs, same hold, every strategy">Against buy-and-hold</SectionLabel>
+                    <ResearchCompare result={compare.data} />
+                  </section>
+                </div>
+              </details>
             </>
           }
           market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} />}

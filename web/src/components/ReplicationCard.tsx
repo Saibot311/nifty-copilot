@@ -21,13 +21,13 @@ export function ReplicationCard({ data }: { data: Replication }) {
         {data.hypotheses.length} pass on the pooled 2024–26 data.
       </p>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[640px] text-xs">
+        <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-[10px] uppercase tracking-[0.1em] text-zinc-500">
               <th className="py-1.5 pr-3 font-medium">Idea</th>
               <th className="py-1.5 pr-3 font-medium">Pooled 2024–26 vs no signal</th>
-              <th className="py-1.5 pr-3 font-medium">Dates</th>
-              <th className="py-1.5 pr-3 font-medium">t (bar)</th>
+              <th className="hidden py-1.5 pr-3 font-medium sm:table-cell">Dates</th>
+              <th className="hidden py-1.5 pr-3 font-medium lg:table-cell">t (bar)</th>
               {indices.map((u) => <th key={u} className="py-1.5 pr-3 font-medium">{INDEX_LABEL[u] ?? u}</th>)}
               <th className="py-1.5 font-medium">Verdict</th>
             </tr>
@@ -42,8 +42,8 @@ export function ReplicationCard({ data }: { data: Replication }) {
                     <div className="text-[10px] text-zinc-600">could be {pct(h.pooled.holdout_ci_95.low)} to {pct(h.pooled.holdout_ci_95.high)}</div>
                   )}
                 </td>
-                <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-400">{h.pooled.holdout_dates}</td>
-                <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-400">{h.pooled.holdout_t ?? "–"} ({h.pooled.required_t ?? "–"})</td>
+                <td className="hidden py-1.5 pr-3 font-mono tabular-nums text-zinc-400 sm:table-cell">{h.pooled.holdout_dates}</td>
+                <td className="hidden py-1.5 pr-3 font-mono tabular-nums text-zinc-400 lg:table-cell">{h.pooled.holdout_t ?? "–"} ({h.pooled.required_t ?? "–"})</td>
                 {indices.map((u) => {
                   const x = h.per_index[u];
                   const edge = x?.holdout_edge_pct ?? null;

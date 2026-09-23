@@ -98,7 +98,7 @@ export function WhoWinsCard({ studies, today }: { studies: MarketStudies; today:
       <h3 className="mt-4 text-sm font-medium text-zinc-100">Who holds what{pos.available && `, ${pos.date}`}</h3>
       {pos.available && pos.by_participant ? (
         <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[480px] text-left text-xs">
+          <table className="w-full text-left text-xs">
             <thead className="text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="py-1 font-medium">Participant</th>
@@ -185,7 +185,7 @@ export function ExpiryCard({ studies, today }: { studies: MarketStudies; today: 
 
       <h3 className="mt-4 text-sm font-medium text-zinc-100">Does NIFTY show manipulation footprints on expiry days?</h3>
       <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[560px] text-left text-xs">
+        <table className="w-full text-left text-xs">
           <thead className="text-[10px] uppercase tracking-wider text-zinc-500">
             <tr>
               <th className="py-1 font-medium">Expiry vs other days</th>
@@ -320,22 +320,22 @@ export function MarketTab({ data, structural, gift }: {
     <>
       <div className="grid gap-6 xl:grid-cols-2">
         {gift && (
-          <section>
+          <section className="min-w-0">
             <SectionLabel hint="NIFTY futures in GIFT City — context, not a signal">GIFT Nifty now</SectionLabel>
             <GiftNiftyCard g={gift} />
           </section>
         )}
-        <section>
+        <section className="min-w-0">
           <SectionLabel hint="attribution by association, not a cause">Why it moved</SectionLabel>
           <WhyItMovedCard today={data.today} />
         </section>
         {data.studies && (
           <>
-            <section className="xl:col-span-2">
+            <section className="min-w-0 xl:col-span-2">
               <SectionLabel hint="every option bought is one someone sold">Who is on the other side</SectionLabel>
               <WhoWinsCard studies={data.studies} today={data.today} />
             </section>
-            <section className="xl:col-span-2">
+            <section className="min-w-0 xl:col-span-2">
               <SectionLabel hint="statistics about the market, not evidence against anyone">
                 Expiry days and unusual activity
               </SectionLabel>

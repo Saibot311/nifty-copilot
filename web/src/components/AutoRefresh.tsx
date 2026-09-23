@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { fetchTick } from "@/lib/api";
+import { subscribeToTick } from "@/lib/api";
 
 /** Re-fetches the whole page on a timer.
  *
@@ -20,22 +20,18 @@ export function AutoRefresh() {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
 
-    const tick = async () => {
-      if (!alive) return;
-      let open = false;
-      try {
-        const r = await fetchTick();
-        open = !!r.data?.market?.is_open;
-      } catch {
-        open = false;
-      }
+    // Market state comes from the shared tick rather than a fetch of its own.
+    let open = false;
+    const stop = subscribeToTick((t) => { open = !!t.market?.is_open; });
+
+    const tick = () => {
       if (!alive) return;
       if (document.visibilityState === "visible") router.refresh();
       timer = setTimeout(tick, open ? 60_000 : 900_000);
     };
 
     timer = setTimeout(tick, 60_000);
-    return () => { alive = false; clearTimeout(timer); };
+    return () => { alive = false; clearTimeout(timer); stop(); };
   }, [router]);
 
   return null;

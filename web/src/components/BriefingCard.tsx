@@ -12,7 +12,7 @@ export function BriefingCard({ briefing }: { briefing: Briefing | null }) {
   const tone = bullish ? "text-emerald-400" : bearish ? "text-rose-400" : "text-amber-400";
 
   return (
-    <Panel emphasis="raised" className="overflow-hidden">
+    <Panel className="overflow-hidden">
       <div className="border-b border-zinc-800 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className={`text-xl font-semibold tracking-tight ${tone}`}>{ev.net_read}</p>

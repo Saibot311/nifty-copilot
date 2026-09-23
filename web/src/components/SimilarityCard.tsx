@@ -37,7 +37,7 @@ export function SimilarityCard({ data }: { data: Similarity | null }) {
       </div>
 
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[420px] text-left text-xs">
+        <table className="w-full text-left text-xs">
           <thead className="text-[10px] uppercase tracking-wider text-zinc-600">
             <tr>
               <th className="pb-1.5 font-medium">After</th>
@@ -76,7 +76,7 @@ export function SimilarityCard({ data }: { data: Similarity | null }) {
           The {data.analogs.length} similar days ▸
         </summary>
         <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[420px] text-left text-[11px]">
+          <table className="w-full text-left text-[11px]">
             <thead className="text-[10px] uppercase tracking-wider text-zinc-600">
               <tr>
                 <th className="pb-1 font-medium">Date</th>

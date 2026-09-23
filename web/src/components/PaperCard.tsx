@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { EquityPoint, LiveTick, PaperReport, PaperSide, PaperTrade } from "@/lib/api";
-import { fetchTick, journalRequest } from "@/lib/api";
+import { journalRequest, subscribeToTick } from "@/lib/api";
 import { Offline, Panel, Pill } from "./ui";
 
 /** A profit carries its sign; a balance does not. */
@@ -70,11 +70,11 @@ function Row({ t, mark }: { t: PaperTrade; mark?: number }) {
           signal {t.signal_date} · bought {t.entry_date} at ₹{t.entry_premium}
         </span>
       </td>
-      <td className="py-1.5 pr-3 font-mono text-[11px] tabular-nums text-zinc-400">
+      <td className="hidden py-1.5 pr-3 font-mono text-[11px] tabular-nums text-zinc-400 sm:table-cell">
         {t.strike} {t.option_type}
         <span className="block text-[10px] text-zinc-600">exp {t.expiry}</span>
       </td>
-      <td className="py-1.5 pr-3 font-mono text-[11px] tabular-nums text-zinc-400">
+      <td className="hidden py-1.5 pr-3 font-mono text-[11px] tabular-nums text-zinc-400 sm:table-cell">
         {live ? (mark ?? t.mark_premium) != null ? `₹${mark ?? t.mark_premium}` : "–" : `₹${t.exit_premium}`}
         <span className="block text-[10px] text-zinc-600">
           {live ? (mark != null ? "live" : `marked ${t.mark_date ?? "—"}`) : `sold ${t.exit_date}`}
@@ -121,7 +121,7 @@ function Funds({ account, onChange }: { account: PaperReport["account"]; onChang
         />
       </label>
       <button type="submit" disabled={busy}
-        className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-indigo-500/60 disabled:opacity-50">
+        className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-indigo-500/60 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60">
         {busy ? "Saving…" : "Set funds"}
       </button>
       <span className="text-[11px] text-zinc-600">
@@ -146,18 +146,7 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
 
   // While the market is open the open positions are worth what they trade at
   // now, not what they closed at last night.
-  useEffect(() => {
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const run = async () => {
-      const r = await fetchTick();
-      if (!alive) return;
-      if (r.data) setTick(r.data);
-      timer = setTimeout(run, r.data?.market?.is_open ? 3000 : 60000);
-    };
-    run();
-    return () => { alive = false; clearTimeout(timer); };
-  }, []);
+  useEffect(() => subscribeToTick(setTick), []);
 
   if (!data) return <Offline what="Paper observation" />;
   const { summary, trades, account } = data;
@@ -219,12 +208,12 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
 
       {trades.length > 0 ? (
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-xs">
+          <table className="w-full text-left text-xs">
             <thead className="text-[10px] uppercase tracking-wider text-zinc-600">
               <tr>
                 <th className="pb-2 font-medium">Setup</th>
-                <th className="pb-2 font-medium">Contract</th>
-                <th className="pb-2 font-medium">Now</th>
+                <th className="hidden pb-2 font-medium sm:table-cell">Contract</th>
+                <th className="hidden pb-2 font-medium sm:table-cell">Now</th>
                 <th className="pb-2 text-right font-medium">Per lot</th>
                 <th className="pb-2 text-right font-medium">State</th>
               </tr>

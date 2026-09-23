@@ -141,7 +141,12 @@ export function PatternTable({ today, research, caption }: {
                   >
                     <span className="min-w-0">
                       <span className="flex items-center gap-2">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.optionType === "CE" ? "bg-emerald-400" : "bg-rose-400"}`} />
+                        <span
+                          className={`shrink-0 font-mono text-[10px] font-semibold ${r.optionType === "CE" ? "text-emerald-400" : "text-rose-400"}`}
+                          title={r.optionType === "CE" ? "a bought call" : "a bought put"}
+                        >
+                          {r.optionType === "CE" ? "CALL" : "PUT"}
+                        </span>
                         <span className="truncate font-medium text-zinc-100">{r.label}</span>
                         {r.formed && <Pill tone="info">formed</Pill>}
                       </span>

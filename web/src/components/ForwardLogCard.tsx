@@ -47,14 +47,14 @@ export function ForwardLogCard({ log }: { log: ForwardLog | null }) {
 
       {entries.length > 0 && (
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[480px] text-left text-xs">
+          <table className="w-full text-left text-xs">
             <thead className="text-[10px] uppercase tracking-wider text-zinc-600">
               <tr>
                 <th className="pb-2 font-medium">Close of</th>
                 <th className="pb-2 font-medium">Verdict</th>
-                <th className="pb-2 font-medium">Regime</th>
-                <th className="pb-2 text-right font-medium">1d</th>
-                <th className="pb-2 text-right font-medium">5d</th>
+                <th className="hidden pb-2 font-medium sm:table-cell">Regime</th>
+                <th className="hidden pb-2 text-right font-medium sm:table-cell">1d</th>
+                <th className="hidden pb-2 text-right font-medium sm:table-cell">5d</th>
                 <th className="pb-2 text-right font-medium">10d</th>
               </tr>
             </thead>
@@ -72,9 +72,15 @@ export function ForwardLogCard({ log }: { log: ForwardLog | null }) {
                   <td className="py-1.5">
                     <Pill tone={ACTION[e.action].tone}>{ACTION[e.action].label}</Pill>
                   </td>
-                  <td className="py-1.5 text-zinc-500">{e.regime}</td>
+                  <td className="hidden py-1.5 text-zinc-500 sm:table-cell">{e.regime}</td>
                   {(["1d", "5d", "10d"] as const).map((h) => (
-                    <td key={h} className="py-1.5 text-right">
+                    <td
+                      key={h}
+                      // 10d is the horizon the verdicts are judged on; the
+                      // other two are detail, and a phone hides detail
+                      // rather than scrolling sideways (DESIGN.md §8).
+                      className={`py-1.5 text-right ${h === "10d" ? "" : "hidden sm:table-cell"}`}
+                    >
                       <Move entry={e} h={h} />
                     </td>
                   ))}

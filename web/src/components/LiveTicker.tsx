@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { LiveTick } from "@/lib/api";
-import { fetchTick } from "@/lib/api";
+import { subscribeToTick } from "@/lib/api";
 
 /** The header price, kept current while the market is open.
  *
@@ -14,20 +14,7 @@ import { fetchTick } from "@/lib/api";
 export function LiveTicker({ fallback }: { fallback: { price: number | null; change: number; changePct: number } }) {
   const [tick, setTick] = useState<LiveTick | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const run = async () => {
-      const r = await fetchTick();
-      if (!alive) return;
-      if (r.data) setTick(r.data);
-      const open = r.data?.market?.is_open;
-      timer = setTimeout(run, open ? 2000 : 60000);
-    };
-    run();
-    return () => { alive = false; clearTimeout(timer); };
-  }, []);
+  useEffect(() => subscribeToTick(setTick), []);
 
   const price = tick?.index ?? fallback.price;
   const change = tick?.change ?? fallback.change;

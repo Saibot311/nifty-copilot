@@ -77,7 +77,7 @@ export function CopilotCard({ status }: { status: CopilotStatus | null }) {
         <button
           onClick={() => run("explain")}
           disabled={busy !== null}
-          className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50"
+          className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
         >
           {busy === "explain" ? "Explaining…" : "Explain today in plain language"}
         </button>

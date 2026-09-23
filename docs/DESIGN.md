@@ -23,10 +23,13 @@ Read this before adding a card, a chart or a colour.
    every row.
 4. **Weight by importance, not by habit.** One card per idea, not one card per
    number. Border, fill, radius and shadow each say "separate thing" — spend them
-   on the one thing that matters on the screen.
+   on the one thing that matters on the screen. Exactly one thing per screen may
+   be loud: a raised panel, a coloured column, or a single chart. Everything else
+   is held by alignment.
 5. **A stale number is worse than a missing one.** Everything carries an "as of".
    Live things say they are live and when they last ticked; end-of-day things say
-   which close they are from.
+   which close they are from, and every clock says IST. A card showing sourced
+   literature rather than measurements says so instead of carrying a date.
 
 ---
 
@@ -144,7 +147,9 @@ The writing is part of the design, and the rules mirror the copilot's:
   book's own rows say "no proven edge" where that is true.
 - Buttons say what will happen (`Add to journal`, `Set funds`, `Close trade`).
 - An error says what went wrong and what to do: "Pair this device: open the
-  dashboard on the Mac and scan the code."
+  dashboard on the Mac and scan the code." When the way to fix something
+  changes, the error text changes with it — `Offline` told people to start a dev
+  server for a month after the app became a service.
 - British-style plain wording, sentence case everywhere except the small-caps
   section labels.
 
@@ -158,6 +163,10 @@ The writing is part of the design, and the rules mirror the copilot's:
 - Colour is never the only signal — a pill's word carries it too.
 - Charts carry `aria-label`; icons carry `title`.
 - Respect `prefers-reduced-motion`; the only animation is the "live" pulse.
+- Which tab is open belongs in the URL (`?tab=research`). A view you cannot
+  link to, or that a reload throws away, is a view you cannot send to yourself.
+- A tab bar claims the ARIA tabs pattern, so it owes the behaviour: arrow keys
+  move between tabs, Home and End jump, and only the selected tab is tabbable.
 
 ---
 
@@ -170,17 +179,26 @@ The dashboard is usable at 375px and is reached from a paired phone
   columns (`hidden sm:table-cell`, `hidden lg:table-cell`) rather than scrolling
   horizontally.
 - 16px side gutters minimum, and the page never scrolls sideways — only a table
-  or a chart may, inside its own `overflow-x-auto`.
-- The header stays sticky; the tab bar is thumb-reachable.
+  or a chart may, inside its own `overflow-x-auto`. **A grid or flex child is
+  `min-width: auto` by default**, so give every column `min-w-0` or one wide
+  chart stretches the whole page instead of scrolling inside its own box.
+- The header stays sticky; the tab bar sits at the bottom below `sm`, where the
+  thumb is, and in the flow above it.
 
 ---
 
-## 9. Adding a new card — the checklist
+## 9. The tabs, and adding a card
+
+**Today** is what would change your next action. **Research** is what the record
+says, newest evidence first. **Market** is how this market works. **Journal** is
+what you did and what the paper book did. A card that does not answer its tab's
+question belongs in another tab, however good the card is — "Days like this one"
+sat on Today for weeks while its own verdict was "no demonstrated predictive
+value", which is a research finding, not something to act on this session.
 
 1. What single question does it answer? If you cannot write it in one line, it is
    two cards.
-2. Which tab? **Today** = what now; **Research** = what the record says;
-   **Market** = how this market works; **Journal** = what you did and the paper book.
+2. Which tab? See above, and be strict about it.
 3. Use `SectionLabel` + `Panel`. Put the method note in the label's `hint`.
 4. Numbers from the API only, `font-mono tabular-nums`, `rs()`/`money()` for
    rupees, and the uncertainty beside the figure.
@@ -199,3 +217,12 @@ The dashboard is usable at 375px and is reached from a paired phone
 - **A rounded number** handed to the copilot that no computed source contained.
 - **An interval hidden in prose** when a bar would show it at a glance.
 - **"+₹1,00,000" for a balance** — the sign belongs to profit, not to money.
+- **A statistic computed in the browser.** The replication table subtracted two
+  returned numbers to show each index's edge, coloured it and sorted by it. If it
+  is a number someone could quote, Python computes it.
+- **A minus sign that is a hyphen.** `toFixed()` emits `-3.68`; the primitive
+  that formats percentages has to fix it once for every card.
+- **An error that names a command which no longer exists.**
+- **A wide chart with no `min-w-0` on its column**, which scrolls the whole page
+  sideways on a phone rather than itself.
+- **Three timers polling one endpoint.** One poller, many subscribers.
