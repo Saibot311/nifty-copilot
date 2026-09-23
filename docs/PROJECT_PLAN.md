@@ -7,6 +7,29 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**Phase 15 — deployment, on this Mac (2026-09-23).** "Only once stable", as the plan said, and stable
+means it runs without a session and without anyone starting it. `scripts/install_app_services.sh`
+builds the dashboard and installs two LaunchAgents: uvicorn (no reload, one worker — the caches and
+SQLite writers live in the process) and `next start`. Both `RunAtLoad` and `KeepAlive`, so they come
+up at login and come back from a crash — verified by killing the API and watching a new process answer
+`/health`. Logs go to `api/data/api_service.log` and `web_service.log`; `--status` reports both
+services, both endpoints, and whether the build is stale relative to `web/src`; `--remove` frees the
+ports for dev servers.
+
+**Not on a network, deliberately.** Both bind `127.0.0.1` explicitly. This holds a live broker
+session, a personal journal and a paper book: on `0.0.0.0` it would answer anything on the same Wi-Fi.
+Audit 15.1 fails if either service stops naming localhost, if the CORS list grows a wildcard, or if
+anything ends up listening beyond localhost; 15.2 searches the service logs for the actual secret
+values. Deployment found one real bug that only exists in production: opening the dashboard at
+`127.0.0.1:3000` sent that as the browser's origin, which the API's CORS list did not admit, so every
+client-side fetch — the live tick, the journal, the paper book — failed while the server-rendered page
+looked fine. Both spellings of this Mac are now allowed, and nothing else.
+
+*What deployment does not mean here.* Not a cloud host: that needs paid hosting (flagged, never signed
+up for), a way to keep Kite credentials on a server, authentication in front of a dashboard that is
+one person's, and somewhere to put 700 MB of option archives. None of that is worth doing for a system
+whose honest state is 0 of 48 hypotheses proven. The next real step is still calendar time.
+
 **A paper book with allocated funds, a daily policy, and a live dashboard (2026-09-23).** Asked for
 three things: take a trade even when nothing qualifies, size it against money the user allocates, and
 stop showing stale prices.
@@ -655,7 +678,7 @@ class MarketDataProvider(Protocol):
 | 12 | LLM copilot | Explains results only; never generates numbers. |
 | 13 | Journal | TAKE/SKIP/WAIT tracking, mistake analysis. |
 | 14 | Paper observation | ✅ Done (2026-09-23). `briefing/paper.py`: hypothetical positions at real NSE premiums, opened forward only, marked and closed nightly, with a weekly no-signal control. Zero execution. |
-| 15 | Deployment | Only once stable. |
+| 15 | Deployment | ✅ Done (2026-09-23). Two LaunchAgents on this Mac: built dashboard + API, start at login, restart on crash, bound to 127.0.0.1 only, with audit checks that they stay that way. Not a cloud host — see the entry above. |
 | 16 (candidate, not yet approved) | News context layer | User idea (2026-09-14): explain how the market is reacting to financial news. Scope: a **qualitative context add-on to the WHY panel** — LLM summarizes recent relevant headlines (free RSS: Economic Times, Moneycontrol, NSE/BSE corporate announcements) alongside the already-computed scenario. Explicitly NOT a backtested numeric input to the regime/setup engine unless/until historical news-sentiment data is sourced and validated separately (reliable historical sentiment datasets are paid — e.g. RavenPack — and out of scope for now). Natural home: after Phase 10 (needs live data) / alongside Phase 12 (LLM copilot). |
 
 ---

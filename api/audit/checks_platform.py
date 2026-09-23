@@ -264,3 +264,70 @@ def served_bars_clean():
     return Result(FAIL if over else PASS,
                   f"{len(served)} sessions served to intraday research; {len(over)} still carry a bad tick",
                   {"sessions": over})
+
+
+# --- Phase 15: deployment ------------------------------------------------------
+
+LAUNCH_AGENTS = Path.home() / "Library" / "LaunchAgents"
+SERVICES = ("com.niftycopilot.api", "com.niftycopilot.web")
+
+
+@check("15", "15.1", "The deployed app listens to this Mac and nothing else")
+def services_are_local_only():
+    """It holds a live broker session, a personal journal and a paper book.
+    Bound to 0.0.0.0 it would answer anything on the network — a coffee-shop
+    Wi-Fi included. Both services must name 127.0.0.1 explicitly, and the API
+    must admit only the local dashboard."""
+    plists = {s: LAUNCH_AGENTS / f"{s}.plist" for s in SERVICES}
+    installed = {s: p for s, p in plists.items() if p.exists()}
+    if not installed:
+        return Result(SKIP, "services not installed — ./scripts/install_app_services.sh")
+
+    problems, detail = [], {}
+    for name, path in installed.items():
+        text = path.read_text()
+        local = "127.0.0.1" in text
+        wide = "0.0.0.0" in text
+        detail[name] = {"binds_localhost": local, "binds_all_interfaces": wide}
+        if not local or wide:
+            problems.append(name)
+
+    cors = (ROOT / "api" / "main.py").read_text()
+    origins = re.search(r"allow_origins=\[(.*?)\]", cors, re.S)
+    origin_text = origins.group(1) if origins else ""
+    detail["cors_origins"] = origin_text.strip()
+    if "*" in origin_text or "0.0.0.0" in origin_text:
+        problems.append("CORS")
+
+    listening = subprocess.run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
+    for port in ("3000", "8000"):
+        for line in listening.splitlines():
+            if f":{port} (LISTEN)" in line and "127.0.0.1" not in line:
+                problems.append(f"port {port} listening beyond localhost")
+                detail[f"port_{port}"] = line.split()[-2:]
+
+    return Result(FAIL if problems else PASS,
+                  f"{len(installed)} service(s) installed; "
+                  + ("local only" if not problems else f"exposed: {', '.join(problems)}"),
+                  detail)
+
+
+@check("15", "15.2", "The service logs never carry a secret")
+def service_logs_have_no_secrets():
+    """uvicorn and Next write to files that get read, pasted and shared. A
+    key reaching them is a key leaked, whatever .gitignore says."""
+    values = {k: _env(k) for k in SECRET_KEYS}
+    values = {k: v for k, v in values.items() if v and len(v) >= 12}
+    logs = [ROOT / "api" / "data" / name for name in
+            ("api_service.log", "web_service.log", "daily_job.log", "login_check.log")]
+    present = [p for p in logs if p.exists()]
+    if not values:
+        return Result(SKIP, "no secrets configured to search for")
+    found = []
+    for path in present:
+        text = path.read_text(errors="ignore")
+        found += [f"{k} in {path.name}" for k, v in values.items() if v in text]
+    return Result(FAIL if found else PASS,
+                  f"{len(present)} log file(s) searched for {len(values)} secret value(s); "
+                  + ("none found" if not found else "LEAKED"),
+                  {"leaked": found, "files": [p.name for p in present]})

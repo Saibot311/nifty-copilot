@@ -56,7 +56,11 @@ PROVIDERS = {
 # Phase 3: only the Next.js dev server needs access, and only during local development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    # Both spellings of this Mac: a browser opened at 127.0.0.1 sends that as
+    # its origin, and every client-side fetch (the live tick, the journal,
+    # the paper book) fails CORS if only "localhost" is listed. Nothing else
+    # is admitted — this is not going on a network.
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )

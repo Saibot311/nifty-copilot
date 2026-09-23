@@ -1,6 +1,6 @@
 # Handoff — read this first
 
-Written 2026-09-21, updated 2026-09-22. Start here, then `ARCHITECTURE.md` (how it's built, the five
+Written 2026-09-21, updated 2026-09-23. Start here, then `ARCHITECTURE.md` (how it's built, the five
 invariants) and `PROJECT_PLAN.md` (what was decided and when, newest first).
 
 ## What this is
@@ -11,16 +11,17 @@ manufacture a signal — most days it says NO TRADE, and that is the product wor
 
 ## Where it stands
 
-**Phases 1–14 done.** Phase 13, the trade journal, and Phase 14, paper observation, are both in the
-dashboard's **Journal** tab — log every session's decision there, including "stayed out". Phase 15
-(deployment) is next, and only once there is something worth deploying.
+**Phases 1–15 done.** Phase 13, the trade journal, and Phase 14, paper observation, are both in the
+dashboard's **Journal** tab — log every session's decision there, including "stayed out". Phase 15,
+deployment, runs the app on this Mac as two LaunchAgents (see Running it). The phases are finished;
+what the system needs now is calendar time, not more code.
 
 **The dashboard is live while the market is open** — the header and the paper book poll
 `/api/live/tick` every 2s (Kite when logged in, NSE's feed otherwise). Everything else on the page is
 still end-of-day by design: option premiums come from NSE's nightly file.
 
 **The paper book has allocated funds and a daily policy.** Set the amount on the Journal tab; positions
-size in whole lots against it, at most 20% each. Three policies are measured apart: patterns that
+size in whole lots against the book's current value, at most 40% each. Three policies are measured apart: patterns that
 formed; `best_read` when nothing formed — one 2% in-the-money option, one direction, from the
 best-evidenced signal firing that day (all of them rejected; a negative t is never followed), falling
 back to the 20-session trend; and a weekly no-signal control, one lot each way, as the yardstick.
@@ -76,7 +77,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 341 tests — run before and after changes
+./scripts/check_all.sh          # 35 checks, 341 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -92,10 +93,19 @@ changing any question, criterion or threshold:
 cd api && .venv/bin/python scripts/check_guards.py   # forecast | claims | routes | grades
 ```
 
-Dev servers are started through the harness preview tool, never `npm`/`uvicorn` in a
-shell: `nifty-copilot-api` (:8000) and `nifty-copilot-web` (:3000). They stop when the
-session idles; just start them again. First page load after a restart takes ~15-60s
-because every cache is cold.
+**The app is deployed on this Mac** (Phase 15): two LaunchAgents run the built dashboard and the API,
+start at login and restart on crash, bound to `127.0.0.1` only.
+
+```bash
+./scripts/install_app_services.sh            # build + install (re-run after ANY code change)
+./scripts/install_app_services.sh --status   # services, endpoints, whether the build is stale
+./scripts/install_app_services.sh --remove   # frees :3000 and :8000 for dev servers
+```
+
+The services serve a *build*, so edited code is not live until the installer runs again — `--status`
+says when the build is stale. They also hold the ports: **run `--remove` before starting dev servers**
+through the harness preview tool (`nifty-copilot-api`, `nifty-copilot-web`), and reinstall afterwards.
+First page load after a restart takes ~15-60s because every cache is cold.
 
 **Daily:** a LaunchAgent runs `api/scripts/daily_job.py` at 19:30 on weekdays (forward
 log backup, forward log, bar top-ups, option top-ups plus any gap since 2018, option
@@ -256,6 +266,10 @@ of identical cards before 2026-09-23 — don't let it drift back.
   `market_data.nse_indices.top_up` now, and a test asserts every loader shares it.
 - **A server-rendered page is frozen at page-load time.** `AutoRefresh` re-fetches it; `LiveTicker`
   keeps the header ticking. Without those, "live" means "live when you opened the tab".
+- **A production origin is not the dev origin.** Opening the deployed dashboard at `127.0.0.1:3000`
+  sent that origin, the API's CORS list had only `localhost:3000`, and every client-side fetch failed
+  while the server-rendered page looked perfect. Both spellings are allowed now; audit 15.1 guards the
+  list against a wildcard.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps
