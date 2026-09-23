@@ -39,7 +39,9 @@ export function ForwardLogCard({ log }: { log: ForwardLog | null }) {
           label="Avg 10d return"
           value={summary.avg_return_10d_pct != null ? fmtPct(summary.avg_return_10d_pct) : "–"}
           tone={summary.avg_return_10d_pct == null ? "muted" : summary.avg_return_10d_pct >= 0 ? "good" : "bad"}
-          sub={summary.hit_rate_10d != null ? `hit rate ${(summary.hit_rate_10d * 100).toFixed(0)}%` : "no completed trades yet"}
+          sub={summary.completed_trades_10d
+            ? `over ${summary.completed_trades_10d} completed · hit rate ${(summary.hit_rate_10d ?? 0) * 100}%`
+            : "no completed trades yet — this needs months, not days"}
         />
       </div>
 

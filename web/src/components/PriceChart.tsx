@@ -77,7 +77,12 @@ export function PriceChart({ candles }: { candles: Candle[] | null }) {
       </div>
 
       <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full min-w-[560px]">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="block h-auto w-full min-w-[560px]"
+          role="img"
+          aria-label={`Daily candles for the last ${bars.length} sessions, ${first.timestamp.slice(0, 10)} to ${last.timestamp.slice(0, 10)}, with 20- and 50-day moving averages. Closed at ${last.close.toLocaleString("en-IN")}, ${up ? "above" : "below"} where the window began.`}
+        >
           {ticks.map((t, i) => (
             <g key={i}>
               <line

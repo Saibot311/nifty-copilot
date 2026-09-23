@@ -82,22 +82,30 @@ export function Pill({
   );
 }
 
-export function Offline({ what }: { what: string }) {
+/** What a card shows instead of a number it does not have. Never a zero, never
+ *  a dash pretending to be a value. The command is the one that is true now:
+ *  since Phase 15 the API runs as a service, so "start the dev server" was an
+ *  instruction that would not have helped. */
+export function Offline({ what, why }: { what: string; why?: string }) {
   return (
     <Panel className="p-4">
-      <div className="text-sm text-zinc-500">
-        {what} unavailable — backend not reachable.
+      <div className="text-sm text-zinc-400">{what} is not available.</div>
+      <div className="mt-1 text-xs text-zinc-500">
+        {why ?? "The API did not answer. Check the service, then reload."}
       </div>
       <code className="mt-2 block rounded bg-black/40 px-2 py-1 text-[11px] text-zinc-500">
-        cd api && .venv/bin/uvicorn main:app --reload --port 8000
+        ./scripts/install_app_services.sh --status
       </code>
     </Panel>
   );
 }
 
+/** A signed percentage. toFixed() emits a hyphen; DESIGN.md §4 wants a real
+ *  minus (U+2212), and this is the one place every card gets it from. */
 export function fmtPct(v: number | null | undefined, digits = 2) {
   if (v == null) return "–";
-  return `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  return `${sign}${Math.abs(v).toFixed(digits)}%`;
 }
 
 export function fmtNum(v: number | null | undefined) {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { type LivePatterns, get } from "@/lib/api";
 import { OptionPill, TrackRecord, VERDICT_TONE } from "./PatternCards";
-import { Panel, Pill } from "./ui";
+import { Panel, Pill, fmtPct } from "./ui";
 
 const REFRESH_MS = 60_000;
 
@@ -36,12 +36,13 @@ export function LivePatternsCard({ initial }: { initial: LivePatterns | null }) 
           If today closed at{" "}
           <span className="font-mono tabular-nums text-zinc-100">{data.candle.close.toLocaleString("en-IN")}</span>{" "}
           <span className={`font-mono tabular-nums ${up ? "text-emerald-400" : "text-rose-400"}`}>
-            ({up ? "+" : ""}
-            {data.change_pct}%)
+            ({fmtPct(data.change_pct)})
           </span>
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-zinc-500">{data.basis}</span>
+          <span className="text-[11px] text-zinc-500">
+            {data.as_of?.slice(0, 10)} · {data.basis} IST
+          </span>
           {data.provisional && <Pill tone="warn">provisional</Pill>}
         </div>
       </div>

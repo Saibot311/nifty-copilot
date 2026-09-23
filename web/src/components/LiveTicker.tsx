@@ -53,7 +53,9 @@ export function LiveTicker({ fallback }: { fallback: { price: number | null; cha
       >
         <span className={`h-1.5 w-1.5 rounded-full ${open ? "animate-pulse bg-emerald-400" : "bg-zinc-600"}`} />
         {open ? "Live" : "Closed"}
-        {open && clock && <span className="font-mono normal-case tracking-normal text-zinc-600">{clock}</span>}
+        {open && clock && (
+          <span className="font-mono normal-case tracking-normal text-zinc-600">{clock} IST</span>
+        )}
       </span>
     </>
   );

@@ -27,6 +27,7 @@ function Answer({ a }: { a: CopilotAnswer }) {
         {a.review?.checked
           ? `Jev checked ${a.review.claims_checked ?? 0} sentence${a.review.claims_checked === 1 ? "" : "s"} against it, and found no forecast`
           : "Jev checks skipped"}
+        {a.as_of_close ? ` · from the ${a.as_of_close} close` : ""}
         {a.cached ? " · saved explanation" : ""}
         {a.grades?.honesty !== undefined && a.grades?.clarity !== undefined ? (
           <>

@@ -256,6 +256,9 @@ export function StructuralCard({ data }: { data: StructuralResearch }) {
         same option with no signal by more than luck, on {data.period.split.slice(0, 4)}–{data.period.end.slice(0, 4)} prices
         none of them was chosen on.
       </p>
+      <p className="mt-1 text-[11px] text-zinc-600">
+        Judged on {data.period.split}–{data.period.end}; rules fixed {data.registered.split(",")[0]}.
+      </p>
       <div className="mt-3 flex flex-col gap-1.5">
         {data.hypotheses.map((h) => (
           <details key={h.name} className="rounded-lg bg-zinc-950/60 px-3 py-2">
@@ -264,6 +267,11 @@ export function StructuralCard({ data }: { data: StructuralResearch }) {
               <span className="text-[11px] text-zinc-500">{h.family}</span>
               <span className="font-mono text-xs tabular-nums text-zinc-300">
                 {rupees(h.holdout.avg_profit_per_lot_rs)}/lot vs {rupees(h.holdout.baseline_avg_profit_per_lot_rs)}
+                {h.holdout.ci_95 && (
+                  <span className="block text-[10px] text-zinc-600">
+                    could be {rupees(Math.round(h.holdout.ci_95.low))} to {rupees(Math.round(h.holdout.ci_95.high))}
+                  </span>
+                )}
               </span>
               <Pill tone={h.status === "APPROVED" ? "good" : h.status === "CONDITIONAL" ? "warn" : "bad"}>{h.status}</Pill>
             </summary>

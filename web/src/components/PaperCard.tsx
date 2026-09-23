@@ -166,6 +166,13 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
 
   return (
     <Panel className="p-4">
+      <p className="mb-3 text-[11px] text-zinc-500">
+        {summary.observing_since
+          ? `Observing since ${summary.observing_since}. `
+          : `Nothing opened yet; observation starts from ${summary.started}. `}
+        {summary.patterns.closed + summary.best_read.closed + summary.control.closed} closed of the ~
+        {summary.sessions_needed_before_this_means_anything} it takes before any of these totals mean anything.
+      </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>
           <div className="text-[11px] uppercase tracking-[0.1em] text-zinc-500">Paper book</div>

@@ -133,7 +133,9 @@ export function JournalTab({ paper }: { paper?: PaperReport | null }) {
 
       {s && (
         <section>
-          <SectionLabel hint="after the same costs as every backtest">How it&apos;s going</SectionLabel>
+          <SectionLabel hint={`after the same costs as every backtest · latest entry ${report?.entries[0]?.trade_date ?? "none yet"}`}>
+          How it&apos;s going
+        </SectionLabel>
           <Panel className="p-4">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Tile label="Entries" value={`${s.entries}`} sub={`${s.by_decision.TOOK} took · ${s.by_decision.SKIPPED} stayed out · ${s.by_decision.WAITED} waited`} />
