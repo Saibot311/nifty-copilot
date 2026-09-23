@@ -15,6 +15,7 @@ import { PriceChart } from "@/components/PriceChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { SessionStatus } from "@/components/SessionStatus";
+import { LiveTicker } from "@/components/LiveTicker";
 import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
@@ -96,7 +97,6 @@ export default async function Home() {
   const price = live?.last ?? snap?.price ?? null;
   const change = live?.change ?? snap?.change ?? 0;
   const changePct = live?.change_pct ?? snap?.change_pct ?? 0;
-  const isUp = change >= 0;
 
   return (
     <div className="min-h-full bg-zinc-950">
@@ -106,38 +106,7 @@ export default async function Home() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
               NIFTY 50
             </span>
-            {price != null ? (
-              <>
-                <span className="font-mono text-2xl font-semibold tracking-tight text-zinc-50 tabular-nums">
-                  {price.toLocaleString("en-IN")}
-                </span>
-                <span
-                  className={`font-mono text-sm font-medium tabular-nums ${
-                    isUp ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {isUp ? "+" : ""}
-                  {change.toFixed(2)} ({isUp ? "+" : ""}
-                  {changePct.toFixed(2)}%)
-                </span>
-                {live && (
-                  <span
-                    className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                      live.market.is_open ? "text-emerald-400" : "text-zinc-500"
-                    }`}
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        live.market.is_open ? "animate-pulse bg-emerald-400" : "bg-zinc-600"
-                      }`}
-                    />
-                    {live.market.is_open ? "Live" : "Closed"}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="text-sm text-zinc-500">backend offline</span>
-            )}
+            <LiveTicker fallback={{ price, change, changePct }} />
           </div>
           <div className="flex items-center gap-3">
             {live?.india_vix != null && (

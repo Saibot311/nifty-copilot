@@ -171,6 +171,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `market_data/base.py` | `MarketDataProvider` protocol | Anything provider-specific |
 | `market_data/{csv,yfinance,zerodha}_provider.py` | One provider each | Indicator math |
 | `market_data/nse_bhavcopy.py` | Official NSE F&O archive download/parse | Analysis |
+| `market_data/kite_quotes.py` | Live index and option-contract prices from a Kite session; instrument list cached daily, quotes cached a second | Polling faster than the rate limit, or marking a position off a stale quote |
 | `market_data/live_quote.py` | Live index quote + market status (15s cache) | Historical fetching |
 | `storage/login_log_db.py` · `scripts/kite_login.py` | The daily Zerodha session: prompt in the morning, record which days had one | A stored password or TOTP seed — a test refuses it |
 | `market_data/kite_session.py` | Kite login, daily token (dies ~6 AM IST), secret from `api/.env` | Data fetching |

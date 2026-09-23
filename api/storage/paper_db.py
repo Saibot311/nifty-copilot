@@ -49,9 +49,29 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     mark_date     TEXT,               -- last mark-to-market
     mark_premium  REAL,
     status        TEXT NOT NULL,      -- OPEN | CLOSED
+    lots          INTEGER NOT NULL DEFAULT 1,
+    entry_cost_rs REAL NOT NULL DEFAULT 0,
+    exit_cost_rs  REAL,
     UNIQUE (strategy, signal_date, source)
 );
+
+-- Money the user has allocated to the paper book, and nothing else. A
+-- deposit is a row; the balance is their sum. Positions are sized against
+-- it, so a paper book cannot spend money that was never allocated.
+CREATE TABLE IF NOT EXISTS paper_funds (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT NOT NULL,
+    amount  REAL NOT NULL,
+    note    TEXT
+);
 """
+
+# Columns added after the table first shipped.
+_MIGRATIONS = (
+    ("lots", "INTEGER NOT NULL DEFAULT 1"),
+    ("entry_cost_rs", "REAL NOT NULL DEFAULT 0"),
+    ("exit_cost_rs", "REAL"),
+)
 
 
 @contextmanager
@@ -62,6 +82,10 @@ def connect(db_path: Path | None = None):
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(SCHEMA)
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(paper_trades)")}
+        for name, decl in _MIGRATIONS:
+            if name not in have:
+                conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {name} {decl}")
         yield conn
         conn.commit()
     finally:
@@ -72,7 +96,8 @@ def open_position(row: dict, db_path: Path | None = None) -> bool:
     """Writes one open position. False if that setup already has one for
     that signal date — a pattern forming again mid-hold does not stack."""
     cols = ("source", "strategy", "label", "signal_date", "underlying", "option_type", "strike", "expiry",
-            "entry_date", "entry_premium", "hold_days", "planned_exit")
+            "entry_date", "entry_premium", "hold_days", "planned_exit", "lots", "entry_cost_rs")
+    row = {"lots": 1, "entry_cost_rs": 0.0, **row}
     with connect(db_path) as conn:
         cur = conn.execute(
             f"INSERT OR IGNORE INTO paper_trades (opened_at, status, {', '.join(cols)}) "
@@ -95,11 +120,33 @@ def mark(trade_id: int, mark_date: str, premium: float, db_path: Path | None = N
                      (mark_date, premium, trade_id))
 
 
-def close_position(trade_id: int, exit_date: str, premium: float, db_path: Path | None = None) -> None:
+def close_position(trade_id: int, exit_date: str, premium: float, exit_cost_rs: float = 0.0,
+                   db_path: Path | None = None) -> None:
     with connect(db_path) as conn:
         conn.execute("""UPDATE paper_trades SET status = 'CLOSED', exit_date = ?, exit_premium = ?,
-                        mark_date = ?, mark_premium = ? WHERE id = ?""",
-                     (exit_date, premium, exit_date, premium, trade_id))
+                        mark_date = ?, mark_premium = ?, exit_cost_rs = ? WHERE id = ?""",
+                     (exit_date, premium, exit_date, premium, exit_cost_rs, trade_id))
+
+
+# --- the allocated funds -------------------------------------------------------
+
+def add_funds(amount: float, note: str | None = None, db_path: Path | None = None) -> float:
+    """A deposit (or a withdrawal, negative). Returns the new balance."""
+    from datetime import datetime as _dt
+    with connect(db_path) as conn:
+        conn.execute("INSERT INTO paper_funds (ts, amount, note) VALUES (?,?,?)",
+                     (_dt.now(timezone.utc).isoformat(), float(amount), note))
+    return allocated(db_path)
+
+
+def allocated(db_path: Path | None = None) -> float:
+    with connect(db_path) as conn:
+        return float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM paper_funds").fetchone()[0])
+
+
+def fund_flows(db_path: Path | None = None) -> list[dict]:
+    with connect(db_path) as conn:
+        return [dict(r) for r in conn.execute("SELECT * FROM paper_funds ORDER BY id DESC LIMIT 50")]
 
 
 def open_trades(db_path: Path | None = None) -> list[dict]:

@@ -7,6 +7,31 @@ system is structured (layers, invariants, the strategy lifecycle, how to extend 
 Current status: **Phases 1-12 done and audited (see AUDIT.md)** (Phase 12's copilot needs an API key to run), plus the options
 integration and the pattern → option reframe built out of phase order on request.
 
+**A paper book with allocated funds, a daily policy, and a live dashboard (2026-09-23).** Asked for
+three things: take a trade even when nothing qualifies, size it against money the user allocates, and
+stop showing stale prices.
+
+*Funds.* `paper_funds` rows hold what the user allocates (`POST /api/paper/funds`, or the field on the
+card). Positions are sized in whole lots of 65 against the cash on hand, capped at 20% of the
+allocation per position; a premium that does not fit is skipped rather than shrunk. Cash, realised
+profit and open-position value give the book's equity. Nothing is ever sized against money that was
+never allocated.
+
+*The daily policy.* Three rows, measured separately: `pattern` (a setup formed → its tested option),
+`best_read` (nothing formed → the 20-session trend's direction, at the money) and `control` (a call
+and a put a week, no signal). The middle one is what the user asked for and the system has no proven
+edge behind it — the label says so, and the recommendation on the Today tab is untouched. The point
+is to measure what "take something every day" actually costs, which the research cannot answer.
+Costs follow the backtests exactly — the whole round trip on the entry premium — so a paper result can
+sit beside a researched one without an asterisk.
+
+*Live.* The dashboard was server-rendered once and never moved: during a session it showed the price
+from page load. `/api/live/tick` now returns the index and every open paper position's live premium in
+one Kite call (`market_data/kite_quotes.py`, instrument list cached daily, one-second cache to respect
+the rate limit), falling back to NSE's public feed and then to the last close, always labelled. The
+header polls it every 2s while the market is open and every 60s when shut; the paper book revalues
+itself the same way. Every number, including the change and the percent, is still computed in Python.
+
 **Phase 14 — paper observation (2026-09-23).** Live markets, zero execution, as specified. Every
 evening (`briefing/paper.py`, after the options archive tops up) it opens a hypothetical position for
 each pattern that formed on the previous close — the pattern's own tested setup, bought at the entry

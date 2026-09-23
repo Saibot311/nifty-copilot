@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -410,6 +410,66 @@ class JournalClose(BaseModel):
     exit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
+def _previous_close() -> float | None:
+    """The last *final* daily close, which today's live price is measured
+    against. During a session that is yesterday; after it, today."""
+    from backtest.strategies import load_daily_data
+    from market_data.live_quote import market_status as _status
+    df, _ = load_daily_data("^NSEI", 260)
+    try:
+        open_now = bool(_status().get("is_open"))
+    except Exception:
+        open_now = False
+    closes = df["close"].tolist()
+    today = str(df.index[-1].date()) == datetime.now(kite_session.IST).date().isoformat()
+    if open_now and today and len(closes) > 1:
+        return float(closes[-2])
+    return float(closes[-1])
+
+
+@app.get("/api/live/tick")
+def live_tick() -> dict:
+    """The small, fast payload the dashboard polls while the market is open:
+    the index now, and every open paper position marked at its live premium.
+    Kite when logged in (one call, cached a second), NSE's public feed
+    otherwise, and last close when neither answers — always labelled."""
+    from briefing.paper import live_marks
+
+    out: dict = {"as_of": datetime.now(kite_session.IST).isoformat()}
+    try:
+        status = cached("market_status", ttl_seconds=60, producer=market_status)
+    except Exception:
+        status = {"is_open": None}
+    out["market"] = status
+
+    try:
+        marks = cached("live_marks", ttl_seconds=2, producer=live_marks)
+    except Exception as e:
+        marks = {"error": str(e)[:120], "index": None, "marks": {}, "source": None}
+    out.update({k: marks.get(k) for k in ("index", "marks", "source", "paper")})
+
+    # The change is computed here, not in the browser: every number on the
+    # page comes from Python (I2).
+    if out.get("index") is not None and out.get("change") is None:
+        try:
+            prev = cached("prev_close", ttl_seconds=600, producer=_previous_close)
+            if prev:
+                out["previous_close"] = prev
+                out["change"] = round(out["index"] - prev, 2)
+                out["change_pct"] = round((out["index"] / prev - 1) * 100, 2)
+        except Exception:
+            pass
+
+    if out.get("index") is None:
+        try:
+            q = live_index_quote()
+            out.update(index=q["last"], change=q.get("change"), change_pct=q.get("change_pct"),
+                       source=q.get("source"))
+        except Exception:
+            out.setdefault("source", "unavailable")
+    return out
+
+
 @app.get("/api/paper")
 def paper() -> dict:
     """Phase 14: hypothetical positions at real premiums, opened forward and
@@ -422,6 +482,23 @@ def paper() -> dict:
 def journal() -> dict:
     """Phase 13: what you did, next to what the system said that session."""
     return journal_report()
+
+
+class PaperFunds(BaseModel):
+    amount: float = Field(gt=-10_000_000, lt=10_000_000)
+    note: str | None = Field(default=None, max_length=200)
+
+
+@app.post("/api/paper/funds")
+def paper_funds(body: PaperFunds) -> dict:
+    """Allocate (or withdraw) money the paper book may use. Paper only — no
+    account is touched and nothing is ordered."""
+    from storage import paper_db
+
+    if body.amount == 0:
+        raise HTTPException(422, "Amount must not be zero.")
+    balance = paper_db.add_funds(body.amount, body.note)
+    return {"allocated_rs": balance}
 
 
 @app.post("/api/journal")

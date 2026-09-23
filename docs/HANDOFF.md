@@ -15,6 +15,15 @@ manufacture a signal — most days it says NO TRADE, and that is the product wor
 dashboard's **Journal** tab — log every session's decision there, including "stayed out". Phase 15
 (deployment) is next, and only once there is something worth deploying.
 
+**The dashboard is live while the market is open** — the header and the paper book poll
+`/api/live/tick` every 2s (Kite when logged in, NSE's feed otherwise). Everything else on the page is
+still end-of-day by design: option premiums come from NSE's nightly file.
+
+**The paper book has allocated funds and a daily policy.** Set the amount on the Journal tab; positions
+size in whole lots against it, at most 20% each. Three policies are measured apart: patterns that
+formed, the 20-session trend when nothing formed (`best_read` — no proven edge, and it says so), and a
+weekly no-signal control.
+
 **Paper observation runs itself** (`briefing/paper.py`, nightly): each pattern that forms opens a
 hypothetical position at the real closing premium, marked and closed on its tested schedule, against a
 weekly no-signal control. Zero execution. It may never open a position for a session before
@@ -61,7 +70,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 321 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 331 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```

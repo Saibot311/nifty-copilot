@@ -44,8 +44,10 @@ def test_costs_are_charged_on_paper_exactly_as_in_the_backtests():
     assert paper.COST_FRACTION == OptionsCostModel().round_trip_cost_fraction()
     pnl = paper._pnl({**_row(), "status": "CLOSED", "exit_premium": 130.0, "mark_premium": 130.0})
     assert pnl["gross_pct"] == 30.0
+    # The backtests charge the whole round trip on the entry premium; a paper
+    # result has to be comparable with a researched one, so this matches.
     assert pnl["net_pct"] == pytest.approx(30.0 - paper.COST_FRACTION * 100, abs=0.01)
-    assert pnl["profit_per_lot_rs"] == round(100.0 * pnl["net_pct"] / 100 * 65)
+    assert pnl["profit_rs"] == round(100.0 * 65 * pnl["net_pct"] / 100)
     assert pnl["realised"] is True
 
 
@@ -103,3 +105,69 @@ def test_observe_is_safe_to_run_twice(monkeypatch):
     first = paper.observe(now=datetime.now(paper.IST))
     second = paper.observe(now=datetime.now(paper.IST))
     assert first["opened"] == second["opened"] == []
+
+
+# --- allocated funds, sizing, and the "take something every day" policy -------
+
+def test_nothing_is_sized_against_money_that_was_never_allocated():
+    assert paper._lots_for(premium=150.0, cash=0, allocated_rs=0) == 0
+
+
+def test_a_position_never_takes_more_than_the_per_trade_share():
+    lots = paper._lots_for(premium=150.0, cash=1_000_000, allocated_rs=100_000)
+    per_lot = 150.0 * 65 * (1 + paper.COST_FRACTION)
+    assert lots == int(100_000 * paper.MAX_PER_TRADE // per_lot)
+    assert lots * per_lot <= 100_000 * paper.MAX_PER_TRADE
+
+
+def test_whole_lots_only_and_a_premium_that_does_not_fit_is_skipped():
+    assert paper._lots_for(premium=3000.0, cash=100_000, allocated_rs=100_000) == 0  # a lot costs ~Rs 195k
+
+
+def test_funds_can_be_added_and_taken_back():
+    paper_db.add_funds(100_000, "initial")
+    assert paper_db.allocated() == 100_000
+    paper_db.add_funds(-40_000, "took some back")
+    assert paper_db.allocated() == 60_000
+    assert paper.cash_and_equity()["max_per_trade_rs"] == round(60_000 * paper.MAX_PER_TRADE)
+
+
+def test_the_book_values_open_positions_at_the_mark_and_tracks_cash():
+    paper_db.add_funds(100_000)
+    paper_db.open_position(_row(lots=2, entry_cost_rs=200.0))
+    t = paper_db.all_trades()[0]
+    spent = 100.0 * 2 * 65 + 200.0
+    assert paper.cash_and_equity()["cash_rs"] == round(100_000 - spent)
+    # marked up 50%: equity rises, cash does not
+    book = paper.cash_and_equity({t["id"]: 150.0})
+    assert book["open_positions_value_rs"] == round(150.0 * 2 * 65)
+    assert book["equity_rs"] > 100_000 and book["cash_rs"] == round(100_000 - spent)
+
+
+def test_realised_profit_returns_to_cash_after_both_legs_of_costs():
+    paper_db.add_funds(100_000)
+    paper_db.open_position(_row(lots=1, entry_cost_rs=100.0))
+    tid = paper_db.all_trades()[0]["id"]
+    paper_db.close_position(tid, "2026-09-28", 150.0, exit_cost_rs=0.0)
+    gross = (150.0 - 100.0) * 65
+    assert paper.cash_and_equity()["realised_rs"] == round(gross - 100.0)
+    assert paper.cash_and_equity()["equity_rs"] == round(100_000 + gross - 100.0)
+
+
+@pytest.mark.parametrize("now,then,expected", [(100.0, 90.0, "CE"), (90.0, 100.0, "PE"), (100.0, 100.0, None)])
+def test_when_nothing_formed_the_direction_is_the_20_session_trend(now, then, expected):
+    td = [f"2026-08-{d:02d}" for d in range(1, 25)]
+    closes = {d: 95.0 for d in td}
+    closes[td[-1]], closes[td[-21]] = now, then
+    read = paper._best_read(td[-1], closes, td)
+    assert (read[0] if read else None) == expected
+    if read:
+        assert "trend" in read[1]
+
+
+def test_the_best_reading_is_never_presented_as_a_proven_edge():
+    label = "Best available reading — 20-session trend up"
+    assert "best available" in label.lower()
+    # The control and the pattern rows are measured separately from it.
+    s = paper.report()["summary"]
+    assert set(s) >= {"patterns", "best_read", "control"}

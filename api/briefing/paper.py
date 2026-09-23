@@ -13,6 +13,21 @@ Two things make it evidence rather than decoration:
     schedule with no signal at all — so the comparison the backtests use
     exists forward too. An option buyer makes money in a moving market
     whatever the signal; the control is what the patterns have to beat.
+
+Three policies run side by side, each on its own row, each measured
+separately:
+
+    pattern     a pattern formed -> its own tested setup
+    best_read   nothing formed -> the trend's direction, at the money. The
+                system has no proven edge here and says so; this exists to
+                measure what "take something every day" actually costs,
+                which is a question the research cannot answer for you.
+    control     one call and one put a week, no signal at all
+
+Positions are sized against money the user allocates to the paper book
+(storage.paper_db.add_funds). Nothing is sized against money that was never
+allocated, and a position that does not fit the remaining cash is skipped
+rather than shrunk to a fraction of a lot.
 """
 
 import statistics
@@ -33,10 +48,33 @@ COST_FRACTION = OptionsCostModel().round_trip_cost_fraction()
 FIRST_SIGNAL_DATE = "2026-09-22"
 MIN_OPEN_INTEREST = 1000
 CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0}
+BEST_READ = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0}
+
+# At most this share of the allocated funds goes into any one position, so a
+# single expensive premium cannot swallow the book.
+MAX_PER_TRADE = 0.2
+
+
+def _costs(premium: float, lots: int) -> float:
+    """The whole round trip, charged on the entry premium — exactly the
+    convention the backtests use, so a paper result can be put beside a
+    researched one without an asterisk."""
+    return premium * lots * LOT_SIZE * COST_FRACTION
+
+
+def _lots_for(premium: float, cash: float, allocated_rs: float) -> int:
+    """Whole lots only, inside both the cash on hand and the per-trade cap."""
+    per_lot = premium * LOT_SIZE * (1 + COST_FRACTION)
+    budget = min(cash, allocated_rs * MAX_PER_TRADE) if allocated_rs else cash
+    return int(budget // per_lot) if per_lot > 0 else 0
 
 
 def _sessions() -> tuple[list[str], dict[str, float]]:
+    """Final sessions only. Today's bar is still forming while the market is
+    open, and a signal read off a half-finished candle is not a signal."""
     df, _ = load_daily_data("^NSEI", 400)
+    if "provisional" in df.columns:
+        df = df[~df["provisional"].astype(bool)]
     td = [str(d.date()) for d in df.index]
     return td, {d: float(c) for d, c in zip(td, df["close"])}
 
@@ -46,6 +84,33 @@ def _premium(conn, trade_date: str, expiry: str, strike: float, option_type: str
         """SELECT close FROM option_bars WHERE trade_date = ? AND expiry_date = ?
            AND strike = ? AND option_type = ?""", (trade_date, expiry, strike, option_type)).fetchone()
     return float(row["close"]) if row and row["close"] else None
+
+
+def cash_and_equity(marks: dict[int, float] | None = None) -> dict:
+    """What the paper book is worth: allocated money, minus what open
+    positions cost, plus what they are marked at now."""
+    allocated_rs = paper_db.allocated()
+    trades = paper_db.all_trades()
+    spent = sum((t["entry_premium"] * (t.get("lots") or 1) * LOT_SIZE
+                 + (t.get("entry_cost_rs") or _costs(t["entry_premium"], t.get("lots") or 1)))
+                for t in trades if t["status"] == "OPEN")
+    realised = 0.0
+    for t in trades:
+        if t["status"] == "CLOSED" and t["exit_premium"] is not None:
+            gross = (t["exit_premium"] - t["entry_premium"]) * (t.get("lots") or 1) * LOT_SIZE
+            realised += gross - (t.get("entry_cost_rs") or 0) - (t.get("exit_cost_rs") or 0)
+    open_value = 0.0
+    for t in trades:
+        if t["status"] != "OPEN":
+            continue
+        mark = (marks or {}).get(t["id"], t["mark_premium"] if t["mark_premium"] is not None else t["entry_premium"])
+        open_value += mark * (t.get("lots") or 1) * LOT_SIZE
+    cash = allocated_rs + realised - spent
+    return {"allocated_rs": round(allocated_rs), "cash_rs": round(cash),
+            "open_positions_value_rs": round(open_value), "equity_rs": round(cash + open_value),
+            "realised_rs": round(realised),
+            "return_pct": round((cash + open_value - allocated_rs) / allocated_rs * 100, 2) if allocated_rs else None,
+            "max_per_trade_rs": round(allocated_rs * MAX_PER_TRADE) if allocated_rs else 0}
 
 
 def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit: str | None) -> bool:
@@ -62,11 +127,16 @@ def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit:
     premium = _premium(conn, entry_date, expiry, strike, spec["option_type"])
     if premium is None:
         return False
+    book = cash_and_equity()
+    lots = _lots_for(premium, book["cash_rs"], book["allocated_rs"])
+    if lots < 1:
+        return False  # no allocated funds, or this premium does not fit
     return paper_db.open_position({
         "source": spec["source"], "strategy": spec["strategy"], "label": spec["label"],
         "signal_date": signal_date, "underlying": "NIFTY", "option_type": spec["option_type"],
         "strike": strike, "expiry": expiry, "entry_date": entry_date, "entry_premium": premium,
         "hold_days": spec["hold_days"], "planned_exit": planned_exit,
+        "lots": lots, "entry_cost_rs": round(_costs(premium, lots), 2),
     })
 
 
@@ -102,6 +172,20 @@ def observe(now: datetime | None = None) -> dict:
                 if _open_one(conn, spec, signal_date, entry_date, planned):
                     opened.append(f"{p['label']} ({opt['type']})")
 
+            # Nothing formed: take the trend's direction anyway, at the
+            # money. No proven edge — the row says so — and the point is to
+            # measure what taking something every day actually costs.
+            if not formed and not paper_db.has_signal_date("best_read", signal_date, "best_read"):
+                direction = _best_read(signal_date, closes, td)
+                if direction:
+                    kind, why = direction
+                    planned = _exit_session(td, entry_date, BEST_READ["hold_days"])
+                    spec = {"source": "best_read", "strategy": "best_read",
+                            "label": f"Best available reading — {why}", "option_type": kind,
+                            **BEST_READ, "spot": closes[entry_date]}
+                    if _open_one(conn, spec, signal_date, entry_date, planned):
+                        opened.append(f"best read {kind} ({why})")
+
             # The control: one call and one put a week, no signal involved.
             if not _control_this_week(td, entry_date):
                 for kind in ("CE", "PE"):
@@ -127,7 +211,9 @@ def observe(now: datetime | None = None) -> dict:
             day, premium = latest
             exit_idx = _exit_index(td, t["entry_date"], t["hold_days"])
             if exit_idx is not None and td.index(day) >= exit_idx:
-                paper_db.close_position(t["id"], td[exit_idx], _premium_on(conn, t, td[exit_idx]) or premium)
+                exit_premium = _premium_on(conn, t, td[exit_idx]) or premium
+                # Costs were charged in full at entry, as in the backtests.
+                paper_db.close_position(t["id"], td[exit_idx], exit_premium, exit_cost_rs=0.0)
                 closed.append(t["label"])
             else:
                 paper_db.mark(t["id"], day, premium)
@@ -136,6 +222,21 @@ def observe(now: datetime | None = None) -> dict:
     return {"opened": opened, "marked": marked, "closed": closed,
             "entry_session": entry_date, "signal_session": signal_date,
             "note": None if can_open else "waiting for the entry session's option prices"}
+
+
+def _best_read(signal_date: str, closes: dict[str, float], td: list[str]) -> tuple[str, str] | None:
+    """The direction the last month leans, stated as a rule so the result
+    means something: above the 20-session close, buy a call; below it, a put.
+    This is not a signal the research approved — nothing here is."""
+    if signal_date not in td:
+        return None
+    i = td.index(signal_date)
+    if i < 20:
+        return None
+    now, then = closes[td[i]], closes[td[i - 20]]
+    if now == then:
+        return None
+    return ("CE", "20-session trend up") if now > then else ("PE", "20-session trend down")
 
 
 def _exit_index(td: list[str], entry_date: str, hold: int) -> int | None:
@@ -175,36 +276,72 @@ def _last_priced_session(conn, t: dict, td: list[str]) -> tuple[str, float] | No
     return None
 
 
-def _pnl(t: dict) -> dict | None:
-    premium = t["exit_premium"] if t["status"] == "CLOSED" else t["mark_premium"]
+def _pnl(t: dict, mark: float | None = None) -> dict | None:
+    """Rupees on the lots actually held, after both legs of the cost model.
+    `mark` is a live price when one is available; otherwise the last close."""
+    premium = mark if mark is not None else (t["exit_premium"] if t["status"] == "CLOSED" else t["mark_premium"])
     if premium is None or not t["entry_premium"]:
         return None
-    gross = (premium - t["entry_premium"]) / t["entry_premium"] * 100
-    net = gross - COST_FRACTION * 100
-    return {"gross_pct": round(gross, 2), "net_pct": round(net, 2),
-            "profit_per_lot_rs": round(t["entry_premium"] * net / 100 * LOT_SIZE),
-            "realised": t["status"] == "CLOSED"}
+    lots = t.get("lots") or 1
+    gross_rs = (premium - t["entry_premium"]) * lots * LOT_SIZE
+    # Costs are always applied (I3). A row that never recorded one gets it
+    # computed rather than waived — a free trade is not a thing.
+    costs = (t["entry_cost_rs"] if t.get("entry_cost_rs") else _costs(t["entry_premium"], lots)) \
+        + (t.get("exit_cost_rs") or 0)
+    net_rs = gross_rs - costs
+    invested = t["entry_premium"] * lots * LOT_SIZE
+    return {"gross_pct": round((premium - t["entry_premium"]) / t["entry_premium"] * 100, 2),
+            "net_pct": round(net_rs / invested * 100, 2) if invested else None,
+            "profit_rs": round(net_rs), "invested_rs": round(invested), "lots": lots,
+            "profit_per_lot_rs": round(net_rs / lots),
+            "realised": t["status"] == "CLOSED", "live": mark is not None}
 
 
-def report() -> dict:
-    trades = [{**t, "pnl": _pnl(t)} for t in paper_db.all_trades()]
+def live_marks() -> dict:
+    """Open positions priced now, not at last night's close, when a Kite
+    session exists. Falls back to the closing mark, and says which it is."""
+    from market_data.kite_quotes import last_prices, option_tokens
+
+    trades = paper_db.open_trades()
+    contracts = [{"id": t["id"], "underlying": t["underlying"], "expiry": t["expiry"],
+                  "strike": t["strike"], "option_type": t["option_type"]} for t in trades]
+    tokens = option_tokens(contracts)
+    quotes = last_prices(list(tokens.values()))
+    marks = {tid: quotes["by_token"].get(token) for tid, token in tokens.items()}
+    marks = {tid: p for tid, p in marks.items() if p is not None}
+    priced = {t["id"]: marks.get(t["id"]) for t in trades}
+    book = cash_and_equity(marks)
+    return {
+        "index": quotes.get("index"), "source": quotes.get("source"),
+        "marks": {str(tid): p for tid, p in marks.items()},
+        "paper": {**book, "open_positions": len(trades),
+                  "live_priced": sum(1 for v in priced.values() if v is not None),
+                  "unrealised_rs": round(sum((_pnl(t, marks.get(t["id"])) or {}).get("profit_rs", 0) for t in trades))},
+    }
+
+
+def report(marks: dict[int, float] | None = None) -> dict:
+    trades = [{**t, "pnl": _pnl(t, (marks or {}).get(t["id"]))} for t in paper_db.all_trades()]
 
     def side(source: str) -> dict:
         rows = [t for t in trades if t["source"] == source and t["status"] == "CLOSED" and t["pnl"]]
         nets = [t["pnl"]["net_pct"] for t in rows]
-        rupees = [t["pnl"]["profit_per_lot_rs"] for t in rows]
+        rupees = [t["pnl"]["profit_rs"] for t in rows]
         return {"closed": len(rows),
                 "avg_net_pct": round(statistics.mean(nets), 2) if nets else None,
-                "total_per_lot_rs": sum(rupees) if rupees else 0,
+                "total_rs": sum(rupees) if rupees else 0,
+                "total_per_lot_rs": sum(t["pnl"]["profit_per_lot_rs"] for t in rows) if rows else 0,
                 "win_rate": round(sum(x > 0 for x in nets) / len(nets), 3) if nets else None,
                 "open": sum(1 for t in trades if t["source"] == source and t["status"] == "OPEN")}
 
     first = min((t["signal_date"] for t in trades), default=None)
     return {
         "trades": trades,
+        "account": {**cash_and_equity(marks), "flows": paper_db.fund_flows(),
+                    "max_per_trade_share": MAX_PER_TRADE},
         "summary": {
             "observing_since": first, "started": FIRST_SIGNAL_DATE,
-            "patterns": side("pattern"), "control": side("control"),
+            "patterns": side("pattern"), "best_read": side("best_read"), "control": side("control"),
             "sessions_needed_before_this_means_anything": 15,
         },
         "note": ("Hypothetical positions at real NSE closing premiums. Nothing is ordered and no money moves. "

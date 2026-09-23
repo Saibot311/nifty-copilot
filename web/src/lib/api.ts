@@ -701,7 +701,10 @@ export type ZerodhaStatus = {
 export const fetchZerodhaStatus = () => get<ZerodhaStatus>("/api/zerodha/status");
 export const ZERODHA_LOGIN_URL = `${API_BASE}/api/zerodha/login`;
 
-export type PaperPnl = { gross_pct: number; net_pct: number; profit_per_lot_rs: number; realised: boolean };
+export type PaperPnl = {
+  gross_pct: number; net_pct: number | null; profit_rs: number; invested_rs: number; lots: number;
+  profit_per_lot_rs: number; realised: boolean; live: boolean;
+};
 
 export type PaperTrade = {
   id: number;
@@ -721,19 +724,29 @@ export type PaperTrade = {
   mark_date: string | null;
   mark_premium: number | null;
   status: "OPEN" | "CLOSED";
+  lots: number;
   pnl: PaperPnl | null;
 };
 
 export type PaperSide = {
-  closed: number; avg_net_pct: number | null; total_per_lot_rs: number; win_rate: number | null; open: number;
+  closed: number; avg_net_pct: number | null; total_rs: number; total_per_lot_rs: number;
+  win_rate: number | null; open: number;
+};
+
+export type PaperAccount = {
+  allocated_rs: number; cash_rs: number; equity_rs: number; realised_rs: number;
+  open_positions_value_rs: number; return_pct: number | null; max_per_trade_rs: number;
+  max_per_trade_share: number; flows: { id: number; ts: string; amount: number; note: string | null }[];
 };
 
 export type PaperReport = {
   trades: PaperTrade[];
+  account: PaperAccount;
   summary: {
     observing_since: string | null;
     started: string;
     patterns: PaperSide;
+    best_read: PaperSide;
     control: PaperSide;
     sessions_needed_before_this_means_anything: number;
   };
@@ -741,3 +754,21 @@ export type PaperReport = {
 };
 
 export const fetchPaper = () => get<PaperReport>("/api/paper");
+
+export type LiveTick = {
+  as_of: string;
+  market: { is_open: boolean | null; status?: string; trade_date?: string };
+  index: number | null;
+  previous_close?: number | null;
+  change?: number | null;
+  change_pct?: number | null;
+  source: string | null;
+  marks: Record<string, number>;
+  paper?: {
+    allocated_rs: number; cash_rs: number; equity_rs: number; realised_rs: number;
+    open_positions_value_rs: number; return_pct: number | null; max_per_trade_rs: number;
+    open_positions: number; live_priced: number; unrealised_rs: number;
+  } | null;
+};
+
+export const fetchTick = () => get<LiveTick>("/api/live/tick");
