@@ -335,6 +335,35 @@ def overnight_vs_intraday(df: pd.DataFrame, since: str = "2015-01-01") -> dict:
                      "in this data.")}
 
 
+def signals_on(signal_date: str, symbol: str = "^NSEI") -> dict[str, str]:
+    """Which of the six fired on one date, and on which side — {name: CE|PE}.
+
+    The paper book uses this to pick a direction from the strongest evidence
+    available on a day, even when that evidence was rejected. Same signal
+    functions as the research: nothing is recomputed differently here."""
+    return {name: kind for name, sigs in _all_signals(symbol).items()
+            for d, kind in sigs if d == signal_date}
+
+
+def _all_signals(symbol: str = "^NSEI") -> dict[str, list[tuple[str, str]]]:
+    from .iv_research import load_series
+    df, _ = load_daily_data(symbol, 7000)
+    td = [str(d.date()) for d in df.index]
+    iv = load_series()
+    iv30 = iv["iv_30d"] if not iv.empty else pd.Series(dtype=float)
+    sessions, archive_last = index_trading_days(symbol)
+    holidays = weekday_holidays(sessions, OPTIONS_START, archive_last) if archive_last else []
+    oi = load_participant_oi()
+    return {
+        "cheap_volatility_trend": cheap_volatility_trend(df, iv30),
+        "fii_positioning_follow": positioning(oi, "FII", "CE"),
+        "retail_positioning_fade": positioning(oi, "Client", "PE"),
+        "turn_of_month": turn_of_month(td),
+        "pre_holiday": pre_holiday(td, holidays),
+        "absorbed_gap": absorbed_gap(df),
+    }
+
+
 def run_structural_research(symbol: str = "^NSEI") -> dict:
     from .iv_research import load_series
     df, _ = load_daily_data(symbol, 7000)
@@ -354,7 +383,7 @@ def run_structural_research(symbol: str = "^NSEI") -> dict:
         "turn_of_month": turn_of_month(td),
         "pre_holiday": pre_holiday(td, holidays),
         "absorbed_gap": absorbed_gap(df),
-    }
+    }  # kept in step with _all_signals(), which the paper book reads
     results = [test_hypothesis(name, sigs, ctx) for name, sigs in signals.items()]
     return {
         "computed_at": datetime.now(timezone.utc).isoformat(),

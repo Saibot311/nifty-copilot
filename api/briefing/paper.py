@@ -18,10 +18,15 @@ Three policies run side by side, each on its own row, each measured
 separately:
 
     pattern     a pattern formed -> its own tested setup
-    best_read   nothing formed -> the trend's direction, at the money. The
-                system has no proven edge here and says so; this exists to
-                measure what "take something every day" actually costs,
-                which is a question the research cannot answer for you.
+    best_read   nothing formed -> one 2% out-of-the-money option, in one
+                direction only, taken from whichever signal has the most
+                evidence behind it that day — the highest holdout t, even
+                though every one of them was rejected. When no rejected
+                signal fires, or none of those firing has positive evidence,
+                it falls back to the 20-session trend and says so. The
+                system has no proven edge here and never presents this as a
+                recommendation; it exists to measure what "take something
+                every day" actually costs.
     control     one call and one put a week, no signal at all
 
 Positions are sized against money the user allocates to the paper book
@@ -48,7 +53,10 @@ COST_FRACTION = OptionsCostModel().round_trip_cost_fraction()
 FIRST_SIGNAL_DATE = "2026-09-22"
 MIN_OPEN_INTEREST = 1000
 CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0}
-BEST_READ = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0}
+# The daily trade is out of the money by the research grid's own step, and
+# one-sided: a call or a put, never both.
+OTM_PCT = 2.0
+BEST_READ = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": OTM_PCT}
 
 # At most this share of the allocated funds goes into any one position, so a
 # single expensive premium cannot swallow the book.
@@ -86,6 +94,12 @@ def _premium(conn, trade_date: str, expiry: str, strike: float, option_type: str
     return float(row["close"]) if row and row["close"] else None
 
 
+def _strike_offset(spot: float, moneyness_pct: float, option_type: str) -> float:
+    """Direction-aware: a positive percentage is out of the money, which is
+    above spot for a call and below it for a put."""
+    return spot * moneyness_pct / 100 * (1 if option_type == "CE" else -1)
+
+
 def cash_and_equity(marks: dict[int, float] | None = None) -> dict:
     """What the paper book is worth: allocated money, minus what open
     positions cost, plus what they are marked at now."""
@@ -118,7 +132,7 @@ def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit:
     does. Skips silently when the archive has no usable contract — a paper
     trade priced off a guess would be worse than no paper trade."""
     spot = spec["spot"]
-    offset = spot * spec["moneyness_pct"] / 100 * (1 if spec["option_type"] == "CE" else -1)
+    offset = _strike_offset(spot, spec["moneyness_pct"], spec["option_type"])
     picked = select_contract(entry_date, spot, spec["option_type"], offset, spec["min_days_to_expiry"],
                              planned_exit or entry_date, MIN_OPEN_INTEREST, conn)
     if picked is None:
@@ -172,19 +186,20 @@ def observe(now: datetime | None = None) -> dict:
                 if _open_one(conn, spec, signal_date, entry_date, planned):
                     opened.append(f"{p['label']} ({opt['type']})")
 
-            # Nothing formed: take the trend's direction anyway, at the
-            # money. No proven edge — the row says so — and the point is to
+            # Nothing formed: take one 2% out-of-the-money option anyway, in
+            # a single direction, from the best-evidenced signal firing that
+            # day. No proven edge — the row says so — and the point is to
             # measure what taking something every day actually costs.
             if not formed and not paper_db.has_signal_date("best_read", signal_date, "best_read"):
-                direction = _best_read(signal_date, closes, td)
-                if direction:
-                    kind, why = direction
+                read = _confident_read(signal_date, closes, td)
+                if read:
+                    kind = read["direction"]
                     planned = _exit_session(td, entry_date, BEST_READ["hold_days"])
                     spec = {"source": "best_read", "strategy": "best_read",
-                            "label": f"Best available reading — {why}", "option_type": kind,
+                            "label": f"Most confident signal — {read['why']}", "option_type": kind,
                             **BEST_READ, "spot": closes[entry_date]}
                     if _open_one(conn, spec, signal_date, entry_date, planned):
-                        opened.append(f"best read {kind} ({why})")
+                        opened.append(f"best read {kind} 2% OTM ({read['why']})")
 
             # The control: one call and one put a week, no signal involved.
             if not _control_this_week(td, entry_date):
@@ -224,10 +239,9 @@ def observe(now: datetime | None = None) -> dict:
             "note": None if can_open else "waiting for the entry session's option prices"}
 
 
-def _best_read(signal_date: str, closes: dict[str, float], td: list[str]) -> tuple[str, str] | None:
-    """The direction the last month leans, stated as a rule so the result
-    means something: above the 20-session close, buy a call; below it, a put.
-    This is not a signal the research approved — nothing here is."""
+def _trend_read(signal_date: str, closes: dict[str, float], td: list[str]) -> tuple[str, str] | None:
+    """The fallback when no rejected signal fires: above the 20-session
+    close, a call; below it, a put."""
     if signal_date not in td:
         return None
     i = td.index(signal_date)
@@ -237,6 +251,49 @@ def _best_read(signal_date: str, closes: dict[str, float], td: list[str]) -> tup
     if now == then:
         return None
     return ("CE", "20-session trend up") if now > then else ("PE", "20-session trend down")
+
+
+def _confidence_by_name() -> dict[str, float]:
+    """Each rejected hypothesis's holdout t — how far its 2024-26 result
+    stood out from buying the same option with no signal. Every one of these
+    is below its bar; this ranks them anyway, which is the point."""
+    from backtest.structural_research import load_structural_research
+    r = load_structural_research() or {}
+    return {h["name"]: h["holdout"].get("t") for h in r.get("hypotheses", [])
+            if h["holdout"].get("t") is not None}
+
+
+def _confident_read(signal_date: str, closes: dict[str, float], td: list[str]) -> dict | None:
+    """One direction, from the best-evidenced signal firing that day.
+
+    Candidates are the structural hypotheses that fired — each rejected, but
+    each with a measured t against the no-signal baseline. The highest
+    positive t wins. A negative t is evidence the signal did *worse* than
+    doing nothing, so those are not followed; if nothing positive fires, the
+    trend fallback is used and the row says which it was."""
+    from backtest.structural_research import signals_on
+
+    try:
+        fired = signals_on(signal_date)
+    except Exception:
+        fired = {}
+    confidence = _confidence_by_name()
+    ranked = sorted(
+        ({"source": name, "direction": kind, "confidence": confidence[name]}
+         for name, kind in fired.items() if name in confidence),
+        key=lambda c: c["confidence"], reverse=True)
+    best = next((c for c in ranked if c["confidence"] > 0), None)
+    if best:
+        pretty = best["source"].replace("_", " ")
+        return {**best, "why": f"{pretty}, the strongest signal firing (t {best['confidence']}, still rejected)"}
+
+    trend = _trend_read(signal_date, closes, td)
+    if trend is None:
+        return None
+    kind, why = trend
+    reason = "no rejected signal fired" if not ranked else "every signal firing did worse than no signal"
+    return {"direction": kind, "confidence": None, "source": "trend",
+            "why": f"{why} — {reason}"}
 
 
 def _exit_index(td: list[str], entry_date: str, hold: int) -> int | None:

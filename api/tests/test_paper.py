@@ -155,11 +155,11 @@ def test_realised_profit_returns_to_cash_after_both_legs_of_costs():
 
 
 @pytest.mark.parametrize("now,then,expected", [(100.0, 90.0, "CE"), (90.0, 100.0, "PE"), (100.0, 100.0, None)])
-def test_when_nothing_formed_the_direction_is_the_20_session_trend(now, then, expected):
+def test_the_fallback_direction_is_the_20_session_trend(now, then, expected):
     td = [f"2026-08-{d:02d}" for d in range(1, 25)]
     closes = {d: 95.0 for d in td}
     closes[td[-1]], closes[td[-21]] = now, then
-    read = paper._best_read(td[-1], closes, td)
+    read = paper._trend_read(td[-1], closes, td)
     assert (read[0] if read else None) == expected
     if read:
         assert "trend" in read[1]
@@ -171,3 +171,44 @@ def test_the_best_reading_is_never_presented_as_a_proven_edge():
     # The control and the pattern rows are measured separately from it.
     s = paper.report()["summary"]
     assert set(s) >= {"patterns", "best_read", "control"}
+
+
+# --- the daily trade: out of the money, one side, best-evidenced signal -----
+
+def test_the_daily_trade_is_out_of_the_money_on_whichever_side_it_takes():
+    assert paper.BEST_READ["moneyness_pct"] == paper.OTM_PCT == 2.0
+    # A call above spot and a put below it are both out of the money.
+    assert paper._strike_offset(23000, paper.OTM_PCT, "CE") == pytest.approx(460.0)
+    assert paper._strike_offset(23000, paper.OTM_PCT, "PE") == pytest.approx(-460.0)
+
+
+def test_it_follows_the_firing_signal_with_the_most_evidence(monkeypatch):
+    monkeypatch.setattr(paper, "_confidence_by_name",
+                        lambda: {"fii_positioning_follow": 0.35, "turn_of_month": -1.28, "pre_holiday": 0.1})
+    import backtest.structural_research as sr
+    monkeypatch.setattr(sr, "signals_on", lambda d, symbol="^NSEI": {
+        "turn_of_month": "CE", "pre_holiday": "CE", "fii_positioning_follow": "PE"})
+    read = paper._confident_read("2026-09-22", {}, [])
+    assert read["direction"] == "PE" and read["source"] == "fii_positioning_follow"
+    assert "still rejected" in read["why"]
+
+
+def test_a_signal_that_did_worse_than_nothing_is_not_followed(monkeypatch):
+    td = [f"2026-08-{d:02d}" for d in range(1, 26)]
+    closes = {d: 100.0 for d in td}
+    closes[td[-1]] = 110.0  # trend up
+    monkeypatch.setattr(paper, "_confidence_by_name", lambda: {"pre_holiday": -1.84})
+    import backtest.structural_research as sr
+    monkeypatch.setattr(sr, "signals_on", lambda d, symbol="^NSEI": {"pre_holiday": "PE"})
+    read = paper._confident_read(td[-1], closes, td)
+    assert read["direction"] == "CE"  # the trend, not the badly-evidenced put
+    assert read["source"] == "trend" and "worse than no signal" in read["why"]
+
+
+def test_only_one_direction_is_taken_each_day(monkeypatch):
+    import backtest.structural_research as sr
+    monkeypatch.setattr(paper, "_confidence_by_name", lambda: {"a": 1.0, "b": 0.9})
+    monkeypatch.setattr(sr, "signals_on", lambda d, symbol="^NSEI": {"a": "CE", "b": "PE"})
+    read = paper._confident_read("2026-09-22", {}, [])
+    assert read["direction"] in ("CE", "PE")  # one side, never both
+    assert read["source"] == "a"

@@ -27,11 +27,17 @@ def _yahoo(last="2026-09-21"):
                         index=idx.rename("timestamp"))
 
 
+def test_every_loader_shares_one_top_up():
+    # It used to live in the backtest loader alone, so /api/snapshot and the
+    # briefing showed an older session than the rest of the page.
+    from quant import pipeline
+    assert strategies.nse_top_up is nse_indices.top_up is pipeline.nse_top_up
+
+
 def test_a_session_yahoo_lacks_is_taken_from_nse(monkeypatch):
     nse = pd.DataFrame({"open": [9.0, 3.0], "high": [9.0, 4.0], "low": [9.0, 2.0], "close": [9.0, 3.5]},
                        index=pd.to_datetime(["2026-09-21", "2026-09-22"]))
-    import storage.nse_index_db as db
-    monkeypatch.setattr(db, "load", lambda u: nse)
+    monkeypatch.setattr(nse_indices, "load_archive", lambda u, db_path=None: nse)
     df = strategies._top_up_from_nse(_yahoo(), "^NSEI")
     assert str(df.index[-1].date()) == "2026-09-22" and df["close"].iloc[-1] == 3.5
     assert df.loc["2026-09-21", "close"] == 1.5  # history stays Yahoo's; only later sessions are added
@@ -41,8 +47,7 @@ def test_a_session_yahoo_lacks_is_taken_from_nse(monkeypatch):
 def test_no_top_up_for_other_symbols_or_close_only_rows(monkeypatch):
     nse = pd.DataFrame({"open": [None], "high": [None], "low": [None], "close": [3.5]},
                        index=pd.to_datetime(["2026-09-22"]))
-    import storage.nse_index_db as db
-    monkeypatch.setattr(db, "load", lambda u: nse)
+    monkeypatch.setattr(nse_indices, "load_archive", lambda u, db_path=None: nse)
     assert len(strategies._top_up_from_nse(_yahoo(), "^NSEI")) == 3
     assert len(strategies._top_up_from_nse(_yahoo(), "^GSPC")) == 3
 

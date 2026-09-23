@@ -21,8 +21,10 @@ still end-of-day by design: option premiums come from NSE's nightly file.
 
 **The paper book has allocated funds and a daily policy.** Set the amount on the Journal tab; positions
 size in whole lots against it, at most 20% each. Three policies are measured apart: patterns that
-formed, the 20-session trend when nothing formed (`best_read` — no proven edge, and it says so), and a
-weekly no-signal control.
+formed; `best_read` when nothing formed — one 2% out-of-the-money option, one direction, from the
+best-evidenced signal firing that day (all of them rejected; a negative t is never followed), falling
+back to the 20-session trend; and a weekly no-signal control that buys both sides as the yardstick.
+`best_read` has no proven edge and says so on the row.
 
 **Paper observation runs itself** (`briefing/paper.py`, nightly): each pattern that forms opens a
 hypothetical position at the real closing premium, marked and closed on its tested schedule, against a
@@ -70,7 +72,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 34 checks, 331 tests — run before and after changes
+./scripts/check_all.sh          # 34 checks, 336 tests — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -245,6 +247,11 @@ of identical cards before 2026-09-23 — don't let it drift back.
   carries a PATH, and the check SKIPs when npx is missing.
 - **Rounding a number for the copilot breaks the number guard.** Audit 12.2 caught a rounded interval
   that no computed source contained. Hand the model full precision.
+- **A fix written into one loader is not a fix.** The Yahoo top-up lived in `backtest/strategies.py`,
+  so the snapshot and briefing showed an older session than the rest of the page for a day. It is in
+  `market_data.nse_indices.top_up` now, and a test asserts every loader shares it.
+- **A server-rendered page is frozen at page-load time.** `AutoRefresh` re-fetches it; `LiveTicker`
+  keeps the header ticking. Without those, "live" means "live when you opened the tab".
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps

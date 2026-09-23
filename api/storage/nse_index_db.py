@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from market_data.nse_indices import INDEX_NAMES, IndexDay
+from market_data.nse_indices import INDEX_NAMES, IndexDay, load_archive  # noqa: F401
 
 DB_PATH = Path(__file__).parent.parent / "data" / "nse_indices.db"
 
@@ -53,11 +53,6 @@ def fetched(db_path: Path | None = None) -> set[str]:
 
 
 def load(underlying: str, db_path: Path | None = None) -> pd.DataFrame:
-    """Daily bars for an option underlying ('NIFTY', 'BANKNIFTY', 'MIDCPNIFTY'),
-    indexed by date. Days NSE reported with a close only have NaN open/high/low."""
-    name = INDEX_NAMES[underlying]
-    with connect(db_path) as conn:
-        df = pd.read_sql("SELECT trade_date, open, high, low, close FROM index_daily WHERE index_name = ? "
-                         "ORDER BY trade_date", conn, params=(name,))
-    df.index = pd.to_datetime(df.pop("trade_date"))
-    return df
+    """Daily bars for an option underlying ('NIFTY', 'BANKNIFTY', 'MIDCPNIFTY').
+    One reader, in the data layer — this delegates so both cannot drift."""
+    return load_archive(underlying, db_path or DB_PATH)

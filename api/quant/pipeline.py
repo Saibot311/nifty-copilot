@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from market_data import Candle, YFinanceProvider
+from market_data.nse_indices import top_up as nse_top_up
 
 from .indicators import atr, historical_volatility, relative_volume, rsi, session_vwap
 from .price_action import evaluate as evaluate_price_action
@@ -39,7 +40,10 @@ def build_analysis(symbol: str = "^NSEI") -> dict:
         raise ValueError(
             f"Only got {len(daily_candles)} daily bars for {symbol} — need 60+ to compute indicators."
         )
-    daily_df = candles_to_df(daily_candles)
+    # Same top-up as the backtests: when Yahoo is a day late, NSE's own
+    # index report has the close, and the dashboard should not show an
+    # older session than the rest of the page.
+    daily_df = nse_top_up(candles_to_df(daily_candles), symbol)
 
     regime_result = classify_regime(daily_df)
     price_action = evaluate_price_action(daily_df)

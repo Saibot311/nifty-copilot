@@ -160,8 +160,8 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           )}
         </div>
         <Side title="Patterns, on paper" side={summary.patterns} hint="setups that formed" />
-        <Side title="Best reading" side={summary.best_read} hint="when nothing formed — no proven edge" />
-        <Side title="No signal (control)" side={summary.control} hint="one call and one put a week" />
+        <Side title="Best reading" side={summary.best_read} hint="nothing formed → one 2% out-of-the-money option, strongest signal" />
+        <Side title="No signal (control)" side={summary.control} hint="a call and a put weekly — the yardstick, not a trade" />
       </div>
       {account.allocated_rs === 0 && (
         <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-200">

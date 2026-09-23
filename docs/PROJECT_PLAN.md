@@ -18,12 +18,23 @@ profit and open-position value give the book's equity. Nothing is ever sized aga
 never allocated.
 
 *The daily policy.* Three rows, measured separately: `pattern` (a setup formed → its tested option),
-`best_read` (nothing formed → the 20-session trend's direction, at the money) and `control` (a call
-and a put a week, no signal). The middle one is what the user asked for and the system has no proven
-edge behind it — the label says so, and the recommendation on the Today tab is untouched. The point
-is to measure what "take something every day" actually costs, which the research cannot answer.
+`best_read` (nothing formed → **one 2% out-of-the-money option, one direction only**, taken from the
+signal with the most evidence firing that day — the highest holdout t among the rejected hypotheses,
+falling back to the 20-session trend when none fires or none has positive evidence) and `control` (a
+call and a put weekly, no signal — the direction-neutral yardstick, not a trade). A negative t means
+the signal did worse than doing nothing, so those are never followed. The middle row is what the user
+asked for and the system has no proven edge behind it — the label says so, and the recommendation on
+the Today tab is untouched. The point is to measure what "take something every day" actually costs,
+which the research cannot answer.
 Costs follow the backtests exactly — the whole round trip on the entry premium — so a paper result can
 sit beside a researched one without an asterisk.
+
+*Stale sections.* `/api/snapshot` and the briefing were showing 21 Sep while the rest of the page
+showed the 22nd: the "fill in the session Yahoo is late with" fix had been written into the backtest
+loader alone. It now lives in the data layer (`market_data.nse_indices.top_up`) and every loader uses
+it; a test asserts they share one implementation. `AutoRefresh` re-fetches the whole page every 60s
+while the market is open (15 minutes when shut, never in a background tab), so no section is frozen
+at page-load time.
 
 *Live.* The dashboard was server-rendered once and never moved: during a session it showed the price
 from page load. `/api/live/tick` now returns the index and every open paper position's live premium in

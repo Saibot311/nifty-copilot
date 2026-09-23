@@ -16,6 +16,7 @@ import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { SessionStatus } from "@/components/SessionStatus";
 import { LiveTicker } from "@/components/LiveTicker";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
@@ -100,6 +101,7 @@ export default async function Home() {
 
   return (
     <div className="min-h-full bg-zinc-950">
+      <AutoRefresh />
       <header className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-8">
           <div className="flex items-baseline gap-3">
