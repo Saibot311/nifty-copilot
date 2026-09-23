@@ -194,7 +194,9 @@ export default async function Home() {
             </>
           }
           research={
-            <>
+            // Prototype of docs/DESIGN_DIRECTION.md, scoped to this tab so it
+            // can be compared with the others before anything is rolled out.
+            <div data-skin="instrument" className="flex flex-col gap-5">
               <section>
                 <SectionLabel hint="2024–26, data the choice never saw">
                   What each pattern&apos;s option actually made
@@ -245,7 +247,7 @@ export default async function Home() {
                   </section>
                 </div>
               </details>
-            </>
+            </div>
           }
           market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} />}
           journal={<JournalTab paper={paper.data} />}

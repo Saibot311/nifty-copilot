@@ -33,7 +33,7 @@ export function PlaybookCard({ entries }: { entries: PlaybookEntry[] | null }) {
     .slice(-1)[0];
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/40">
+    <div className="measure overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/40">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-800 px-4 py-2 text-[11px] text-zinc-500">
         <span>
           Every strategy that has been through walk-forward validation on index returns — a stored

@@ -24,3 +24,181 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   The instrument skin (docs/DESIGN_DIRECTION.md), scoped to whatever carries
+   data-skin="instrument" so one tab can be converted and compared with the
+   rest before anything is rolled out.
+
+   Every value here is measured: contrast ratios against the ground are in the
+   direction doc, and the gain/loss pair was run through the colour-blind
+   validator (deutan ΔE 7.5, which is legal only because every figure also
+   carries a sign and most carry a word).
+   ------------------------------------------------------------------------- */
+
+[data-skin="instrument"] {
+  --ground: #0a0c0d;
+  --surface: #101415;
+  --raised: #171d1e;
+  --line: #212829;
+  --line-hi: #303a3c;
+  --ink: #e8ecec;
+  --ink-2: #a9b2b3;
+  --muted: #6f7879;
+  --gain: #3ed9a4;
+  --loss: #f8698f;
+  --caution: #e0b04a;
+  --accent: #6ea8fa;
+}
+
+/* A ruled header: the name, its hint, then a hairline to the right edge. The
+   rule is the top boundary of the measure below it — it is not decoration, so
+   it stops where the data starts. Replaces the tracked-out small caps. */
+[data-skin="instrument"] .ruled-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+[data-skin="instrument"] .ruled-header::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line-hi);
+  align-self: center;
+}
+[data-skin="instrument"] .ruled-header h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--ink);
+}
+[data-skin="instrument"] .ruled-header .hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Level 2 of the surface hierarchy: filled, no border, no radius. The fill
+   says "one measure"; the hairlines inside say "one row each". */
+[data-skin="instrument"] .measure {
+  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line-hi);
+  border-bottom: 1px solid var(--line-hi);
+}
+[data-skin="instrument"] .measure .row + .row,
+[data-skin="instrument"] .measure tbody tr + tr {
+  border-top: 1px solid var(--line);
+}
+[data-skin="instrument"] .measure thead tr {
+  border-bottom: 1px solid var(--line);
+}
+
+[data-skin="instrument"] .ink { color: var(--ink); }
+[data-skin="instrument"] .ink-2 { color: var(--ink-2); }
+[data-skin="instrument"] .muted { color: var(--muted); }
+[data-skin="instrument"] .gain { color: var(--gain); }
+[data-skin="instrument"] .loss { color: var(--loss); }
+[data-skin="instrument"] .caution { color: var(--caution); }
+
+/* A verdict is a word, not a chip: no pill, no fill, no border. */
+[data-skin="instrument"] .verdict {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+[data-skin="instrument"] .verdict[data-tone="good"] { color: var(--gain); }
+[data-skin="instrument"] .verdict[data-tone="bad"] { color: var(--loss); }
+[data-skin="instrument"] .verdict[data-tone="warn"] { color: var(--caution); }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="instrument"] .expand { animation: expand 160ms ease-out; }
+  @keyframes expand { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+}
+
+/* --- the skin, mapped onto the classes the cards already use ---------------
+   A prototype maps rather than rewrites: every Research card inherits the new
+   palette without being touched, so the direction can be judged on real data
+   and reverted by deleting one attribute. */
+
+[data-skin="instrument"] { --uncertain: #6f7879; color: var(--ink-2); }
+
+[data-skin="instrument"] .text-zinc-50,
+[data-skin="instrument"] .text-zinc-100,
+[data-skin="instrument"] .text-zinc-200 { color: var(--ink); }
+[data-skin="instrument"] .text-zinc-300,
+[data-skin="instrument"] .text-zinc-400 { color: var(--ink-2); }
+[data-skin="instrument"] .text-zinc-500,
+[data-skin="instrument"] .text-zinc-600,
+[data-skin="instrument"] .text-zinc-700 { color: var(--muted); }
+
+[data-skin="instrument"] .text-emerald-300,
+[data-skin="instrument"] .text-emerald-400 { color: var(--gain); }
+[data-skin="instrument"] .text-rose-300,
+[data-skin="instrument"] .text-rose-400 { color: var(--loss); }
+[data-skin="instrument"] .text-amber-200,
+[data-skin="instrument"] .text-amber-300 { color: var(--caution); }
+[data-skin="instrument"] .text-indigo-200,
+[data-skin="instrument"] .text-indigo-300 { color: var(--accent); }
+
+[data-skin="instrument"] .bg-zinc-900\/40,
+[data-skin="instrument"] .bg-zinc-900\/80 { background: var(--surface); }
+[data-skin="instrument"] .bg-zinc-950\/50,
+[data-skin="instrument"] .bg-zinc-950\/60 { background: var(--ground); }
+[data-skin="instrument"] .border-zinc-800,
+[data-skin="instrument"] .border-zinc-800\/60,
+[data-skin="instrument"] .border-zinc-800\/80,
+[data-skin="instrument"] .border-zinc-700 { border-color: var(--line); }
+
+/* §C: a box only where two things genuinely separate. Panels lose their
+   border and radius; the hairline does the work. */
+[data-skin="instrument"] .rounded-xl { border-radius: 2px; }
+[data-skin="instrument"] .rounded-lg { border-radius: 2px; }
+
+/* A verdict is a word, not a chip. */
+[data-skin="instrument"] .rounded-full.border {
+  border: 0;
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* §B: the ruled header replaces the tracked-out small caps. */
+[data-skin="instrument"] .section-label { align-items: center; gap: 0.6rem; }
+[data-skin="instrument"] .section-label h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--ink);
+}
+[data-skin="instrument"] .section-label::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line-hi);
+  order: 3;
+}
+[data-skin="instrument"] .section-label > span { order: 2; color: var(--muted); }
+
+/* §D: on this screen the range column IS the finding, so it has to be the
+   loudest thing on it. The first prototype failed this — the bars read as
+   faint grey dashes. Wider column, heavier bar, a zero tick you can see, and
+   an "uncertain" grey lifted until it holds its own against the ink. */
+[data-skin="instrument"] { --uncertain: #93a0a1; }
+[data-skin="instrument"] { --range-col: 15rem; }
+[data-skin="instrument"] .range-cell { max-width: 100%; }
+@media (min-width: 1024px) { [data-skin="instrument"] .range-cell { width: 15rem; } }
+[data-skin="instrument"] .range-cell svg { width: 100%; height: 26px; }
+[data-skin="instrument"] .range-cell svg line[stroke-linecap="round"] { stroke-width: 5; }
+[data-skin="instrument"] .range-cell svg line:not([stroke-linecap]) { stroke: #55635f; stroke-width: 1.5; }
+[data-skin="instrument"] .range-cell svg circle { r: 5; }
+
+/* The scale the bars share, stated once under the column. */
+[data-skin="instrument"] .range-scale { color: var(--ink-2); }

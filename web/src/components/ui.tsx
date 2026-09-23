@@ -24,7 +24,7 @@ export function Panel({
 
 export function SectionLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
-    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+    <div className="section-label mb-3 flex flex-wrap items-baseline justify-between gap-2">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
         {children}
       </h2>

@@ -80,14 +80,20 @@ function RangeBar({ ci, lo, hi }: { ci: MeanCI | null; lo: number; hi: number })
   const W = 168, H = 18;
   const x = (v: number) => ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * W;
   const crossesZero = ci.low <= 0 && ci.high >= 0;
-  const colour = crossesZero ? "#a1a1aa" : ci.low > 0 ? "#34d399" : "#fb7185";
+  // Tokens with the current values as fallbacks: the skin swaps them, an
+  // unskinned screen is unchanged.
+  const colour = crossesZero
+    ? "var(--uncertain, #a1a1aa)"
+    : ci.low > 0
+      ? "var(--gain, #34d399)"
+      : "var(--loss, #fb7185)";
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img"
       aria-label={`95% range ${Math.round(ci.low)} to ${Math.round(ci.high)} rupees per lot, average ${Math.round(ci.mean)}`}>
       <title>{`Average ${rs(ci.mean)}/lot · 95% range ${rs(ci.low)} to ${rs(ci.high)} · ${ci.n} trades`}</title>
-      <line x1={x(0)} x2={x(0)} y1="1" y2={H - 1} stroke="#3f3f46" strokeWidth="1" />
+      <line x1={x(0)} x2={x(0)} y1="1" y2={H - 1} stroke="var(--line-hi, #3f3f46)" strokeWidth="1" />
       <line x1={x(ci.low)} x2={x(ci.high)} y1={H / 2} y2={H / 2} stroke={colour} strokeWidth="3" strokeLinecap="round" />
-      <circle cx={x(ci.mean)} cy={H / 2} r="4" fill={colour} stroke="#09090b" strokeWidth="1.5" />
+      <circle cx={x(ci.mean)} cy={H / 2} r="4" fill={colour} stroke="var(--ground, #09090b)" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -137,7 +143,7 @@ export function PatternTable({ today, research, caption }: {
                     type="button"
                     onClick={() => setOpen(isOpen ? null : r.key)}
                     aria-expanded={isOpen}
-                    className="grid w-full grid-cols-[1fr_auto] items-center gap-x-3 px-4 py-2.5 text-left hover:bg-zinc-800/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_10rem] lg:grid-cols-[minmax(0,1fr)_7rem_7rem_10rem_6rem]"
+                    className="grid w-full grid-cols-[1fr_auto] items-center gap-x-3 px-4 py-2.5 text-left hover:bg-zinc-800/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_10rem] lg:grid-cols-[minmax(0,1fr)_7rem_7rem_var(--range-col,10rem)_6rem]"
                   >
                     <span className="min-w-0">
                       <span className="flex items-center gap-2">
@@ -160,7 +166,12 @@ export function PatternTable({ today, research, caption }: {
                       {rs(r.avgRs)}
                       <span className="block text-[10px] text-zinc-600">no signal {rs(r.baselineRs)}</span>
                     </span>
-                    <span className="hidden lg:block"><RangeBar ci={r.ci} lo={lo} hi={hi} /></span>
+                    {/* The finding survives the phone: on a narrow screen the
+                        bar takes its own line under the name, and the trade
+                        count and t are the columns that go. */}
+                    <span className="range-cell col-span-2 mt-1 block w-full sm:col-span-4 lg:col-span-1 lg:mt-0 lg:w-auto">
+                      <RangeBar ci={r.ci} lo={lo} hi={hi} />
+                    </span>
                     <span className="justify-self-end">{r.status && <Pill tone={TONE[r.status]}>{r.status}</Pill>}</span>
                   </button>
                   {isOpen && (
@@ -186,17 +197,17 @@ export function PatternTable({ today, research, caption }: {
         </tbody>
       </table>
       <div className="border-t border-zinc-800/60 px-4 py-2 text-[11px] text-zinc-600">
-        <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_7rem_7rem_10rem_6rem] lg:items-center lg:gap-x-3">
+        <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_7rem_7rem_var(--range-col,10rem)_6rem] lg:items-center lg:gap-x-3">
           <span className="col-start-4">
             {/* the shared scale the bars are drawn on, stated once */}
-            <span className="flex justify-between font-mono text-[10px] tabular-nums text-zinc-600" style={{ width: 168 }}>
+            <span className="range-scale flex justify-between font-mono text-[10px] tabular-nums text-zinc-600" style={{ width: 168 }}>
               <span>{rs(lo)}</span><span>₹0</span><span>{rs(hi)}</span>
             </span>
           </span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="hidden lg:inline">
-            <span className="mr-1.5 inline-block h-[3px] w-6 rounded-full align-middle" style={{ background: "#a1a1aa" }} />
+            <span className="mr-1.5 inline-block h-[3px] w-6 rounded-full align-middle" style={{ background: "var(--uncertain, #a1a1aa)" }} />
             a range touching ₹0 means the edge could be nothing
           </span>
           <span>Click a row for the detail.</span>
