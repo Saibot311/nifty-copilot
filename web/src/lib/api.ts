@@ -700,9 +700,11 @@ export type ReplicationHypothesis = {
     development_avg_pct: number; holdout_avg_pct: number;
     baseline_development_avg_pct: number; baseline_holdout_avg_pct: number;
     holdout_t: number | null; required_t: number | null;
+    holdout_edge_pct: number;
     holdout_ci_95: MeanCI | null; edge_ci_95: EdgeCI | null;
   };
   per_index: Record<string, { development: ReplicationSide; holdout: ReplicationSide;
+    holdout_edge_pct: number | null;
     baseline_holdout_avg_pct: number | null; baseline_development_avg_pct: number | null }>;
   indices_beating_baseline_in_holdout: number;
   indices_with_holdout_trades: number;

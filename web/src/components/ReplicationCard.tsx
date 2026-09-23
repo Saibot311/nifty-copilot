@@ -11,8 +11,8 @@ function pct(v: number | null | undefined) {
 export function ReplicationCard({ data }: { data: Replication }) {
   const indices = Object.keys(data.coverage);
   const passed = data.hypotheses.filter((h) => h.status !== "REJECTED").length;
-  const rows = [...data.hypotheses].sort((a, b) =>
-    (b.pooled.holdout_avg_pct - b.pooled.baseline_holdout_avg_pct) - (a.pooled.holdout_avg_pct - a.pooled.baseline_holdout_avg_pct));
+  // Sorted by the edge the API computed, not by one worked out here.
+  const rows = [...data.hypotheses].sort((a, b) => b.pooled.holdout_edge_pct - a.pooled.holdout_edge_pct);
   return (
     <Panel className="p-4">
       <p className="text-sm leading-relaxed text-zinc-300">
@@ -46,8 +46,7 @@ export function ReplicationCard({ data }: { data: Replication }) {
                 <td className="py-1.5 pr-3 font-mono tabular-nums text-zinc-400">{h.pooled.holdout_t ?? "–"} ({h.pooled.required_t ?? "–"})</td>
                 {indices.map((u) => {
                   const x = h.per_index[u];
-                  const edge = x && x.holdout.trades && x.holdout.avg_return_pct != null
-                    ? x.holdout.avg_return_pct - (x.baseline_holdout_avg_pct ?? 0) : null;
+                  const edge = x?.holdout_edge_pct ?? null;
                   return (
                     <td key={u} className={`py-1.5 pr-3 font-mono tabular-nums ${edge == null ? "text-zinc-600" : edge > 0 ? "text-emerald-300" : "text-rose-300"}`}
                       title={x ? `${x.holdout.trades} trades, avg ${pct(x.holdout.avg_return_pct)} vs no signal ${pct(x.baseline_holdout_avg_pct)}` : ""}>

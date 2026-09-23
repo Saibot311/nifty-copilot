@@ -32,3 +32,19 @@ def test_each_index_reads_its_own_archive():
 def test_the_bar_counts_replication_as_another_look():
     # 26 earlier holdout tests plus one per replicated hypothesis.
     assert rep.BASE_TESTS == 26
+
+
+def test_the_edge_over_no_signal_is_computed_here_not_in_the_browser():
+    """The dashboard showed each index's edge by subtracting two returned
+    numbers in the client — a statistic made in JavaScript (I2). The API
+    returns it now, and the pooled sort key with it."""
+    import inspect
+    source = inspect.getsource(rep.judge)
+    assert '"holdout_edge_pct"' in source
+    out = rep.judge("t", "T", {"NIFTY": [T(entry_date="2024-02-01", exit_date="2024-02-08", net_return_pct=30.0),
+                                         T(entry_date="2024-03-01", exit_date="2024-03-08", net_return_pct=10.0)]},
+                    {"NIFTY": [T(entry_date="2024-02-01", exit_date="2024-02-08", net_return_pct=-5.0),
+                               T(entry_date="2024-03-01", exit_date="2024-03-08", net_return_pct=5.0)]}, tests=26)
+    assert out["per_index"]["NIFTY"]["holdout_edge_pct"] == 20.0     # 20 mean vs 0 mean
+    assert out["pooled"]["holdout_edge_pct"] == 20.0
+    assert out["indices_beating_baseline_in_holdout"] == 1

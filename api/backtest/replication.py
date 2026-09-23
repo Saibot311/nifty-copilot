@@ -167,16 +167,23 @@ def judge(name: str, label: str, sig_by_index: dict, base_by_index: dict, tests:
     per_index = {}
     for u in sig_by_index:
         s, b = sig_by_index[u], base_by_index.get(u, [])
-        per_index[u] = {"development": _summ(_dev(s)), "holdout": _summ(_hol(s)),
-                        "baseline_holdout_avg_pct": _summ(_hol(b))["avg_return_pct"],
+        hol_s_u, hol_b_u = _summ(_hol(s)), _summ(_hol(b))
+        # The edge is computed here, not in the browser. It is a statistic —
+        # what the signal added over buying the same option with none — and
+        # every number the dashboard shows is computed in Python (I2).
+        edge = (round(hol_s_u["avg_return_pct"] - (hol_b_u["avg_return_pct"] or 0), 2)
+                if hol_s_u["trades"] and hol_s_u["avg_return_pct"] is not None else None)
+        per_index[u] = {"development": _summ(_dev(s)), "holdout": hol_s_u,
+                        "holdout_edge_pct": edge,
+                        "baseline_holdout_avg_pct": hol_b_u["avg_return_pct"],
                         "baseline_development_avg_pct": _summ(_dev(b))["avg_return_pct"]}
-    signs = [v["holdout"]["avg_return_pct"] - (v["baseline_holdout_avg_pct"] or 0)
-             for v in per_index.values() if v["holdout"]["trades"]]
+    signs = [v["holdout_edge_pct"] for v in per_index.values() if v["holdout_edge_pct"] is not None]
     log_run(f"replication_{name}", {"prereg": PREREG_HASH}, "MULTI", 0,
             {"num_trades": n, "expectancy_pct": mean(hol_s)})
     return {
         "name": name, "label": label,
         "pooled": {"development_dates": len(dev_s), "holdout_dates": n,
+                   "holdout_edge_pct": round(mean(hol_s) - mean(hol_b), 2),
                    "development_avg_pct": mean(dev_s), "holdout_avg_pct": mean(hol_s),
                    "baseline_development_avg_pct": mean(dev_b), "baseline_holdout_avg_pct": mean(hol_b),
                    "holdout_t": t, "required_t": bar,
