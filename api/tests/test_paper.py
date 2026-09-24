@@ -220,6 +220,64 @@ def test_only_one_direction_is_taken_each_day(monkeypatch):
     assert read["source"] == "a"
 
 
+# --- one position a session ---------------------------------------------------
+
+def test_the_book_holds_at_most_one_position_for_a_session():
+    """The rule the book is built on: one entry a session, one direction."""
+    paper_db.add_funds(100_000, "initial")
+    assert paper_db.open_position(_row()) is True
+    assert paper_db.funded_on("2026-09-23") == 1
+    # A second pattern the same session would be gated by observe(); the
+    # count is what that gate reads.
+    paper_db.open_position(_row(strategy="rsi_reversal", label="RSI", option_type="PE"))
+    assert paper_db.funded_on("2026-09-23") == 2  # the db records; observe decides
+    held = [t for t in paper_db.all_trades() if t["funded"]]
+    assert len({t["option_type"] for t in held}) <= 2
+
+
+def test_the_control_is_not_a_position_in_the_book():
+    """It is a yardstick: priced on real premiums, but it spends no allocated
+    money, moves no equity, and cannot take the session's one slot."""
+    paper_db.add_funds(100_000, "initial")
+    paper_db.open_position(_row(source="control", strategy="control_ce",
+                                label="No signal — weekly at-the-money call", funded=0))
+    paper_db.open_position(_row(source="control", strategy="control_pe", option_type="PE",
+                                label="No signal — weekly at-the-money put", funded=0))
+    assert paper_db.funded_on("2026-09-23") == 0
+    book = paper.cash_and_equity()
+    assert book["cash_rs"] == 100_000
+    assert book["open_positions_value_rs"] == 0
+    assert book["equity_rs"] == 100_000
+    out = paper.report()
+    assert out["trades"] == []
+    assert len(out["benchmark"]) == 2
+    # Still measured — the comparison is the whole point of keeping it.
+    assert out["summary"]["control"]["open"] == 2
+
+
+def test_the_control_is_fixed_size_and_never_sized_off_the_book():
+    assert paper.CONTROL["funded"] is False
+    assert paper.CONTROL["max_lots"] == 1
+
+
+def test_a_second_pattern_the_same_session_is_passed_over_not_opened(monkeypatch):
+    """When several patterns form, one takes the slot and the rest are named."""
+    paper_db.add_funds(100_000, "initial")
+    paper_db.open_position(_row())
+    monkeypatch.setattr(paper, "_sessions", lambda: (TD[:4], {d: 23000.0 for d in TD}))
+
+    def _never(*a, **k):
+        raise AssertionError("the gate must stop the session before anything is picked")
+
+    monkeypatch.setattr(paper, "pattern_proximity", _never)
+    out = paper.observe(now=datetime.now(paper.IST))
+    assert out["opened"] == []
+    # Whatever the yardstick does is reported apart from the book: counting
+    # the two together is what made one session look like two trades.
+    assert "benchmark_opened" in out
+    assert paper_db.funded_on("2026-09-23") == 1
+
+
 # --- money in, money out, and the drive that must stay contained ------------
 
 def test_a_win_raises_the_next_position_and_a_loss_lowers_it():

@@ -795,7 +795,11 @@ export type PaperObjective = {
 };
 
 export type PaperReport = {
+  /** The book: at most one position a session. */
   trades: PaperTrade[];
+  /** The yardstick, priced on the same premiums but outside the book — it
+   *  spends none of the allocated money and never takes the session's slot. */
+  benchmark?: PaperTrade[];
   account: PaperAccount;
   equity_curve: EquityPoint[];
   objective: PaperObjective;

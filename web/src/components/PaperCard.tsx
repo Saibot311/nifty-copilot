@@ -150,6 +150,7 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
 
   if (!data) return <Offline what="Paper observation" />;
   const { summary, trades, account } = data;
+  const benchmark = data.benchmark ?? [];
   const live = tick?.paper && tick.market?.is_open ? tick.paper : null;
   const enough = summary.patterns.closed >= summary.sessions_needed_before_this_means_anything;
 
@@ -180,7 +181,7 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
         </div>
         <Side title="Patterns, on paper" side={summary.patterns} hint="setups that formed" />
         <Side title="Best reading" side={summary.best_read} hint="nothing formed → one 2% in-the-money option, strongest signal" />
-        <Side title="No signal (control)" side={summary.control} hint="one lot each way, weekly — the yardstick, not a trade" />
+        <Side title="No signal (control)" side={summary.control} hint="one lot each way, weekly — measured beside the book, not held in it" />
       </div>
       {data.equity_curve.length > 1 && (
         <div className="mt-4 rounded-lg bg-zinc-950/50 p-3">
@@ -206,8 +207,13 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
         </p>
       )}
 
+      <p className="mt-4 text-[11px] text-zinc-500">
+        The book takes <span className="text-zinc-300">one position a session</span>, in one direction. When
+        several setups form, the one with the strongest holdout evidence takes it and the rest are passed over.
+      </p>
+
       {trades.length > 0 ? (
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-2 overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="text-[10px] uppercase tracking-wider text-zinc-600">
               <tr>
@@ -226,6 +232,33 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           Nothing opened yet. The first positions open the evening after a setup forms, once that session&apos;s
           option prices are published — starting from {summary.started}.
         </p>
+      )}
+
+      {benchmark.length > 0 && (
+        <div className="mt-4 border-t border-zinc-800/60 pt-3">
+          <div className="text-[11px] uppercase tracking-[0.1em] text-zinc-500">Yardstick — not in the book</div>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-600">
+            A call and a put bought weekly with no signal, priced on the same real premiums. It spends none of
+            the allocated money, moves none of the equity above, and cannot take a session&apos;s slot. It is
+            here because a result with nothing to compare it against means nothing.
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-zinc-600">
+                <tr>
+                  <th className="pb-2 font-medium">Setup</th>
+                  <th className="hidden pb-2 font-medium sm:table-cell">Contract</th>
+                  <th className="hidden pb-2 font-medium sm:table-cell">Now</th>
+                  <th className="pb-2 text-right font-medium">Per lot</th>
+                  <th className="pb-2 text-right font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {benchmark.slice(0, 10).map((t) => <Row key={t.id} t={t} mark={tick?.marks?.[String(t.id)]} />)}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       <Funds account={account} onChange={() => setVersion((v) => v + 1)} />

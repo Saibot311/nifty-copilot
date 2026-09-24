@@ -14,6 +14,11 @@ Two things make it evidence rather than decoration:
     exists forward too. An option buyer makes money in a moving market
     whatever the signal; the control is what the patterns have to beat.
 
+The book takes **one position a session**, in one direction. When several
+patterns form, the one with the most evidence behind it takes the slot and
+the rest are reported as passed over; when none forms, the best read takes
+it. Never two, and never a call and a put at once.
+
 Three policies run side by side, each on its own row, each measured
 separately:
 
@@ -27,7 +32,12 @@ separately:
                 system has no proven edge here and never presents this as a
                 recommendation; it exists to measure what "take something
                 every day" actually costs.
-    control     one call and one put a week, no signal at all
+    control     one call and one put a week, no signal at all — and NOT a
+                position in the book. It is the yardstick the other two are
+                measured against, so it is priced on the same real premiums
+                but spends no allocated cash, moves no equity, and can never
+                take the session's one slot. Removing it would leave nothing
+                to say "the signal beat doing nothing" against.
 
 Positions are sized against money the user allocates to the paper book
 (storage.paper_db.add_funds). Nothing is sized against money that was never
@@ -52,9 +62,12 @@ COST_FRACTION = OptionsCostModel().round_trip_cost_fraction()
 # date may ever be opened: those signals' outcomes already exist.
 FIRST_SIGNAL_DATE = "2026-09-22"
 MIN_OPEN_INTEREST = 1000
-# The control is a yardstick, not a position to win on: one lot a side, so
-# it cannot crowd out the policies it is there to measure.
-CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0, "max_lots": 1}
+# The control is a yardstick, not a position to win on: one lot a side, and
+# unfunded, so it cannot take the session's one slot or spend the book's
+# money. Both sides are right for a benchmark — it measures what buying an
+# option blind costs, with the direction taken out — and wrong for the book,
+# which is why it sits outside it.
+CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0, "max_lots": 1, "funded": False}
 # The daily trade is in the money by the research grid's own step, and
 # one-sided: a call or a put, never both. Negative is in the money, as in
 # pattern_options — above spot for a put, below it for a call.
@@ -137,7 +150,9 @@ def cash_and_equity(marks: dict[int, float] | None = None) -> dict:
     """What the paper book is worth: allocated money, minus what open
     positions cost, plus what they are marked at now."""
     allocated_rs = paper_db.allocated()
-    trades = paper_db.all_trades()
+    # The yardstick is priced, not held: it never spends the book's cash and
+    # never moves its equity.
+    trades = [t for t in paper_db.all_trades() if t.get("funded", 1)]
     spent = sum((t["entry_premium"] * (t.get("lots") or 1) * LOT_SIZE
                  + (t.get("entry_cost_rs") or _costs(t["entry_premium"], t.get("lots") or 1)))
                 for t in trades if t["status"] == "OPEN")
@@ -174,13 +189,20 @@ def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit:
     premium = _premium(conn, entry_date, expiry, strike, spec["option_type"])
     if premium is None:
         return False
-    book = cash_and_equity()
-    lots = _lots_for(premium, book["cash_rs"], book["equity_rs"])
+    funded = spec.get("funded", True)
+    if funded:
+        book = cash_and_equity()
+        lots = _lots_for(premium, book["cash_rs"], book["equity_rs"])
+    else:
+        # A yardstick is a fixed size by definition: sizing it off a book it
+        # is not in would make it measure the book instead of the market.
+        lots = spec.get("max_lots") or 1
     if spec.get("max_lots"):
         lots = min(lots, spec["max_lots"])
     if lots < 1:
         return False  # no allocated funds, or this premium does not fit
     return paper_db.open_position({
+        "funded": 1 if funded else 0,
         "source": spec["source"], "strategy": spec["strategy"], "label": spec["label"],
         "signal_date": signal_date, "underlying": "NIFTY", "option_type": spec["option_type"],
         "strike": strike, "expiry": expiry, "entry_date": entry_date, "entry_premium": premium,
@@ -197,7 +219,10 @@ def observe(now: datetime | None = None) -> dict:
         return {"opened": [], "marked": 0, "closed": [], "note": "not enough sessions"}
 
     entry_date, signal_date = td[-1], td[-2]
-    opened, closed, skipped = [], [], []
+    # `opened` is the book: at most one a session. `benchmark` is the
+    # yardstick, reported apart from it — counting the two together is what
+    # made a single session look like two trades.
+    opened, closed, skipped, passed_over, benchmark = [], [], [], [], []
 
     with options_connect() as conn:
         archived = conn.execute("SELECT MAX(trade_date) AS d FROM option_bars").fetchone()["d"]
@@ -205,40 +230,66 @@ def observe(now: datetime | None = None) -> dict:
         can_open = archived is not None and archived >= entry_date and signal_date >= FIRST_SIGNAL_DATE
 
         if can_open:
-            research = {p["strategy"]: p for p in (load_research() or {}).get("patterns", [])}
-            prox = pattern_proximity("^NSEI")
-            formed = [p for p in prox["patterns"] if p.get("formed_today")] if prox["as_of"] == signal_date else []
-            for p in formed:
-                r = research.get(p["strategy"]) or {}
-                opt = r.get("suggested_option")
-                if not opt or paper_db.has_signal_date(p["strategy"], signal_date, "pattern"):
-                    continue
-                planned = _exit_session(td, entry_date, opt["hold_days"])
-                spec = {"source": "pattern", "strategy": p["strategy"], "label": p["label"],
-                        "option_type": opt["type"], "moneyness_pct": opt["moneyness_pct"],
-                        "min_days_to_expiry": opt["min_days_to_expiry"], "hold_days": opt["hold_days"],
-                        "spot": closes[entry_date]}
-                if _open_one(conn, spec, signal_date, entry_date, planned):
-                    opened.append(f"{p['label']} ({opt['type']})")
+            # ONE position a session, in one direction. The gate is the book
+            # itself: if this session already holds something, nothing else
+            # opens, however good it looks. Re-running the evening's job
+            # therefore cannot add a second position either.
+            if paper_db.funded_on(entry_date) == 0:
+                research = {p["strategy"]: p for p in (load_research() or {}).get("patterns", [])}
+                prox = pattern_proximity("^NSEI")
+                formed = [p for p in prox["patterns"] if p.get("formed_today")] if prox["as_of"] == signal_date else []
+                # Strongest evidence first, on the same measure the best read
+                # ranks by — the holdout t against buying with no signal. A
+                # pattern with no measured t sorts last rather than winning
+                # by being unmeasured.
+                formed.sort(key=lambda q: (
+                    (research.get(q["strategy"]) or {}).get("holdout_t_stat") is None,
+                    -((research.get(q["strategy"]) or {}).get("holdout_t_stat") or 0.0)))
 
-            # Nothing formed: take one 2% out-of-the-money option anyway, in
-            # a single direction, from the best-evidenced signal firing that
-            # day. No proven edge — the row says so — and the point is to
-            # measure what taking something every day actually costs.
-            if not formed and not paper_db.has_signal_date("best_read", signal_date, "best_read"):
-                read = _confident_read(signal_date, closes, td)
-                if read:
-                    kind = read["direction"]
-                    planned = _exit_session(td, entry_date, BEST_READ["hold_days"])
-                    spec = {"source": "best_read", "strategy": "best_read",
-                            "label": f"Most confident signal — {read['why']}", "option_type": kind,
-                            **BEST_READ, "spot": closes[entry_date]}
+                chosen = None
+                for p in formed:
+                    r = research.get(p["strategy"]) or {}
+                    opt = r.get("suggested_option")
+                    if not opt or paper_db.has_signal_date(p["strategy"], signal_date, "pattern"):
+                        continue
+                    planned = _exit_session(td, entry_date, opt["hold_days"])
+                    spec = {"source": "pattern", "strategy": p["strategy"], "label": p["label"],
+                            "option_type": opt["type"], "moneyness_pct": opt["moneyness_pct"],
+                            "min_days_to_expiry": opt["min_days_to_expiry"], "hold_days": opt["hold_days"],
+                            "spot": closes[entry_date]}
                     if _open_one(conn, spec, signal_date, entry_date, planned):
-                        opened.append(f"best read {kind} 2% ITM ({read['why']})")
-                    else:
-                        skipped.append(_why_not(conn, spec, entry_date, planned))
+                        chosen = p
+                        opened.append(f"{p['label']} ({opt['type']})")
+                        break
+                    skipped.append(_why_not(conn, spec, entry_date, planned))
+
+                # The ones that also formed and did not get the slot. Said
+                # out loud: a pattern silently dropped looks the same as a
+                # pattern that never formed.
+                if chosen is not None:
+                    passed_over = [q["label"] for q in formed if q is not chosen]
+
+                # Nothing formed: take one 2% in-the-money option anyway, in
+                # a single direction, from the best-evidenced signal firing
+                # that day. No proven edge — the row says so — and the point
+                # is to measure what taking something every day actually
+                # costs.
+                if chosen is None and not formed and not paper_db.has_signal_date("best_read", signal_date, "best_read"):
+                    read = _confident_read(signal_date, closes, td)
+                    if read:
+                        kind = read["direction"]
+                        planned = _exit_session(td, entry_date, BEST_READ["hold_days"])
+                        spec = {"source": "best_read", "strategy": "best_read",
+                                "label": f"Most confident signal — {read['why']}", "option_type": kind,
+                                **BEST_READ, "spot": closes[entry_date]}
+                        if _open_one(conn, spec, signal_date, entry_date, planned):
+                            opened.append(f"best read {kind} 2% ITM ({read['why']})")
+                        else:
+                            skipped.append(_why_not(conn, spec, entry_date, planned))
 
             # The control: one call and one put a week, no signal involved.
+            # Outside the gate on purpose — it is not a position in the book
+            # and so cannot consume the session's slot.
             if not _control_this_week(td, entry_date):
                 for kind in ("CE", "PE"):
                     name = f"control_{kind.lower()}"
@@ -249,7 +300,7 @@ def observe(now: datetime | None = None) -> dict:
                             "label": f"No signal — weekly at-the-money {'call' if kind == 'CE' else 'put'}",
                             "option_type": kind, **CONTROL, "spot": closes[entry_date]}
                     if _open_one(conn, spec, signal_date, entry_date, planned):
-                        opened.append(f"control {kind}")
+                        benchmark.append(f"control {kind}")
 
         marked = 0
         for t in paper_db.open_trades():
@@ -272,6 +323,7 @@ def observe(now: datetime | None = None) -> dict:
                 marked += 1
 
     return {"opened": opened, "marked": marked, "closed": closed, "skipped": [s for s in skipped if s],
+            "passed_over": passed_over, "benchmark_opened": benchmark,
             "entry_session": entry_date, "signal_session": signal_date,
             "note": None if can_open else "waiting for the entry session's option prices"}
 
@@ -405,12 +457,15 @@ def live_marks() -> dict:
     marks = {tid: p for tid, p in marks.items() if p is not None}
     priced = {t["id"]: marks.get(t["id"]) for t in trades}
     book = cash_and_equity(marks)
+    # Every open row is priced — the yardstick needs a live mark to be worth
+    # reading — but the book's own figures count only what the book holds.
+    held = [t for t in trades if t.get("funded", 1)]
     return {
         "index": quotes.get("index"), "source": quotes.get("source"),
         "marks": {str(tid): p for tid, p in marks.items()},
-        "paper": {**book, "open_positions": len(trades),
-                  "live_priced": sum(1 for v in priced.values() if v is not None),
-                  "unrealised_rs": round(sum((_pnl(t, marks.get(t["id"])) or {}).get("profit_rs", 0) for t in trades))},
+        "paper": {**book, "open_positions": len(held),
+                  "live_priced": sum(1 for t in held if priced.get(t["id"]) is not None),
+                  "unrealised_rs": round(sum((_pnl(t, marks.get(t["id"])) or {}).get("profit_rs", 0) for t in held))},
     }
 
 
@@ -424,7 +479,7 @@ def equity_curve(marks: dict[int, float] | None = None) -> list[dict]:
     events: list[tuple[str, float, str]] = []
     for f in reversed(paper_db.fund_flows()):
         events.append((f["ts"][:10], float(f["amount"]), "funded" if f["amount"] > 0 else "withdrawn"))
-    trades = paper_db.all_trades()
+    trades = [t for t in paper_db.all_trades() if t.get("funded", 1)]
     for t in trades:
         if t["status"] == "CLOSED" and t["exit_premium"] is not None:
             pnl = _pnl(t)
@@ -475,10 +530,14 @@ def objective(curve: list[dict], book: dict) -> dict:
 
 
 def report(marks: dict[int, float] | None = None) -> dict:
-    trades = [{**t, "pnl": _pnl(t, (marks or {}).get(t["id"]))} for t in paper_db.all_trades()]
+    rows_all = [{**t, "pnl": _pnl(t, (marks or {}).get(t["id"]))} for t in paper_db.all_trades()]
+    # The book is what it holds. The yardstick is measured beside it, not
+    # inside it — two rows of a benchmark are not two trades.
+    trades = [t for t in rows_all if t.get("funded", 1)]
+    benchmark = [t for t in rows_all if not t.get("funded", 1)]
 
     def side(source: str) -> dict:
-        rows = [t for t in trades if t["source"] == source and t["status"] == "CLOSED" and t["pnl"]]
+        rows = [t for t in rows_all if t["source"] == source and t["status"] == "CLOSED" and t["pnl"]]
         nets = [t["pnl"]["net_pct"] for t in rows]
         rupees = [t["pnl"]["profit_rs"] for t in rows]
         return {"closed": len(rows),
@@ -486,14 +545,16 @@ def report(marks: dict[int, float] | None = None) -> dict:
                 "total_rs": sum(rupees) if rupees else 0,
                 "total_per_lot_rs": sum(t["pnl"]["profit_per_lot_rs"] for t in rows) if rows else 0,
                 "win_rate": round(sum(x > 0 for x in nets) / len(nets), 3) if nets else None,
-                "open": sum(1 for t in trades if t["source"] == source and t["status"] == "OPEN")}
+                "open": sum(1 for t in rows_all if t["source"] == source and t["status"] == "OPEN")}
 
-    first = min((t["signal_date"] for t in trades), default=None)
+    first = min((t["signal_date"] for t in rows_all), default=None)
     book = cash_and_equity(marks)
     curve = equity_curve(marks)
     return {
         "trades": trades,
-        "account": {**book, "flows": paper_db.fund_flows(), "max_per_trade_share": MAX_PER_TRADE},
+        "benchmark": benchmark,
+        "account": {**book, "flows": paper_db.fund_flows(), "max_per_trade_share": MAX_PER_TRADE,
+                    "one_a_session": True},
         "equity_curve": curve,
         "objective": objective(curve, book),
         "summary": {
@@ -504,6 +565,9 @@ def report(marks: dict[int, float] | None = None) -> dict:
         "note": ("Hypothetical positions at real NSE closing premiums. Nothing is ordered and no money moves. "
                  f"Costs of {COST_FRACTION:.1%} of premium are charged on every position, open or closed. A "
                  "position is only ever opened for the session that has just closed, so none of this could be "
-                 "chosen knowing the outcome. The control is the same kind of option bought weekly with no "
-                 "signal: that is what a pattern has to beat, here as in the backtests."),
+                 "chosen knowing the outcome. The book takes one position a session, in one direction: when "
+                 "several patterns form, the one with the strongest holdout evidence takes it. The control — "
+                 "a call and a put bought weekly with no signal — sits outside the book. It spends none of "
+                 "the allocated money and cannot take the session's slot; it is only there because a result "
+                 "with nothing to compare it against means nothing."),
     }

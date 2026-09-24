@@ -26,9 +26,10 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent.parent / "data" / "paper.db"
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# 'pattern' = a setup that formed. 'control' = the same kind of option bought
-# on a fixed schedule with no signal, so the comparison exists forward too.
-SOURCES = ("pattern", "control")
+# 'pattern' = a setup that formed. 'best_read' = the one taken when nothing
+# formed. 'control' = the same kind of option bought on a fixed schedule with
+# no signal, so the comparison exists forward too.
+SOURCES = ("pattern", "best_read", "control")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_trades (
@@ -54,6 +55,11 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     lots          INTEGER NOT NULL DEFAULT 1,
     entry_cost_rs REAL NOT NULL DEFAULT 0,
     exit_cost_rs  REAL,
+    -- 1 = a position in the book: it spends allocated cash and moves equity.
+    -- 0 = a yardstick: priced on the same real premiums, but outside the
+    -- book, because the book takes one position a session and a benchmark
+    -- must not be able to take that slot.
+    funded        INTEGER NOT NULL DEFAULT 1,
     UNIQUE (strategy, signal_date, source)
 );
 
@@ -73,6 +79,7 @@ _MIGRATIONS = (
     ("lots", "INTEGER NOT NULL DEFAULT 1"),
     ("entry_cost_rs", "REAL NOT NULL DEFAULT 0"),
     ("exit_cost_rs", "REAL"),
+    ("funded", "INTEGER NOT NULL DEFAULT 1"),
 )
 
 
@@ -85,9 +92,20 @@ def connect(db_path: Path | None = None):
     try:
         conn.executescript(SCHEMA)
         have = {r["name"] for r in conn.execute("PRAGMA table_info(paper_trades)")}
+        added = []
         for name, decl in _MIGRATIONS:
             if name not in have:
                 conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {name} {decl}")
+                added.append(name)
+        if "funded" in added:
+            # The control used to be a funded position, and two of them — a
+            # call and a put — could be the whole of a session's activity.
+            # The book now takes one position a session, so the yardstick
+            # moves outside it. The rows are not touched: they keep their
+            # premiums, their dates and their marks, and only stop counting
+            # as money. Nothing is deleted; a paper trade that happened
+            # happened.
+            conn.execute("UPDATE paper_trades SET funded = 0 WHERE source = 'control'")
         yield conn
         conn.commit()
     finally:
@@ -98,8 +116,8 @@ def open_position(row: dict, db_path: Path | None = None) -> bool:
     """Writes one open position. False if that setup already has one for
     that signal date — a pattern forming again mid-hold does not stack."""
     cols = ("source", "strategy", "label", "signal_date", "underlying", "option_type", "strike", "expiry",
-            "entry_date", "entry_premium", "hold_days", "planned_exit", "lots", "entry_cost_rs")
-    row = {"lots": 1, "entry_cost_rs": 0.0, **row}
+            "entry_date", "entry_premium", "hold_days", "planned_exit", "lots", "entry_cost_rs", "funded")
+    row = {"lots": 1, "entry_cost_rs": 0.0, "funded": 1, **row}
     with connect(db_path) as conn:
         cur = conn.execute(
             f"INSERT OR IGNORE INTO paper_trades (opened_at, status, {', '.join(cols)}) "
@@ -160,6 +178,15 @@ def all_trades(limit: int = 500, db_path: Path | None = None) -> list[dict]:
     with connect(db_path) as conn:
         return [dict(r) for r in conn.execute(
             "SELECT * FROM paper_trades ORDER BY signal_date DESC, id DESC LIMIT ?", (limit,))]
+
+
+def funded_on(entry_date: str, db_path: Path | None = None) -> int:
+    """How many positions the book already holds for one entry session.
+    The book opens one a session, so this is the gate that enforces it."""
+    with connect(db_path) as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM paper_trades WHERE entry_date = ? AND funded = 1",
+            (entry_date,)).fetchone()[0])
 
 
 def has_signal_date(strategy: str, signal_date: str, source: str, db_path: Path | None = None) -> bool:
