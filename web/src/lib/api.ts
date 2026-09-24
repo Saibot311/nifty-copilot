@@ -670,6 +670,43 @@ export async function journalRequest<T>(path: string, method: "GET" | "POST" | "
   }
 }
 
+export type NewsHypothesis = {
+  name: string;
+  label: string;
+  family: string;
+  leg: string;
+  signal: string;
+  why: string;
+  hold_sessions: number;
+  signals_since_2018: number;
+  signals_per_year: number;
+  trades_taken: number;
+  development: { num_trades?: number; avg_profit_per_lot_rs?: number; baseline_avg_profit_per_lot_rs?: number | null; t?: number | null };
+  holdout: {
+    num_trades?: number; avg_profit_per_lot_rs?: number; baseline_avg_profit_per_lot_rs?: number | null;
+    win_rate?: number | null; t?: number | null; ci_95?: { low: number; high: number } | null;
+  };
+  required_t: number | null;
+  status: string;
+  reason: string;
+};
+
+export type NewsResearch = {
+  computed_at?: string;
+  query_set: string;
+  coverage: { days: number; first: string | null; last: string | null };
+  tone_days?: number;
+  hypotheses: NewsHypothesis[];
+  approved: number;
+  tested: number;
+  tests_in_family: number;
+  bar_note?: string;
+  prereg_hash: string;
+  note: string;
+};
+
+export const fetchNewsResearch = () => get<NewsResearch>("/api/news/research");
+
 export type OptionChain = {
   as_of: string;
   underlying_value: number;

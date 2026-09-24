@@ -4,6 +4,7 @@ import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IVCard } from "@/components/IVCard";
 import { MarketTab } from "@/components/MarketCards";
+import { NewsResearchCard } from "@/components/NewsResearchCard";
 import { OpenInterestCard } from "@/components/OpenInterestCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
@@ -39,6 +40,7 @@ import {
   fetchLivePatterns,
   fetchLiveQuote,
   fetchNews,
+  fetchNewsResearch,
   fetchOptionsChain,
   fetchPatternOptions,
   fetchPatternsToday,
@@ -74,6 +76,7 @@ export default async function Home() {
     paper,
     news,
     optionChain,
+    newsResearch,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -98,6 +101,7 @@ export default async function Home() {
     fetchPaper(),
     fetchNews(),
     fetchOptionsChain(),
+    fetchNewsResearch(),
   ]);
 
   const snap = snapshot.data;
@@ -224,6 +228,15 @@ export default async function Home() {
                   <PatternOptionsTable data={patternOptions.data} />
                 )}
               </section>
+
+              {newsResearch.data && (
+                <section>
+                  <SectionLabel hint="tone of coverage, tested the same way as everything else">
+                    Does the news pay a buyer?
+                  </SectionLabel>
+                  <NewsResearchCard data={newsResearch.data} />
+                </section>
+              )}
 
               {replication.data && (
                 <section>
