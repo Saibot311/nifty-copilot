@@ -49,3 +49,63 @@ def test_different_keys_compute_in_parallel():
     for t in threads:
         t.join()
     assert time.monotonic() - start < 0.9  # serialized would take ~1.2s
+
+
+# --- the tick endpoint's hang, pinned -----------------------------------------
+
+def test_a_wedged_producer_does_not_block_later_callers():
+    """The live bug: NSE began throttling, a producer stopped returning, and
+    because the key's lock was held across that call every later poll queued
+    behind it. The tick endpoint hung for good while the rest of the API was
+    fine. With stale_ok, one thread waits and everyone else is served."""
+    import threading
+    import time as _time
+
+    from cache import cached, invalidate
+
+    invalidate("wedged")
+    cached("wedged", ttl_seconds=0, producer=lambda: "first")  # prime it
+
+    release = threading.Event()
+
+    def wedged():
+        release.wait(10)
+        return "second"
+
+    stuck = threading.Thread(target=lambda: cached("wedged", 0, wedged), daemon=True)
+    stuck.start()
+    _time.sleep(0.2)  # let it take the lock
+
+    started = _time.monotonic()
+    got = cached("wedged", ttl_seconds=0, producer=lambda: "third", stale_ok=True)
+    waited = _time.monotonic() - started
+
+    release.set()
+    stuck.join(timeout=10)
+
+    assert got == "first", "a caller with a usable value must be served it, not queued"
+    assert waited < 1.0, f"stale_ok waited {waited:.1f}s — it must not block"
+
+
+def test_a_cold_key_still_produces_rather_than_returning_nothing():
+    from cache import cached, invalidate
+
+    invalidate("cold")
+    assert cached("cold", ttl_seconds=60, producer=lambda: "made", stale_ok=True) == "made"
+
+
+def test_wait_s_gives_up_on_a_slow_producer_and_serves_the_last_value():
+    import threading
+    import time as _time
+
+    from cache import cached, invalidate
+
+    invalidate("slow")
+    cached("slow", ttl_seconds=0, producer=lambda: "old")
+    release = threading.Event()
+    t = threading.Thread(target=lambda: cached("slow", 0, lambda: (release.wait(10), "new")[1]), daemon=True)
+    t.start()
+    _time.sleep(0.2)
+    assert cached("slow", ttl_seconds=0, producer=lambda: "never", wait_s=0.3) == "old"
+    release.set()
+    t.join(timeout=10)

@@ -4,59 +4,135 @@ Everything else in this project runs on daily closes, which is fine for
 research but means the dashboard shows yesterday's number during a live
 session. This provides the actual current price.
 
-Cached for a few seconds so a dashboard load doesn't hammer NSE, and
-raises rather than returning stale or invented values when unreachable.
+Two things here are scar tissue, and both matter more than they look.
+
+*One session, not one per call.* This used to build a fresh `NSELive()` for
+every quote. Each one repeats NSE's cookie handshake and opens its own
+socket, and on a dashboard polling every two seconds that is a new
+connection every two seconds. NSE throttled us and closed them; twelve were
+found sitting in CLOSE_WAIT, never reaped. One session is reused, and is
+rebuilt only when a call through it fails.
+
+*The lock is not held across the network.* It used to be. When NSE went
+slow, the thread holding it stopped returning, and every later request
+queued behind it — the tick endpoint hung permanently while the rest of the
+API answered normally. Now one thread refreshes and the others are handed
+the last value immediately.
+
+A served value always carries `fetched_at` and `stale`, because a price with
+no age on it is the exact thing DESIGN.md forbids: a stale number presented
+as a current one.
 """
 
 import threading
 import time
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 _CACHE: dict[str, tuple[float, dict]] = {}
 _TTL = 15
-_LOCK = threading.Lock()
+_FETCH_LOCK = threading.Lock()
+_SESSION_LOCK = threading.Lock()
+_SESSION = None
+# How long a caller with a usable older value will wait for a fresh one
+# before giving up and serving what it has.
+_WAIT_S = 6.0
+
+
+def _session():
+    global _SESSION
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            from jugaad_data.nse import NSELive
+
+            _SESSION = NSELive()
+        return _SESSION
+
+
+def _drop_session() -> None:
+    """A session that just failed is not reused: its cookies may be expired
+    or its connection half-closed, and the next call should start clean."""
+    global _SESSION
+    with _SESSION_LOCK:
+        closer = getattr(getattr(_SESSION, "s", None), "close", None)
+        if closer:
+            try:
+                closer()
+            except Exception:
+                pass
+        _SESSION = None
+
+
+def _aged(entry: tuple[float, dict]) -> dict:
+    at, quote = entry
+    age = time.monotonic() - at
+    return {**quote, "age_s": round(age, 1), "stale": age >= _TTL}
+
+
+def _fetch(index: str) -> dict:
+    data = _session().all_indices()
+    rows = data.get("data", []) if isinstance(data, dict) else []
+    row = next((r for r in rows if r.get("index") == index), None)
+    if row is None:
+        raise RuntimeError(f"Index '{index}' not present in NSE live feed")
+    vix_row = next((r for r in rows if r.get("index") == "INDIA VIX"), None)
+    return {
+        "index": row.get("index"),
+        "last": row.get("last"),
+        "change": row.get("variation"),
+        "change_pct": row.get("percentChange"),
+        "open": row.get("open"),
+        "high": row.get("high"),
+        "low": row.get("low"),
+        "previous_close": row.get("previousClose"),
+        "year_high": row.get("yearHigh"),
+        "year_low": row.get("yearLow"),
+        "india_vix": vix_row.get("last") if vix_row else None,
+        "india_vix_change_pct": vix_row.get("percentChange") if vix_row else None,
+        "source": "NSE live feed",
+        "fetched_at": datetime.now(IST).isoformat(timespec="seconds"),
+    }
 
 
 def live_index_quote(index: str = "NIFTY 50") -> dict:
-    with _LOCK:
+    """The current quote. Raises only when there is nothing to serve at all."""
+    hit = _CACHE.get(index)
+    if hit and (time.monotonic() - hit[0]) < _TTL:
+        return _aged(hit)
+
+    # With something usable in hand, wait briefly at most; with nothing,
+    # this caller has to do the work.
+    if hit is not None:
+        if not _FETCH_LOCK.acquire(timeout=_WAIT_S):
+            return _aged(hit)
+    else:
+        _FETCH_LOCK.acquire()
+    try:
         hit = _CACHE.get(index)
         if hit and (time.monotonic() - hit[0]) < _TTL:
-            return hit[1]
-
-        from jugaad_data.nse import NSELive
-
-        data = NSELive().all_indices()
-        rows = data.get("data", []) if isinstance(data, dict) else []
-        row = next((r for r in rows if r.get("index") == index), None)
-        if row is None:
-            raise RuntimeError(f"Index '{index}' not present in NSE live feed")
-
-        vix_row = next((r for r in rows if r.get("index") == "INDIA VIX"), None)
-
-        quote = {
-            "index": row.get("index"),
-            "last": row.get("last"),
-            "change": row.get("variation"),
-            "change_pct": row.get("percentChange"),
-            "open": row.get("open"),
-            "high": row.get("high"),
-            "low": row.get("low"),
-            "previous_close": row.get("previousClose"),
-            "year_high": row.get("yearHigh"),
-            "year_low": row.get("yearLow"),
-            "india_vix": vix_row.get("last") if vix_row else None,
-            "india_vix_change_pct": vix_row.get("percentChange") if vix_row else None,
-            "source": "NSE live feed",
-        }
+            return _aged(hit)
+        try:
+            quote = _fetch(index)
+        except Exception:
+            _drop_session()
+            if hit is not None:
+                return _aged(hit)  # last good price, labelled with its age
+            raise
         _CACHE[index] = (time.monotonic(), quote)
-        return quote
+        return _aged(_CACHE[index])
+    finally:
+        _FETCH_LOCK.release()
 
 
 def market_status() -> dict:
     """Whether the market is actually open — matters because a 'live' price
     outside session hours is just the last close wearing a live label."""
-    from jugaad_data.nse import NSELive
-
-    data = NSELive().market_status()
+    try:
+        data = _session().market_status()
+    except Exception:
+        _drop_session()
+        raise
     markets = data.get("marketState", []) if isinstance(data, dict) else []
     cm = next((m for m in markets if m.get("market") == "Capital Market"), None)
     return {

@@ -498,18 +498,25 @@ def live_tick() -> dict:
     """The small, fast payload the dashboard polls while the market is open:
     the index now, and every open paper position marked at its live premium.
     Kite when logged in (one call, cached a second), NSE's public feed
-    otherwise, and last close when neither answers — always labelled."""
+    otherwise, and last close when neither answers — always labelled.
+
+    Every cache read here is `stale_ok`: this endpoint is polled every two
+    seconds by every open dashboard, and it must answer now. One thread
+    refreshes while the rest are handed the last value. Waiting in a queue
+    for a fresher number is how this endpoint once hung for good — NSE
+    started throttling, a producer stopped returning, and every later poll
+    piled up behind the lock it was holding."""
     from briefing.paper import live_marks
 
     out: dict = {"as_of": datetime.now(kite_session.IST).isoformat()}
     try:
-        status = cached("market_status", ttl_seconds=60, producer=market_status)
+        status = cached("market_status", ttl_seconds=60, producer=market_status, stale_ok=True)
     except Exception:
         status = {"is_open": None}
     out["market"] = status
 
     try:
-        marks = cached("live_marks", ttl_seconds=2, producer=live_marks)
+        marks = cached("live_marks", ttl_seconds=2, producer=live_marks, stale_ok=True)
     except Exception as e:
         marks = {"error": str(e)[:120], "index": None, "marks": {}, "source": None}
     out.update({k: marks.get(k) for k in ("index", "marks", "source", "paper")})
@@ -518,7 +525,7 @@ def live_tick() -> dict:
     # page comes from Python (I2).
     if out.get("index") is not None and out.get("change") is None:
         try:
-            prev = cached("prev_close", ttl_seconds=600, producer=_previous_close)
+            prev = cached("prev_close", ttl_seconds=600, producer=_previous_close, stale_ok=True)
             if prev:
                 out["previous_close"] = prev
                 out["change"] = round(out["index"] - prev, 2)
