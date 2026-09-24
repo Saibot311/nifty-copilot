@@ -194,13 +194,14 @@ def main() -> int:
         # After positioning: two of the six read today's participant file.
         ("structural hypotheses", lambda: run_script("scripts/structural_research.py")),
         ("replication on other indices", lambda: run_script("scripts/replication.py")),
-        ("paper observation", step_paper),
-        ("market context studies", lambda: run_script("scripts/market_research.py")),
-        # News: archive today's headlines and judge them, then top the GDELT
-        # tone series up to yesterday and re-run the pre-registered study.
+        # News before the paper book, like the other research: the book ranks
+        # a news signal by that study's holdout t and reads its signals off
+        # the tone series, so both have to be current when it decides.
         ("news archive and judging", step_news),
         ("news tone series", lambda: run_script("scripts/backfill_news_tone.py", "--from", _tone_from())),
         ("news hypotheses", lambda: run_script("scripts/news_research.py")),
+        ("paper observation", step_paper),
+        ("market context studies", lambda: run_script("scripts/market_research.py")),
         ("GIFT Nifty snapshot", step_gift_nifty),
         ("audit", step_audit),
     ]

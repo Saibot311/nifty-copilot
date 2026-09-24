@@ -233,3 +233,32 @@ def test_the_study_reports_no_verdict_before_the_archive_exists(monkeypatch):
     out = nr.run_news_research()
     assert out["hypotheses"] == []
     assert "backfill_news_tone" in out["note"]
+
+
+def test_the_nightly_job_refreshes_news_before_the_paper_book_decides():
+    """The book ranks a news signal by that study's holdout t and reads its
+    signals off the tone series. If paper observation ran first it would
+    decide on yesterday's research, which is the same mistake as judging a
+    pattern on data the pattern was chosen from — one day smaller."""
+    import inspect
+
+    import scripts.daily_job as dj
+
+    steps = [l.strip() for l in inspect.getsource(dj.main).splitlines() if l.strip().startswith('("')]
+    names = [l.split('"')[1] for l in steps]
+    for needed in ("news archive and judging", "news tone series", "news hypotheses"):
+        assert names.index(needed) < names.index("paper observation"), needed
+
+
+def test_the_news_archive_is_backed_up_and_the_tone_cache_is_not():
+    """news.db is forward-only and unrepeatable. news_tone.db is a cache of
+    a public GDELT series: losing it costs time, not evidence."""
+    import inspect
+
+    import storage.backup as backup
+
+    assert hasattr(backup, "backup_news")
+    src = inspect.getsource(backup)
+    assert "news_tone" not in src.replace("news_tone.db is NOT", "")
+    nightly = inspect.getsource(__import__("scripts.daily_job", fromlist=["step_backup"]).step_backup)
+    assert "backup_news()" in nightly
