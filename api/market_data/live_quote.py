@@ -116,7 +116,18 @@ def _fetch(index: str) -> dict:
         "india_vix_change_pct": vix_row.get("percentChange") if vix_row else None,
         "source": "NSE live feed",
         "fetched_at": datetime.now(IST).isoformat(timespec="seconds"),
+        # The time NSE stamps its own figures with — the close, after hours —
+        # as opposed to when this system asked.
+        "market_time": _nse_time(data.get("timestamp") if isinstance(data, dict) else None),
     }
+
+
+def _nse_time(stamp: str | None) -> str | None:
+    """"24-Sep-2026 15:30" -> ISO in IST, or None."""
+    try:
+        return datetime.strptime(stamp, "%d-%b-%Y %H:%M").replace(tzinfo=IST).isoformat(timespec="minutes")
+    except (TypeError, ValueError):
+        return None
 
 
 def live_index_quote(index: str = "NIFTY 50") -> dict:

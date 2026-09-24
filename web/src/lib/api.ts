@@ -267,6 +267,14 @@ export const fetchLiveQuote = () => get<LiveQuote>("/api/live");
 export const fetchRecommendation = () => get<Recommendation>("/api/recommendation");
 export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
 export const fetchIndicators = () => get<IndicatorReading[]>("/api/indicators");
+export type ChartCandle = {
+  date: string; open: number; high: number; low: number; close: number;
+  /** Computed in Python over the full history — the grid's own EMA values. */
+  ema20: number; ema50: number;
+};
+export type ChartData = { as_of: string; sessions: number; source: string; candles: ChartCandle[] };
+export const fetchChart = () => get<ChartData>("/api/chart");
+
 export const fetchCandles = (days = 140) =>
   get<CandleResponse>(`/api/candles?provider=yfinance&days=${days}`);
 export const fetchResearchCompare = (days = 7000) =>

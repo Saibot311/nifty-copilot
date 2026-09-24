@@ -26,7 +26,7 @@ import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
 import {
   fetchBriefing,
-  fetchCandles,
+  fetchChart,
   fetchCopilotStatus,
   fetchForwardLog,
   fetchImpliedVol,
@@ -84,7 +84,7 @@ export default async function Home() {
     fetchLiveQuote(),
     fetchRecommendation(),
     fetchIndicators(),
-    fetchCandles(),
+    fetchChart(),
     fetchBriefing(),
     fetchResearchCompare(),
     fetchPlaybook(),
@@ -154,7 +154,7 @@ export default async function Home() {
                 </section>
                 <section className="min-w-0 lg:col-span-5">
                   <SectionLabel hint="with 20- and 50-day EMAs">Price</SectionLabel>
-                  <PriceChart candles={candles.data?.candles ?? null} />
+                  <PriceChart data={candles.data} />
                   <div className="mt-3">
                     <IndicatorGrid indicators={indicators.data} />
                   </div>

@@ -13,7 +13,7 @@ import pandas as pd
 from market_data import Candle, YFinanceProvider
 from market_data.nse_indices import top_up as nse_top_up
 
-from .indicators import atr, historical_volatility, relative_volume, rsi, session_vwap
+from .indicators import atr, ema, historical_volatility, relative_volume, rsi, session_vwap
 from .price_action import evaluate as evaluate_price_action
 from .regime import classify_regime
 
@@ -30,20 +30,66 @@ def candles_to_df(candles: list[Candle]) -> pd.DataFrame:
     return df.set_index("timestamp").sort_index()
 
 
+def _india_vix(provider) -> dict:
+    """India VIX, from NSE's own feed first: live during a session, the close
+    after it. Yahoo's daily ^INDIAVIX lags and drops sessions — it showed
+    10.35 from 23 Sep 2026 while NSE's close on the 24th was 12.7, with no
+    date beside it — so it is only the fallback, and it says its date."""
+    try:
+        from market_data.live_quote import live_index_quote
+        q = live_index_quote()
+        if q.get("india_vix") is not None:
+            return {"value": round(float(q["india_vix"]), 2), "source": "NSE",
+                    "as_of": q.get("market_time") or q.get("fetched_at")}
+    except Exception:
+        pass
+    try:
+        candles = provider.get_ohlc("^INDIAVIX", "1d", date.today() - timedelta(days=10), date.today())
+        if candles:
+            return {"value": round(float(candles[-1].close), 2), "source": "Yahoo daily",
+                    "as_of": candles[-1].timestamp[:10]}
+    except Exception:
+        pass
+    return {"value": None, "source": None, "as_of": None}
+
+
+def daily_frame(symbol: str = "^NSEI", days: int = 400) -> pd.DataFrame:
+    """The daily series the indicator grid and the Today chart both read:
+    Yahoo, with sessions it is missing or late with filled from NSE's own
+    index report — the same top-up as the backtests, so the dashboard never
+    shows an older session than the rest of the page."""
+    candles = YFinanceProvider().get_ohlc(symbol, "1d", date.today() - timedelta(days=days), date.today())
+    if len(candles) < 60:
+        raise ValueError(f"Only got {len(candles)} daily bars for {symbol} — need 60+ to compute indicators.")
+    return nse_top_up(candles_to_df(candles), symbol)
+
+
+def chart_series(symbol: str = "^NSEI", sessions: int = 110) -> dict:
+    """The Today chart: the last `sessions` daily candles with EMA20/EMA50.
+    The same series and the same EMA function as the indicator grid, over the
+    same full history — so the lines on the chart are the numbers printed
+    beside it. Computed here, not in the browser (I2): it used to compute
+    them from the bars on screen, which neither matched the grid nor gave the
+    EMA50 a value before the chart's halfway point."""
+    df = daily_frame(symbol)
+    if "provisional" in df.columns:
+        df = df[~df["provisional"].astype(bool)]
+    e20, e50 = ema(df["close"], 20), ema(df["close"], 50)
+    tail = df.tail(sessions)
+    return {
+        "as_of": str(tail.index[-1].date()),
+        "sessions": len(tail),
+        "source": "Yahoo daily, with missing or late sessions filled from NSE's index report",
+        "candles": [{"date": str(ts.date()), "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
+                     "low": round(float(r["low"]), 2), "close": round(float(r["close"]), 2),
+                     "ema20": round(float(e20.loc[ts]), 2), "ema50": round(float(e50.loc[ts]), 2)}
+                    for ts, r in tail.iterrows()],
+    }
+
+
 def build_analysis(symbol: str = "^NSEI") -> dict:
     provider = YFinanceProvider()
-
-    daily_candles = provider.get_ohlc(
-        symbol, "1d", date.today() - timedelta(days=400), date.today()
-    )
-    if len(daily_candles) < 60:
-        raise ValueError(
-            f"Only got {len(daily_candles)} daily bars for {symbol} — need 60+ to compute indicators."
-        )
-    # Same top-up as the backtests: when Yahoo is a day late, NSE's own
-    # index report has the close, and the dashboard should not show an
-    # older session than the rest of the page.
-    daily_df = nse_top_up(candles_to_df(daily_candles), symbol)
+    daily_df = daily_frame(symbol)
 
     regime_result = classify_regime(daily_df)
     price_action = evaluate_price_action(daily_df)
@@ -78,15 +124,7 @@ def build_analysis(symbol: str = "^NSEI") -> dict:
     change = snapshot_price - prev_close
     change_pct = change / prev_close * 100
 
-    india_vix = None
-    try:
-        vix_candles = provider.get_ohlc(
-            "^INDIAVIX", "1d", date.today() - timedelta(days=10), date.today()
-        )
-        if vix_candles:
-            india_vix = round(float(vix_candles[-1].close), 2)
-    except Exception:
-        india_vix = None
+    vix = _india_vix(provider)
 
     return {
         "symbol": symbol,
@@ -102,7 +140,9 @@ def build_analysis(symbol: str = "^NSEI") -> dict:
             "rsi_14": _safe_round(rsi_val),
             "atr_14": _safe_round(atr_val),
             "historical_volatility_pct": _safe_round(hist_vol_val),
-            "india_vix": india_vix,
+            "india_vix": vix["value"],
+            "india_vix_source": vix["source"],
+            "india_vix_as_of": vix["as_of"],
             # NIFTY is a spot index — it has no real trading volume (only
             # its constituent stocks and derivatives do). Yahoo Finance
             # reports intraday volume as a flat 0 for ^NSEI, which makes

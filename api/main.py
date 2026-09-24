@@ -141,6 +141,16 @@ def get_snapshot() -> Snapshot:
     )
 
 
+def _vix_when(as_of: str | None) -> str:
+    """"24 Sep 15:31 IST" for a timestamp, the date alone for a daily close."""
+    if not as_of:
+        return "time unknown"
+    if "T" not in as_of:
+        return as_of
+    t = datetime.fromisoformat(as_of)
+    return f"{t:%d %b %H:%M} IST"
+
+
 @app.get("/api/indicators", response_model=list[Indicator])
 def get_indicators() -> list[Indicator]:
     ind = _get_analysis()["indicators"]
@@ -172,7 +182,10 @@ def get_indicators() -> list[Indicator]:
         ),
         Indicator(
             name="India VIX",
-            value=str(ind["india_vix"]) if ind["india_vix"] is not None else "n/a",
+            # With its source and time: a VIX with no date on it once sat two
+            # sessions stale beside a live price.
+            value=(f"{ind['india_vix']} ({ind.get('india_vix_source')}, {_vix_when(ind.get('india_vix_as_of'))})"
+                   if ind["india_vix"] is not None else "n/a"),
             read="neutral",
         ),
         Indicator(
@@ -226,6 +239,20 @@ def get_candles(
         "count": len(candles),
         "candles": candles,
     }
+
+
+@app.get("/api/chart")
+def chart(sessions: int = Query(110, ge=20, le=400)) -> dict:
+    """The Today chart: daily candles with EMA20/EMA50 from the same series
+    and the same function as the indicator grid, so the lines are the numbers
+    beside them (I2). It used to draw Yahoo's raw feed — a day late, with
+    22 Sep 2026 missing — and compute the EMAs in the browser."""
+    from quant.pipeline import chart_series
+    try:
+        return cached(f"chart:{sessions}", ttl_seconds=600, producer=lambda: chart_series(sessions=sessions),
+                      stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Chart unavailable: {e}")
 
 
 @app.get("/api/research/compare")
