@@ -1,6 +1,6 @@
 # Handoff — read this first
 
-Written 2026-09-21, updated 2026-09-23. Start here, then `ARCHITECTURE.md` (how it's built, the five
+Written 2026-09-21, updated 2026-09-24. Start here, then `ARCHITECTURE.md` (how it's built, the five
 invariants) and `PROJECT_PLAN.md` (what was decided and when, newest first).
 
 ## What this is
@@ -25,6 +25,10 @@ size in whole lots against the book's current value, at most 40% each. Three pol
 formed; `best_read` when nothing formed — one 2% in-the-money option, one direction, from the
 best-evidenced signal firing that day (all of them rejected; a negative t is never followed), falling
 back to the 20-session trend; and a weekly no-signal control, one lot each way, as the yardstick.
+**The book takes one position a session, in one direction.** When several patterns form, the one with
+the strongest holdout t takes the slot and the rest are reported as passed over. The control sits
+*outside* the book: it spends none of the allocated money, moves none of the equity, and cannot take
+the session's slot — it is a measurement, and without it a result has nothing to be compared against.
 An in-the-money lot runs ~₹28,000, so the per-trade cap is 40% of the book — at 20% nothing could
 open. A skipped position reports why. **The book compounds:** wins and losses change its value and
 positions are sized off that value, and the Journal tab shows the curve and the stated goal. That
@@ -35,6 +39,25 @@ scoreboard reaches nothing else — a test asserts the recommendation gate canno
 hypothetical position at the real closing premium, marked and closed on its tested schedule, against a
 weekly no-signal control. Zero execution. It may never open a position for a session before
 `FIRST_SIGNAL_DATE` — a paper trade on a past signal is a backtest in disguise.
+
+**There is a news section on the Market tab.** Five dated feeds (RBI's own wire, ET Markets, Business
+Standard, Mint, BusinessLine) plus NSE corporate filings, split by when a headline arrived relative to
+the session a buyer can act in: pre-open, during, after the close. Jev reads each one and says whether
+it is the kind of event that moves an index, which way it would push, and what it is about — a
+description of the news, never a forecast. A judgment is stored once and never recomputed, because
+re-judging after the market has moved turns hindsight into a signal, and an unjudged headline shows as
+unjudged rather than as neutral. `api/data/news.db` is forward-only and **cannot be regenerated**: no
+free source publishes dated Indian market headlines going back, so every row exists only because the
+system was running that day. It is in the nightly backup set.
+
+**Whether news pays is being tested, not assumed.** GDELT gives away a daily news-tone series back to
+2018, which is why this could be backtested on the same 2018–23 / 2024–26 split as everything else.
+Five hypotheses were registered before any was computed (hash `30439303ef31c290`), raising the family
+count to 31 — so they face a higher bar than the 26 registered before them. The alignment rule matters
+more here than anywhere: much of a day's market coverage is *about* that day's move, so a signal is
+read off a completed UTC day and entered at the next Indian session's close. **No verdict yet** — the
+tone archive is still backfilling (`api/scripts/backfill_news_tone.py`; GDELT rate-limits hard, so it
+is nine yearly requests, minutes apart). Run `api/scripts/news_research.py` once it is full.
 
 **The honest result so far: nothing has a proven edge.** 26 patterns, each judged
 once on 2024–26 option data it never saw: **0 approved, 0 conditional, 26 rejected.**
