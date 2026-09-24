@@ -7,6 +7,8 @@ computed from yesterday's close all session; now, while NSE reports a
 session newer than the last daily candle, its open/high/low/last become a
 provisional candle and every reading includes it."""
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -63,7 +65,7 @@ def test_no_iv_is_shown_as_unavailable_not_zero(world, monkeypatch):
 def test_negative_figures_carry_a_real_minus(world):
     out = li.live_indicators()
     blob = " ".join(t["value"] + " " + t["detail"] for t in out["tiles"])
-    assert "-" not in blob.replace("Prev-", "").replace("-day", "").replace("20-", "").replace("14-", "")
+    assert not re.search(r"(^|[\s(])-\d", blob)             # a hyphen before a figure, not "1-year"
 
 
 def test_after_the_close_a_session_the_daily_file_lacks_is_still_counted(world):
@@ -82,3 +84,11 @@ def test_pre_open_zeros_are_not_a_candle(world):
                       "market_time": "2026-09-25T09:08+05:30"}
     out = li.live_indicators()
     assert out["session"] == "2026-09-24" and out["live"] is False
+
+
+def test_every_working_tile_has_a_state_line(world):
+    """A tile without one sat a line higher than its neighbours in the row."""
+    tiles = {t["key"]: t for t in li.live_indicators()["tiles"]}
+    assert all(t["state"] for t in tiles.values())
+    assert tiles["vix"]["state"] == "up on the day"
+    assert tiles["atr"]["state"] in ("above its 1-year median", "below its 1-year median")

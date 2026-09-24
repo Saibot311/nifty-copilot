@@ -122,7 +122,9 @@ def live_indicators() -> dict:
     e20, e50 = float(ema(close, 20).iloc[-1]), float(ema(close, 50).iloc[-1])
     r = rsi(close)
     a = adx(df)
-    atr_v = float(atr(df).iloc[-1])
+    atr_s = atr(df)
+    atr_v = float(atr_s.iloc[-1])
+    atr_med = float(atr_s.tail(250).median())
     hv = float(historical_volatility(close).iloc[-1])
     bar, prev = df.iloc[-1], df.iloc[-2]
     session = _day(df.index[-1])
@@ -148,8 +150,9 @@ def live_indicators() -> dict:
     tile("adx", "ADX (14)", f"{av:.1f}", f"{ap:.1f} {earlier} · 25+ is the usual trending line",
          "trending" if av >= 25 else "not trending")
 
-    tile("atr", "ATR (14)", f"{_pts(atr_v)} pts", f"{atr_v / price * 100:.2f}% of price · a typical day's range",
-         "")
+    tile("atr", "ATR (14)", f"{_pts(atr_v)} pts",
+         f"{atr_v / price * 100:.2f}% of price · 1-year median {_pts(atr_med)} pts",
+         "above its 1-year median" if atr_v > atr_med else "below its 1-year median")
 
     rng = float(bar["high"] - bar["low"])
     tile("range", f"Range, {session}" + (" so far" if open_now else ""), f"{_pts(rng)} pts",
@@ -165,8 +168,10 @@ def live_indicators() -> dict:
     vix = (q or {}).get("india_vix")
     if vix is not None:
         chg = (q or {}).get("india_vix_change_pct")
+        chg = float(chg) if chg is not None else None
         tile("vix", "India VIX", f"{float(vix):.2f}",
-             (f"{_signed(float(chg), '.2f')}% on the day · NSE" if chg is not None else "NSE"), "",
+             f"{_signed(chg, '.2f')}% from the previous close · NSE" if chg is not None else "NSE",
+             "" if chg is None else "up on the day" if chg > 0 else "down on the day" if chg < 0 else "unchanged",
              when=q.get("market_time") or q.get("fetched_at"))
     else:
         tile("vix", "India VIX", "not available", "NSE's feed did not answer", "", when=as_of)

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { type Indicators, get } from "@/lib/api";
-import { Offline, Panel, Pill } from "./ui";
+import { Offline, Panel, Pill, SectionLabel } from "./ui";
 
 // In a session the server folds today's candle so far into every reading;
 // out of one, a slow check notices when the next session starts.
@@ -32,35 +32,44 @@ export function IndicatorGrid({ initial }: { initial: Indicators | null }) {
     return () => clearInterval(id);
   }, [live]);
 
-  if (!data) return <Offline what="Indicators" />;
+  const hint = data && (
+    <>
+      {data.basis}
+      {data.live && <Pill tone="warn">provisional</Pill>}
+    </>
+  );
 
   return (
-    <Panel>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/70 px-3 py-2">
-        <span className="min-w-0 text-[11px] text-zinc-500">{data.basis}</span>
-        {data.live && <Pill tone="warn">provisional</Pill>}
-      </div>
-      <div className="grid grid-cols-2">
-        {data.tiles.map((t, i) => (
-          <div
-            key={t.key}
-            className={`flex min-w-0 flex-col gap-0.5 p-3 ${i % 2 === 1 ? "border-l border-zinc-800/70" : ""} ${
-              i >= 2 ? "border-t border-zinc-800/70" : ""
-            }`}
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 truncate text-[11px] text-zinc-500">{t.name}</span>
-              {/* Only a reading from another moment than the header's carries its own time. */}
-              {t.as_of !== data.as_of && (
-                <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-600">{when(t.as_of)}</span>
-              )}
-            </div>
-            <span className="font-mono text-[13px] leading-snug tabular-nums text-zinc-100">{t.value}</span>
-            {t.state && <span className="text-[11px] leading-snug text-zinc-400">{t.state}</span>}
-            <span className="text-[10.5px] leading-snug text-zinc-500">{t.detail}</span>
+    <>
+      <SectionLabel hint={hint}>Indicators</SectionLabel>
+      {!data ? (
+        <Offline what="Indicators" />
+      ) : (
+        // Columns follow the card's own width, not the window's: four where
+        // there is room for four, two on a phone or a narrow column. Every
+        // tile draws its top and left rule; the grid is pulled up and left by
+        // a pixel so the outer ones fall under the panel's own border.
+        <Panel className="@container overflow-hidden">
+          <div className="-ml-px -mt-px grid grid-cols-2 @2xl:grid-cols-4">
+            {data.tiles.map((t) => (
+              <div key={t.key} className="flex min-w-0 flex-col border-l border-t border-zinc-800/70 px-3.5 py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate text-[11px] text-zinc-500">{t.name}</span>
+                  {/* Only a reading from another moment than the header's carries its own time. */}
+                  {t.as_of !== data.as_of && (
+                    <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-600">{when(t.as_of)}</span>
+                  )}
+                </div>
+                <span className="mt-1 font-mono text-sm font-medium leading-snug tabular-nums text-zinc-100">
+                  {t.value}
+                </span>
+                <span className="text-[11px] leading-snug text-zinc-400">{t.state || " "}</span>
+                <span className="mt-1.5 text-[10.5px] leading-snug text-zinc-500">{t.detail}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </Panel>
+        </Panel>
+      )}
+    </>
   );
 }

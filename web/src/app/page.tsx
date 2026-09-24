@@ -151,13 +151,13 @@ export default async function Home() {
                 <section className="min-w-0 lg:col-span-7">
                   <SectionLabel hint="the only thing on this page that is a decision">Today&apos;s call</SectionLabel>
                   <RecommendationCard rec={recommendation.data} />
+                  <div className="mt-6">
+                    <IndicatorGrid initial={indicators.data} />
+                  </div>
                 </section>
                 <section className="min-w-0 lg:col-span-5">
                   <SectionLabel hint="and the closes that would form a pattern">Where NIFTY stands</SectionLabel>
                   <TodayChart data={candles.data} />
-                  <div className="mt-3">
-                    <IndicatorGrid initial={indicators.data} />
-                  </div>
                 </section>
               </div>
 

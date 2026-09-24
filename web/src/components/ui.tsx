@@ -22,13 +22,13 @@ export function Panel({
   return <div className={`rounded-xl border ${styles} ${className}`}>{children}</div>;
 }
 
-export function SectionLabel({ children, hint }: { children: ReactNode; hint?: string }) {
+export function SectionLabel({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
   return (
     <div className="section-label mb-3 flex flex-wrap items-baseline justify-between gap-2">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
         {children}
       </h2>
-      {hint && <span className="text-[11px] text-zinc-600">{hint}</span>}
+      {hint && <span className="inline-flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">{hint}</span>}
     </div>
   );
 }
