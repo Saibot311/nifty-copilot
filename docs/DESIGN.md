@@ -98,7 +98,8 @@ Shared primitives live in `components/ui.tsx`; use them rather than restyling.
 | `Offline` | what a card shows when the figure is not available |
 | `PatternTable` | many rows of the same shape: one row per idea, click to expand |
 | `RangeBar` (in `PatternTable`) | a 95% interval on a scale shared by every row, with ₹0 marked |
-| `EquityCurve` (in `PaperCard`) | the paper book over time, against a dashed line at what was put in |
+| `TodayChart` | the Today tab's chart, answering "what close would change the call": candles and EMAs, the previous high/low, the price now on the axis, a "next close" column of amber bands where a pattern would form, a strip of the days each formed, and a crosshair readout. Drawn at the box's real width (30 candles on a phone, 60 on a desk), never a wide SVG scrolling sideways |
+| `EquityCurve` (in `PaperCard`) | what the paper book's trades have made over time, against a dashed line at ₹0 — deposits and withdrawals do not move it |
 | `LiveTicker`, `AutoRefresh` | keeping the page current; nothing else polls |
 
 ### Tables over cards

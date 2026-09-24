@@ -242,14 +242,16 @@ def get_candles(
 
 
 @app.get("/api/chart")
-def chart(sessions: int = Query(110, ge=20, le=400)) -> dict:
+def chart(sessions: int = Query(90, ge=20, le=400)) -> dict:
     """The Today chart: daily candles with EMA20/EMA50 from the same series
     and the same function as the indicator grid, so the lines are the numbers
     beside them (I2). It used to draw Yahoo's raw feed — a day late, with
     22 Sep 2026 missing — and compute the EMAs in the browser."""
-    from quant.pipeline import chart_series
+    from briefing.today_chart import today_chart
     try:
-        return cached(f"chart:{sessions}", ttl_seconds=600, producer=lambda: chart_series(sessions=sessions),
+        # A minute: the live candle and the distances to each trigger move with
+        # the market; the rest is cached underneath (proximity, 30 min).
+        return cached(f"chart:{sessions}", ttl_seconds=60, producer=lambda: today_chart(sessions=sessions),
                       stale_ok=True)
     except Exception as e:
         raise HTTPException(503, f"Chart unavailable: {e}")
@@ -490,20 +492,21 @@ class JournalClose(BaseModel):
 
 
 def _previous_close() -> float | None:
-    """The last *final* daily close, which today's live price is measured
-    against. During a session that is yesterday; after it, today."""
+    """The close before the session the displayed price belongs to — which
+    is what "change on the day" is measured from. NSE says which session that
+    is (its trade date: today while it trades, the last session's close
+    after it). This used to pick "the last final close" when the market was
+    shut, which, once the day's own close was in the data, compared the
+    price with itself: 23,063.1, "0.00 (0.00%)", overnight on 25 Sep 2026."""
+    import market_data.live_quote as lq
     from backtest.strategies import load_daily_data
-    from market_data.live_quote import market_status as _status
     df, _ = load_daily_data("^NSEI", 260)
     try:
-        open_now = bool(_status().get("is_open"))
+        session = datetime.strptime(lq.market_status()["trade_date"], "%d-%b-%Y %H:%M").date()
     except Exception:
-        open_now = False
-    closes = df["close"].tolist()
-    today = str(df.index[-1].date()) == datetime.now(kite_session.IST).date().isoformat()
-    if open_now and today and len(closes) > 1:
-        return float(closes[-2])
-    return float(closes[-1])
+        session = datetime.now(kite_session.IST).date()
+    earlier = df[df.index.date < session]
+    return float(earlier["close"].iloc[-1]) if len(earlier) else None
 
 
 @app.get("/api/access/check")

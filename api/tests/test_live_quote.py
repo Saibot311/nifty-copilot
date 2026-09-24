@@ -140,3 +140,21 @@ def test_the_clock_fallback_knows_the_session_hours():
     assert lq.open_by_clock(datetime(2026, 9, 24, 9, 14, tzinfo=ist)) is False     # pre-open
     assert lq.open_by_clock(datetime(2026, 9, 24, 15, 30, tzinfo=ist)) is False    # the close
     assert lq.open_by_clock(datetime(2026, 9, 26, 11, 0, tzinfo=ist)) is False     # Saturday
+
+
+def test_the_change_is_against_the_close_before_the_price_s_own_session(monkeypatch):
+    """At 03:18 on the 25th the header showed 23,063.1 "0.00 (0.00%)": the
+    price was the 24th's close, and it was compared with the 24th's close.
+    The comparison is the close before the session the price belongs to."""
+    import pandas as pd
+
+    import backtest.strategies as bs
+    import main
+    df = pd.DataFrame({"close": [23414.3, 23329.0, 23446.8, 23063.1]},
+                      index=pd.to_datetime(["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24"]))
+    monkeypatch.setattr(bs, "load_daily_data", lambda symbol, days: (df, None))
+    for trade_date, expected in [("24-Sep-2026 15:30", 23446.8),   # overnight / after the close: the 24th vs the 23rd
+                                 ("25-Sep-2026 11:05", 23063.1)]:  # during the 25th: today vs the 24th
+        monkeypatch.setattr("market_data.live_quote.market_status",
+                            lambda td=trade_date: {"is_open": td.startswith("25"), "trade_date": td})
+        assert main._previous_close() == expected

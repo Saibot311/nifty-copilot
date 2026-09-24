@@ -272,7 +272,23 @@ export type ChartCandle = {
   /** Computed in Python over the full history — the grid's own EMA values. */
   ema20: number; ema50: number;
 };
-export type ChartData = { as_of: string; sessions: number; source: string; candles: ChartCandle[] };
+export type ChartZone = {
+  strategy: string; label: string; side: "call" | "put";
+  /** The band a close would have to land in for the pattern to form. */
+  low: number; high: number;
+  /** False: the close is not enough on its own — the candle also needs `needs` (a long wick…). */
+  certain: boolean; needs: string[]; base_rate: number | null;
+  condition: "at or above" | "at or below" | "already here";
+  edge: number | null; distance_pts: number; distance_pct: number;
+};
+export type ChartData = {
+  as_of: string; sessions: number; source: string; note: string;
+  candles: ChartCandle[];
+  levels: { session: string; prev_high: number; prev_low: number; last_close: number; reference: number };
+  zones: ChartZone[];
+  formed: { date: string; strategy: string; label: string; side: "call" | "put" }[];
+  live: { open: number; high: number; low: number; close: number; as_of: string; basis?: string; provisional: boolean } | null;
+};
 export const fetchChart = () => get<ChartData>("/api/chart");
 
 export const fetchCandles = (days = 140) =>

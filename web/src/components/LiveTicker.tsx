@@ -54,7 +54,10 @@ export function LiveTicker({ fallback }: { fallback: { price: number | null; cha
         {open === true ? "Live" : open === false ? "Closed" : `Status unknown${tick?.market?.open_by_clock ? " — clock says open" : ""}`}
       </span>}
       <span className={`basis-full font-mono text-[10px] normal-case tracking-normal sm:basis-auto ${stale ? "text-amber-300" : "text-zinc-600"}`}>
-        {source}{at ? ` · ${at} IST` : ""}{stale ? " · stale" : ""}
+        {source}
+        {/* Shut: the price is that session's close, so say which — not the time it was fetched. */}
+        {open === false && tick?.market?.trade_date ? ` · close of ${tick.market.trade_date} IST` : at ? ` · ${at} IST` : ""}
+        {stale ? " · stale" : ""}
       </span>
     </>
   );

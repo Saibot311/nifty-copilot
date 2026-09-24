@@ -70,7 +70,8 @@ def last_prices(tokens: list[int], index: str = "NSE:NIFTY 50") -> dict:
         "index": (raw.get(index) or {}).get("last_price"),
         "by_token": {int(k): v.get("last_price") for k, v in raw.items() if k.isdigit() and v},
         "tokens": list(tokens),
-        "source": "Kite (live)",
+        # Just the source: whether it is live is the market status's to say.
+        "source": "Kite",
         # When this price was fetched, so the dashboard can say how old it is.
         "quote_at": datetime.now(IST).isoformat(timespec="seconds"),
     }

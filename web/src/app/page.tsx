@@ -13,7 +13,7 @@ import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { LivePatternsCard } from "@/components/LivePatternsCard";
 import { PatternOptionsTable, PatternsTodayCard } from "@/components/PatternCards";
 import { PlaybookCard } from "@/components/PlaybookCard";
-import { PriceChart } from "@/components/PriceChart";
+import { TodayChart } from "@/components/TodayChart";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
 import { SessionStatus } from "@/components/SessionStatus";
@@ -153,8 +153,8 @@ export default async function Home() {
                   <RecommendationCard rec={recommendation.data} />
                 </section>
                 <section className="min-w-0 lg:col-span-5">
-                  <SectionLabel hint="with 20- and 50-day EMAs">Price</SectionLabel>
-                  <PriceChart data={candles.data} />
+                  <SectionLabel hint="and the closes that would form a pattern">Where NIFTY stands</SectionLabel>
+                  <TodayChart data={candles.data} />
                   <div className="mt-3">
                     <IndicatorGrid indicators={indicators.data} />
                   </div>
