@@ -670,6 +670,39 @@ export async function journalRequest<T>(path: string, method: "GET" | "POST" | "
   }
 }
 
+export type OptionChain = {
+  as_of: string;
+  underlying_value: number;
+  expiry: string;
+  available_expiries: string[];
+  atm_strike: number;
+  atm_iv: { call: number | null; put: number | null };
+  open_interest: {
+    total_call: number;
+    total_put: number;
+    pcr: number | null;
+    max_call_oi_strike: number | null;
+    max_put_oi_strike: number | null;
+    call_oi_added: number;
+    put_oi_added: number;
+    ladder: {
+      strike: number;
+      call_oi: number;
+      call_oi_change: number;
+      put_oi: number;
+      put_oi_change: number;
+      is_atm: boolean;
+    }[];
+    ladder_each_side: number;
+    peaks_shown: boolean;
+  };
+  strikes_analysed: number;
+  notes: string[];
+  interpretation_caveat: string;
+};
+
+export const fetchOptionsChain = () => get<OptionChain>("/api/options/chain");
+
 export type NewsRow = {
   id: string;
   title: string;

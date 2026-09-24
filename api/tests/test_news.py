@@ -262,3 +262,73 @@ def test_the_news_archive_is_backed_up_and_the_tone_cache_is_not():
     assert "news_tone" not in src.replace("news_tone.db is NOT", "")
     nightly = inspect.getsource(__import__("scripts.daily_job", fromlist=["step_backup"]).step_backup)
     assert "backup_news()" in nightly
+
+
+def test_the_card_does_not_fill_up_with_one_publisher():
+    """Five sources were chosen so the reader sees more than one newsroom.
+    Ranking on score alone handed every slot to whichever desk publishes
+    most often, which quietly undoes that choice."""
+    from news.feed import _window
+
+    rows = ([{"id": f"a{i}", "source": "bl_markets", "first_seen": "2026-09-24T12:00:00",
+              "market_moving": 0.9 - i * 0.01, "topic": "policy"} for i in range(20)]
+            + [{"id": "r1", "source": "rbi", "first_seen": "2026-09-24T11:00:00",
+                "market_moving": 0.6, "topic": "policy"},
+               {"id": "m1", "source": "mint_markets", "first_seen": "2026-09-24T11:30:00",
+                "market_moving": 0.55, "topic": "flows"}])
+    got = _window(rows, limit=6)
+    assert {r["source"] for r in got} == {"bl_markets", "rbi", "mint_markets"}
+    # The strongest item overall still leads.
+    assert got[0]["id"] == "a0"
+
+
+def test_the_window_still_puts_events_above_noise():
+    from news.feed import _window
+
+    rows = [{"id": "noise", "source": "x", "first_seen": "2026-09-24T13:00:00",
+             "market_moving": 0.95, "topic": "noise"},
+            {"id": "event", "source": "y", "first_seen": "2026-09-24T09:00:00",
+             "market_moving": 0.55, "topic": "policy"}]
+    assert [r["id"] for r in _window(rows, limit=2)] == ["event", "noise"]
+
+
+# --- the open-interest ladder --------------------------------------------------
+
+def test_the_ladder_always_contains_the_strikes_the_card_names():
+    """The summary names the heaviest call and put strikes. With spot at
+    23,063 the heaviest calls sat at 24,000 — nineteen strikes away, outside
+    a plain +/-12 window — so the card pointed at a level its own profile did
+    not draw."""
+    from options.chain_analytics import LADDER_MAX_ROWS, analyse_chain
+
+    def row(strike, call_oi, put_oi):
+        return {"strikePrice": strike, "expiryDate": "29-Sep-2026",
+                "CE": {"openInterest": call_oi, "changeinOpenInterest": 0, "impliedVolatility": 11},
+                "PE": {"openInterest": put_oi, "changeinOpenInterest": 0, "impliedVolatility": 11}}
+
+    strikes = [22000 + 50 * i for i in range(60)]          # 22,000 .. 24,950
+    rows = [row(s, 10, 10) for s in strikes]
+    rows[next(i for i, s in enumerate(strikes) if s == 24000)]["CE"]["openInterest"] = 999_999
+    rows[next(i for i, s in enumerate(strikes) if s == 23000)]["PE"]["openInterest"] = 888_888
+
+    data = {"records": {"data": rows, "underlyingValue": 23063.1,
+                        "expiryDates": ["29-Sep-2026"], "timestamp": "24-Sep-2026 15:40:00"}}
+    a = analyse_chain(data)
+    shown = {r["strike"] for r in a.ladder}
+    assert a.max_call_oi_strike in shown, "the named call peak is not in the profile"
+    assert a.max_put_oi_strike in shown, "the named put peak is not in the profile"
+    assert a.atm_strike in shown
+    assert len(a.ladder) <= LADDER_MAX_ROWS, "the ladder grew past what is readable"
+
+
+def test_the_ladder_stays_readable_when_a_peak_is_far_away():
+    from options.chain_analytics import LADDER_MAX_ROWS, analyse_chain
+
+    strikes = [20000 + 50 * i for i in range(200)]
+    rows = [{"strikePrice": s, "expiryDate": "29-Sep-2026",
+             "CE": {"openInterest": 999_999 if s == 29000 else 10, "changeinOpenInterest": 0},
+             "PE": {"openInterest": 10, "changeinOpenInterest": 0}} for s in strikes]
+    data = {"records": {"data": rows, "underlyingValue": 23063.1,
+                        "expiryDates": ["29-Sep-2026"], "timestamp": "x"}}
+    a = analyse_chain(data)
+    assert len(a.ladder) <= LADDER_MAX_ROWS

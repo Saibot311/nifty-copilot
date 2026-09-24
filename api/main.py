@@ -312,10 +312,17 @@ def options_chain(
     expiry: str | None = Query(None, description="e.g. 22-Sep-2026; defaults to nearest"),
 ) -> dict:
     """Live NIFTY option chain analytics from NSE — PCR, open-interest
-    concentrations, ATM implied volatility. Measurements, not signals:
-    none of these have been backtested on NIFTY yet."""
+    concentrations, the strike ladder, ATM implied volatility. Measurements,
+    not signals: none of these have been backtested on NIFTY yet.
+
+    Cached and stale-tolerant. Open interest is published on a delay and
+    barely moves minute to minute, so there is nothing to gain from asking
+    NSE once per open dashboard — and plenty to lose: a request per tab is
+    what got this machine throttled before."""
     try:
-        return live_chain_analytics(symbol=symbol, expiry=expiry)
+        return cached(f"option_chain:{symbol}:{expiry or 'near'}", ttl_seconds=120,
+                      producer=lambda: live_chain_analytics(symbol=symbol, expiry=expiry),
+                      stale_ok=True)
     except Exception as e:
         raise HTTPException(503, f"Live option chain unavailable: {e}")
 

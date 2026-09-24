@@ -129,12 +129,29 @@ def _tone(rows: list[dict]) -> dict:
 
 
 def _window(rows: list[dict], limit: int) -> list[dict]:
-    """Market-moving first, then the rest, each newest first — so the one
-    event that matters is not three screens below an IPO recap."""
+    """Market-moving first, then the rest — but spread across publishers.
+
+    Ranking on score alone filled the whole card with one desk: BusinessLine
+    publishes most often, so its headlines were judged first and took every
+    slot. Five sources were chosen so the reader sees more than one newsroom,
+    and a sort that quietly undoes that is worse than not having them. So the
+    strongest item from each source goes first, then the next from each, and
+    so on — which keeps the best story at the top and still shows the spread.
+    """
     ordered = sorted(rows, key=lambda r: (not is_moving(r),
                                           -(r.get("market_moving") or 0),
                                           r["first_seen"]))
-    return ordered[:limit]
+    by_source: dict[str, list[dict]] = {}
+    for r in ordered:
+        by_source.setdefault(r["source"], []).append(r)
+
+    out, rank = [], 0
+    while len(out) < limit and any(len(v) > rank for v in by_source.values()):
+        tier = [v[rank] for v in by_source.values() if len(v) > rank]
+        tier.sort(key=lambda r: (not is_moving(r), -(r.get("market_moving") or 0), r["first_seen"]))
+        out.extend(tier[: limit - len(out)])
+        rank += 1
+    return out
 
 
 def view(now: datetime | None = None, limit: int = 12) -> dict:

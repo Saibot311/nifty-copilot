@@ -4,6 +4,7 @@ import { DashboardTabs } from "@/components/DashboardTabs";
 import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IVCard } from "@/components/IVCard";
 import { MarketTab } from "@/components/MarketCards";
+import { OpenInterestCard } from "@/components/OpenInterestCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
 import { PatternTable } from "@/components/PatternTable";
@@ -38,6 +39,7 @@ import {
   fetchLivePatterns,
   fetchLiveQuote,
   fetchNews,
+  fetchOptionsChain,
   fetchPatternOptions,
   fetchPatternsToday,
   fetchPlaybook,
@@ -71,6 +73,7 @@ export default async function Home() {
     zerodha,
     paper,
     news,
+    optionChain,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -94,6 +97,7 @@ export default async function Home() {
     fetchZerodhaStatus(),
     fetchPaper(),
     fetchNews(),
+    fetchOptionsChain(),
   ]);
 
   const snap = snapshot.data;
@@ -168,6 +172,13 @@ export default async function Home() {
                 ) : (
                   <PatternsTodayCard data={patternsToday.data} />
                 )}
+              </section>
+
+              <section>
+                <SectionLabel hint="from NSE's live chain — measurements, not validated signals">
+                  Open interest
+                </SectionLabel>
+                <OpenInterestCard initial={optionChain.data} />
               </section>
 
               <section>
