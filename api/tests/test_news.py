@@ -178,3 +178,58 @@ def test_a_session_recap_does_not_count_as_a_market_moving_event():
     assert is_moving(event)
     assert not is_moving(weak)
     assert not is_moving(unread)
+
+
+# --- the signal wiring, on a synthetic series ---------------------------------
+
+def _synthetic_tone(n=1500, seed=7):
+    """A tone series long enough to clear the 252-day warm-up."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    idx = [str(d.date()) for d in pd.bdate_range("2018-01-01", periods=n)]
+    return pd.Series(rng.normal(0, 1.0, n), index=idx, dtype=float)
+
+
+def test_every_hypothesis_fires_on_real_sessions_and_on_its_registered_side(monkeypatch):
+    """Catches the wiring mistakes that would not raise: a signal landing on
+    a day the index did not trade, or a leg registered CE firing as PE."""
+    tone = _synthetic_tone()
+    monkeypatch.setattr(nr, "load_tone", lambda: tone)
+
+    sessions = sorted(tone.index)
+    # A random walk, not a ramp. A monotonically rising close makes the
+    # 5-session return positive on every day, so the divergence rule — which
+    # needs a falling index — could never fire and the test would be
+    # asserting nothing.
+    import numpy as np
+
+    rng = np.random.default_rng(11)
+    close = 10000 * np.exp(np.cumsum(rng.normal(0, 0.01, len(sessions))))
+    fake = pd.DataFrame(
+        {"close": close, "open": close, "high": close, "low": close,
+         "volume": np.zeros(len(sessions))},
+        index=pd.to_datetime(sessions), dtype=float)
+    monkeypatch.setattr(nr, "load_daily_data", lambda symbol, days: (fake, None))
+
+    signals = nr.all_signals()
+    assert set(signals) == set(nr.PREREGISTERED["hypotheses"])
+    session_set = set(sessions)
+    for name, sigs in signals.items():
+        leg = nr.PREREGISTERED["hypotheses"][name]["leg"]
+        assert sigs, f"{name} produced no signals on 1500 days"
+        assert all(d in session_set for d, _ in sigs), f"{name} fired on a non-session"
+        assert {k for _, k in sigs} == {leg}, f"{name} fired on the wrong side"
+
+
+def test_an_empty_tone_archive_yields_no_signals_rather_than_an_error(monkeypatch):
+    """Before the backfill has run there is simply nothing to say."""
+    monkeypatch.setattr(nr, "load_tone", lambda: pd.Series(dtype=float))
+    assert all(v == [] for v in nr.all_signals().values())
+
+
+def test_the_study_reports_no_verdict_before_the_archive_exists(monkeypatch):
+    monkeypatch.setattr(nr, "load_tone", lambda: pd.Series(dtype=float))
+    out = nr.run_news_research()
+    assert out["hypotheses"] == []
+    assert "backfill_news_tone" in out["note"]

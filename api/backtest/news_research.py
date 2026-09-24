@@ -336,6 +336,13 @@ def run_news_research(symbol: str = "^NSEI") -> dict:
         "approved": len(approved),
         "tested": len(results),
         "tests_in_family": TESTS_IN_FAMILY,
+        "bar_note": (
+            f"These five are judged against the Bonferroni line for {TESTS_IN_FAMILY} hypotheses — the project's "
+            "total once they were registered. The 26 tests registered before them were judged against the line "
+            "for 26, because a pre-registration fixes its own bar and re-opening it after the fact would be the "
+            "edit it exists to prevent. The practical effect is that these five face a higher bar than anything "
+            "already on the record, which is the right way round: they are the newest idea, not the best-"
+            "evidenced one."),
         "prereg_hash": PREREG_HASH,
         "preregistered": PREREGISTERED,
         "note": ("News tone from GDELT, a free daily series going back to 2018 — which is why this could be "
