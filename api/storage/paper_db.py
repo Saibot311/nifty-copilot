@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     -- book, because the book takes one position a session and a benchmark
     -- must not be able to take that slot.
     funded        INTEGER NOT NULL DEFAULT 1,
+    cost_model    TEXT,               -- NULL: round trip at entry (pre 2026-09-24); 'split': each leg on its premium
     UNIQUE (strategy, signal_date, source)
 );
 
@@ -91,6 +92,9 @@ _MIGRATIONS = (
     ("entry_cost_rs", "REAL NOT NULL DEFAULT 0"),
     ("exit_cost_rs", "REAL"),
     ("funded", "INTEGER NOT NULL DEFAULT 1"),
+    # NULL: the whole round trip was charged at entry (rows before
+    # 2026-09-24). 'split': each leg on its own premium.
+    ("cost_model", "TEXT"),
 )
 
 
@@ -136,7 +140,8 @@ def open_position(row: dict, db_path: Path | None = None) -> bool:
     """Writes one open position. False if that setup already has one for
     that signal date — a pattern forming again mid-hold does not stack."""
     cols = ("source", "strategy", "label", "signal_date", "underlying", "option_type", "strike", "expiry",
-            "entry_date", "entry_premium", "hold_days", "planned_exit", "lots", "entry_cost_rs", "funded")
+            "entry_date", "entry_premium", "hold_days", "planned_exit", "lots", "entry_cost_rs", "funded",
+            "cost_model")
     row = {"lots": 1, "entry_cost_rs": 0.0, "funded": 1, **row}
     with connect(db_path) as conn:
         cur = conn.execute(

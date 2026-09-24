@@ -236,12 +236,38 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
     return result
 
 
+def apply_family_bar(patterns: list[dict], tests: int) -> list[dict]:
+    """Re-judge each pattern against the bar the recommendation uses:
+    Bonferroni over every hypothesis judged on the holdout, at the pattern's
+    own sample size. The verdict here used to stop at t >= 2, so the Research
+    tab could say APPROVED at a t the gate would refuse (decided 2026-09-24)."""
+    from stats.multiple_comparisons import required_t
+    for p in patterns:
+        h = p.get("holdout") or {}
+        n = h.get("num_trades") or 0
+        if not n or "development" not in p:
+            continue
+        b = p.get("baseline") or {}
+        bar = required_t(tests, df=n - 1) if n >= 2 else None
+        p["status"], p["reason"] = holdout_verdict(
+            p["development"]["avg_profit_per_lot_rs"], h.get("avg_profit_per_lot_rs") or 0,
+            b.get("development_avg_profit_per_lot_rs", 0), b.get("holdout_avg_profit_per_lot_rs", 0),
+            n, MIN_HOLDOUT_TRADES, p["direction"], p.get("holdout_t_stat"), min_t=bar,
+            baseline_label=f"buying this {p['option_type']} with no signal", unit="₹",
+        )
+        p["required_t"] = bar
+    return patterns
+
+
 def run_pattern_options(symbol: str = "^NSEI") -> dict:
     df, regime_series = load_daily_data(symbol, 7000)
     td = [str(d.date()) for d in df.index]
     ctx = (df, pd.Series(df["close"].values, index=td), td)
 
     patterns = [analyse_pattern(name, df, regime_series, ctx) for name in STRATEGY_REGISTRY]
+    from .family import holdout_family
+    tests = holdout_family({"patterns": patterns})["total"]
+    apply_family_bar(patterns, tests)
     rank = {"APPROVED": 0, "CONDITIONAL": 1, "REJECTED": 2}
     patterns.sort(key=lambda p: (rank[p["status"]], -((p.get("holdout") or {}).get("avg_profit_per_lot_rs") or -1e9)))
 
@@ -251,11 +277,14 @@ def run_pattern_options(symbol: str = "^NSEI") -> dict:
         "lot_size": LOT_SIZE,
         "grid": {"moneyness_pct": MONEYNESS_PCT, "min_days_to_expiry": MIN_DTE, "hold_days": HOLD_DAYS},
         "configs_tested_total": sum(p.get("configs_tested", 0) for p in patterns),
+        "tests_in_family": tests,
         "patterns": patterns,
         "method_note": (
             "Each pattern's option was chosen by average rupee profit per lot on 2018-2023 data only; the "
             "profit shown as evidence is from 2024 onward, which played no part in the choice. APPROVED requires "
-            "that holdout profit per lot to beat buying the same option with no signal, with t >= 2. Premiums are real NSE closing prices; bought at "
+            "that holdout profit per lot to beat buying the same option with no signal, with t above the Bonferroni bar "
+            f"for all {tests} hypotheses judged on 2024-26, at the pattern's own sample size. Premiums are real NSE "
+            "closing prices; bought at "
             "the close the day after the signal. Rupee figures use today's lot size of "
             f"{LOT_SIZE}."
         ),

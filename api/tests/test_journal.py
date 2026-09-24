@@ -23,7 +23,8 @@ def test_profit_is_computed_after_the_backtests_cost_model():
     e = {"decision": "TOOK", "entry_premium": 100.0, "exit_premium": 130.0, "quantity": 65}
     p = journal.pnl(e)
     assert p["gross_rs"] == 1950
-    assert p["costs_rs"] == round(journal.COST_FRACTION * 100 * 65)
+    # Each leg on its own premium: the buy on 100, the sale on 130.
+    assert p["costs_rs"] == round((journal.BUY_FRACTION * 100 + journal.SELL_FRACTION * 130) * 65)
     assert p["net_rs"] == p["gross_rs"] - p["costs_rs"]
 
 

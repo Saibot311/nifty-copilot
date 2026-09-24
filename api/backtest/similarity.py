@@ -88,6 +88,31 @@ def _neighbours(f: np.ndarray, query: int, pool_end: int) -> list[tuple[int, flo
     return chosen
 
 
+def predictive_bar() -> float:
+    """The t the analogs' track record must clear to be called predictive:
+    the family bar every other result on screen faces (it was t >= 2)."""
+    from stats.multiple_comparisons import required_t
+
+    from .family import holdout_family
+    from .pattern_options import load_research
+    return required_t(holdout_family(load_research())["total"])
+
+
+def verdict(t_stat: float) -> dict:
+    bar = predictive_bar()
+    ok = t_stat >= bar
+    return {
+        "predictive": ok,
+        "bar": bar,
+        "verdict": (
+            f"Analogs have predicted the next 10 days better than chance (t {t_stat} against a bar of {bar})."
+            if ok else
+            "No demonstrated predictive value: treat the analogs as context about similar past "
+            "markets, not as a forecast."
+        ),
+    }
+
+
 def walk_forward_test(df: pd.DataFrame, f: pd.DataFrame, fwd: pd.DataFrame) -> dict:
     """Every HORIZON days from EVAL_START: predict the next-10-day return as
     the analogs' mean minus the base rate, using only analogs whose outcome
@@ -117,15 +142,9 @@ def walk_forward_test(df: pd.DataFrame, f: pd.DataFrame, fwd: pd.DataFrame) -> d
         "period_start": EVAL_START,
         "rank_correlation": round(ic, 3),
         "t_stat": round(t_stat, 2),
-        # The same rule as the verdict below, so the card never re-judges it.
-        "predictive": t_stat >= 2,
         "direction_hit_rate": round(hit, 3),
-        "verdict": (
-            "Analogs have predicted the next 10 days better than chance (t >= 2)."
-            if t_stat >= 2 else
-            "No demonstrated predictive value: treat the analogs as context about similar past "
-            "markets, not as a forecast."
-        ),
+        # Decided here, with its bar, so the card never re-judges it.
+        **verdict(round(t_stat, 2)),
     }
 
 

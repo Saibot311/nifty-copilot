@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "node server.mjs",
+    "lint": "eslint",
+    "test": "node --test gate.test.mjs"
   },
   "dependencies": {
     "next": "16.3.5",

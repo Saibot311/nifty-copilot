@@ -108,10 +108,18 @@ def costs_applied():
                + 2 * fut.slippage_pct + fut.gst_pct * 2 * (fut.brokerage_pct + fut.exchange_txn_pct)) * 100
     opt_ref = (2 * opt.brokerage_pct + 2 * opt.exchange_txn_pct + opt.stamp_duty_pct + opt.stt_pct_sell
                + 2 * opt.premium_slippage_pct + opt.gst_pct * 2 * (opt.brokerage_pct + opt.exchange_txn_pct))
+    # Each leg on its own premium (since 2026-09-24), recomputed by hand from
+    # the same rate-card fields rather than through the model's own method.
+    buy = opt.brokerage_pct + opt.exchange_txn_pct + opt.stamp_duty_pct + opt.premium_slippage_pct \
+        + opt.gst_pct * (opt.brokerage_pct + opt.exchange_txn_pct)
+    sell = opt.brokerage_pct + opt.exchange_txn_pct + opt.stt_pct_sell + opt.premium_slippage_pct \
+        + opt.gst_pct * (opt.brokerage_pct + opt.exchange_txn_pct)
     uncharged = []
     for name, d in _chosen_trades().items():
         for t in d["trades"]:
-            if abs((t.gross_return_pct - t.cost_pct) - t.net_return_pct) > 0.02 or t.cost_pct <= 0:
+            by_hand = (t.entry_premium * buy + t.exit_premium * sell) / t.entry_premium * 100
+            if (abs((t.gross_return_pct - t.cost_pct) - t.net_return_pct) > 0.02 or t.cost_pct <= 0
+                    or abs(t.cost_pct - by_hand) > 0.01):
                 uncharged.append((name, t.entry_date))
     ok = abs(fut.round_trip_cost_pct() - fut_ref) < 1e-9 and abs(opt.round_trip_cost_fraction() - opt_ref) < 1e-12
     return Result(FAIL if uncharged or not ok else PASS,

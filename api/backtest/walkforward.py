@@ -145,7 +145,7 @@ def run_holdout_test(
     holdout_t = excess_t_stat([t.net_return_pct for t in holdout_trades], holdout_baseline)
     status, reason = holdout_verdict(
         dev_expectancy, holdout_expectancy, dev_baseline, holdout_baseline,
-        holdout_n, min_holdout_trades, direction, holdout_t,
+        holdout_n, min_holdout_trades, direction, holdout_t, min_t=family_bar(holdout_n),
     )
 
     log_run(
@@ -174,6 +174,20 @@ def run_holdout_test(
 # easy to reach by chance.
 SIGNIFICANCE_ALPHA = 0.025
 MIN_T_STAT = 2.0  # the large-sample limit, kept for display
+
+
+def family_bar(n: int) -> float | None:
+    """The bar a holdout result on n trades must clear here: Bonferroni over
+    every hypothesis judged on the holdout (backtest/family.py) — the same
+    bar the recommendation uses. This used to be `significance_bar`, t ~ 2,
+    so the Playbook could call a strategy APPROVED that the gate would not."""
+    if n < 2:
+        return None
+    from stats.multiple_comparisons import required_t
+
+    from .family import holdout_family
+    from .pattern_options import load_research
+    return required_t(holdout_family(load_research())["total"], df=n - 1)
 
 
 def significance_bar(n: int) -> float | None:

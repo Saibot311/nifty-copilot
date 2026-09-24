@@ -20,12 +20,26 @@ what the system needs now is calendar time, not more code.
 `/api/live/tick` every 2s (Kite when logged in, NSE's feed otherwise). Everything else on the page is
 still end-of-day by design: option premiums come from NSE's nightly file.
 
+**Costs, since 2026-09-24:** each leg of an option trade is charged on its own premium — the buy on
+what was paid, the sale (STT, slippage, fees) on what it sold for; 3.29% on a trade that sells at what it
+paid, more on a winner, only the buy leg on a worthless expiry. Before, the whole round trip was charged
+on the entry premium, which flattered winners. Every study was re-scored; paper rows opened before the
+change keep the convention they were opened under (`paper_trades.cost_model` is NULL for them).
+
+**Every verdict label faces the family bar**, not just the recommendation: pattern verdicts, the
+index-level validation and the similar-days card use Bonferroni over all hypotheses judged (53 →
+t ≥ 3.11 and more on few trades). Registered studies keep the bar frozen in their registration.
+
+**The lot size is 65** — checked against NSE's own F&O file for 24 Sep 2026 (`NewBrdLotQty`, every NIFTY
+option and future).
+
 **The paper book has allocated funds and a daily policy.** Set the amount on the Journal tab; positions
 size in whole lots against the book's current value, at most 40% each. Three policies are measured apart: patterns that
 formed; `best_read` when nothing formed — one 2% in-the-money option, one direction, from the
 best-evidenced signal firing that day (all of them rejected; a negative t is never followed), falling
 back to the 20-session trend; and a weekly no-signal control, one lot each way, as the yardstick.
-**The book takes one position a session, in one direction.** When several patterns form, the one with
+**The book takes one position a session, in one direction** — and never bets against itself: while a
+call is held, a put is skipped (and the reason recorded), and the reverse. When several patterns form, the one with
 the strongest holdout t takes the slot and the rest are reported as passed over. The control sits
 *outside* the book: it spends none of the allocated money, moves none of the equity, and cannot take
 the session's slot — it is a measurement, and without it a result has nothing to be compared against.
@@ -131,8 +145,13 @@ pass `--lan` if the phone is used; without it the phone cannot connect).
 ./scripts/install_app_services.sh --remove   # frees :3000 and :8000 for dev servers
 ```
 
-**Phone access** (`--lan`): both services bind every interface, and `api/access.py` then demands a
-token from anything that is not this Mac. Pair from the dashboard *on the Mac* — "Use this on my
+**Phone access** (`--lan`): both services bind every interface, and both demand the token from
+anything that is not this Mac — the API in `api/access.py`, the page itself in `web/gate.mjs`, run by
+`web/server.mjs` (a thin custom server, because only the socket knows who is asking; until 2026-09-24
+the page was served to any device on the Wi-Fi). A phone carries the token as a cookie, set the first
+time it opens the pairing link; phones paired before then send their stored token once, automatically.
+Both also refuse a Host header that does not name this Mac (DNS rebinding) and writes from another
+site's page. Pair from the dashboard *on the Mac* — "Use this on my
 phone" shows a QR code; the token is written to `api/.env` and shown nowhere else, not in a log and
 not to a remote caller even with a valid token. "Forget paired devices" rotates it. Only do this on a
 network you trust — there is no TLS, so treat it as a lock on a door, not a security system. For

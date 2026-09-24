@@ -40,12 +40,29 @@ class OptionsCostModel:
     stamp_duty_pct: float = 0.00003    # buy side only
     premium_slippage_pct: float = 0.015  # bid-ask reality, each side
 
+    def buy_fraction(self) -> float:
+        """The buying leg, as a fraction of the premium paid."""
+        return (self.brokerage_pct + self.exchange_txn_pct + self.stamp_duty_pct + self.premium_slippage_pct
+                + self.gst_pct * (self.brokerage_pct + self.exchange_txn_pct))
+
+    def sell_fraction(self) -> float:
+        """The selling leg — STT, slippage, fees — as a fraction of the
+        premium *received*."""
+        return (self.brokerage_pct + self.exchange_txn_pct + self.stt_pct_sell + self.premium_slippage_pct
+                + self.gst_pct * (self.brokerage_pct + self.exchange_txn_pct))
+
     def round_trip_cost_fraction(self) -> float:
-        """Total cost as a fraction of premium paid, for one buy + one sell."""
-        buy = self.brokerage_pct + self.exchange_txn_pct + self.stamp_duty_pct + self.premium_slippage_pct
-        sell = self.brokerage_pct + self.exchange_txn_pct + self.stt_pct_sell + self.premium_slippage_pct
-        gst = self.gst_pct * (2 * self.brokerage_pct + 2 * self.exchange_txn_pct)
-        return buy + sell + gst
+        """Both legs of a trade that sells at what it paid, as a fraction of
+        premium: ~3.3%. The reference figure, and the sizing reserve."""
+        return self.buy_fraction() + self.sell_fraction()
+
+    def cost_pct(self, entry_premium: float, exit_premium: float) -> float:
+        """A trade's actual costs as a % of the premium paid, each leg on its
+        own premium. Until 2026-09-24 the whole round trip was charged on the
+        entry premium, so a trade that tripled paid a third of its real exit
+        costs (3.3% where ~7% was due) and one that expired worthless paid
+        exit costs on a sale that never happened. Winners were flattered."""
+        return (entry_premium * self.buy_fraction() + exit_premium * self.sell_fraction()) / entry_premium * 100
 
 
 @dataclass
@@ -143,7 +160,6 @@ def run_options_backtest(
     per-trade offset of that % of spot, so "1% OTM" means the same thing in
     2018 (spot ~10k) as in 2026 (spot ~23k)."""
     cost_model = cost_model or OptionsCostModel()
-    cost_fraction = cost_model.round_trip_cost_fraction()
     day_index = {d: i for i, d in enumerate(trading_days)}
 
     trades: list[OptionTrade] = []
@@ -191,7 +207,7 @@ def run_options_backtest(
                 continue
 
             gross = (exit_premium - entry_premium) / entry_premium * 100
-            cost = cost_fraction * 100
+            cost = cost_model.cost_pct(entry_premium, exit_premium)
             trades.append(OptionTrade(
                 entry_date=entry_date,
                 exit_date=exit_date,

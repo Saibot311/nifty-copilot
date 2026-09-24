@@ -42,11 +42,12 @@ def test_nothing_may_be_opened_for_a_session_before_observation_began():
 def test_costs_are_charged_on_paper_exactly_as_in_the_backtests():
     from backtest.options_engine import OptionsCostModel
     assert paper.COST_FRACTION == OptionsCostModel().round_trip_cost_fraction()
-    pnl = paper._pnl({**_row(), "status": "CLOSED", "exit_premium": 130.0, "mark_premium": 130.0})
+    pnl = paper._pnl({**_row(), "status": "CLOSED", "exit_premium": 130.0, "mark_premium": 130.0,
+                      "cost_model": paper.SPLIT, "entry_cost_rs": None, "exit_cost_rs": None})
     assert pnl["gross_pct"] == 30.0
-    # The backtests charge the whole round trip on the entry premium; a paper
-    # result has to be comparable with a researched one, so this matches.
-    assert pnl["net_pct"] == pytest.approx(30.0 - paper.COST_FRACTION * 100, abs=0.01)
+    # The backtests charge each leg on its own premium; a paper result has to
+    # be comparable with a researched one, so this matches options_engine.
+    assert pnl["net_pct"] == pytest.approx(30.0 - OptionsCostModel().cost_pct(100.0, 130.0), abs=0.01)
     assert pnl["profit_rs"] == round(100.0 * 65 * pnl["net_pct"] / 100)
     assert pnl["realised"] is True
 
@@ -452,3 +453,59 @@ def test_each_evening_says_what_it_decided_and_why(monkeypatch):
     last = paper.report()["last_decision"]
     assert last["entry_session"] == "2026-09-23" and last["signal_session"] == "2026-09-22"
     assert last["opened"] and "skipped" in last and "passed_over" in last
+
+
+# --- one direction at a time --------------------------------------------------
+
+def _held(monkeypatch, kind, entry="2026-09-21", hold=5):
+    paper_db.open_position(_row(strategy="earlier", option_type=kind, signal_date="2026-09-18",
+                                entry_date=entry, hold_days=hold))
+
+
+def test_a_new_position_never_bets_against_one_already_open(monkeypatch):
+    """One session, one position — and across sessions, one direction: a put
+    while a call is still held would be both sides at once."""
+    _held(monkeypatch, "PE")                       # a put, held past the next entry
+    out = _evening_of_the_entry_session(monkeypatch, fires_on="2026-09-22")   # a CE pattern forms
+    book = [t for t in paper_db.all_trades() if t["funded"] and t["entry_date"] == "2026-09-23"]
+    assert book == []
+    assert any("against the open put" in s for s in out["skipped"])
+
+
+def test_the_same_direction_can_still_be_added_on_a_later_session(monkeypatch):
+    _held(monkeypatch, "CE")
+    _evening_of_the_entry_session(monkeypatch, fires_on="2026-09-22")
+    assert [t["option_type"] for t in paper_db.all_trades() if t["funded"] and t["entry_date"] == "2026-09-23"] == ["CE"]
+
+
+def test_a_position_closing_at_this_close_does_not_block_the_next(monkeypatch):
+    """It is sold at the close the new one is bought at: never both at once."""
+    _held(monkeypatch, "PE", entry="2026-09-21", hold=2)   # 09-21 + 2 sessions = exit 09-23 in TD
+    _evening_of_the_entry_session(monkeypatch, fires_on="2026-09-22")
+    assert [t["option_type"] for t in paper_db.all_trades() if t["funded"] and t["entry_date"] == "2026-09-23"] == ["CE"]
+
+
+# --- each leg on its own premium (decided 2026-09-24) -------------------------
+
+def test_a_new_position_pays_the_sale_on_what_it_sells_for():
+    """Opened from 2026-09-24: the buy leg is charged on entry, the sell leg
+    on the exit (or, while open, on the mark it would be sold at)."""
+    paper_db.open_position(_row(lots=1, entry_cost_rs=round(100.0 * 65 * paper.BUY_FRACTION, 2),
+                                cost_model=paper.SPLIT))
+    t = paper_db.all_trades()[0]
+    open_pnl = paper._pnl({**t, "mark_premium": 300.0})
+    expected = (300.0 - 100.0) * 65 - 100.0 * 65 * paper.BUY_FRACTION - 300.0 * 65 * paper.SELL_FRACTION
+    assert open_pnl["profit_rs"] == round(expected)
+    paper_db.close_position(t["id"], "2026-09-28", 300.0, exit_cost_rs=paper._exit_costs(300.0, 1))
+    closed = paper._pnl(paper_db.all_trades()[0])
+    assert closed["profit_rs"] == round(expected) and closed["realised"]
+
+
+def test_positions_recorded_before_the_change_keep_their_own_costs():
+    """Rows are never rewritten. A row opened under the old convention was
+    charged the whole round trip at entry, and is read that way."""
+    paper_db.open_position(_row(lots=1, entry_cost_rs=round(paper._costs(100.0, 1), 2)))
+    t = paper_db.all_trades()[0]
+    assert t["cost_model"] is None
+    pnl = paper._pnl({**t, "mark_premium": 130.0})
+    assert pnl["profit_rs"] == round(30.0 * 65 - paper._costs(100.0, 1))

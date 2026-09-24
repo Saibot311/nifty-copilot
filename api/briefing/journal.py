@@ -11,7 +11,10 @@ from backtest.options_engine import OptionsCostModel
 from storage import journal_db
 from storage.forward_log_db import all_recommendations
 
-COST_FRACTION = OptionsCostModel().round_trip_cost_fraction()
+_COSTS = OptionsCostModel()
+COST_FRACTION = _COSTS.round_trip_cost_fraction()
+# Each leg on its own premium, as in every backtest (from 2026-09-24).
+BUY_FRACTION, SELL_FRACTION = _COSTS.buy_fraction(), _COSTS.sell_fraction()
 
 
 def system_action_for(trade_date: str) -> str | None:
@@ -27,7 +30,7 @@ def pnl(e: dict) -> dict | None:
     if e["decision"] != "TOOK" or e.get("exit_premium") is None or not e.get("entry_premium") or not e.get("quantity"):
         return None
     gross = (e["exit_premium"] - e["entry_premium"]) * e["quantity"]
-    costs = COST_FRACTION * e["entry_premium"] * e["quantity"]
+    costs = (BUY_FRACTION * e["entry_premium"] + SELL_FRACTION * e["exit_premium"]) * e["quantity"]
     return {"gross_rs": round(gross), "costs_rs": round(costs), "net_rs": round(gross - costs),
             "return_pct": round(100 * (gross - costs) / (e["entry_premium"] * e["quantity"]), 1)}
 
@@ -74,6 +77,6 @@ def report() -> dict:
             "decisions_with_a_system_verdict": sum(1 for e in entries if e["followed_system"] is not None),
         },
         "note": ("Your own trades, as you entered them. Net is after the same cost model as every backtest "
-                 f"(about {COST_FRACTION:.1%} of premium). Followed means your decision matched the system's "
+                 f"({BUY_FRACTION:.1%} of the premium you paid, {SELL_FRACTION:.1%} of what you sold for). Followed means your decision matched the system's "
                  "verdict for that session. With few trades, these totals are a record, not evidence."),
     }

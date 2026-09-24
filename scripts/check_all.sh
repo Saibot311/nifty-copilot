@@ -98,6 +98,16 @@ else
 fi
 
 # ---------------------------------------------------------------------
+section "Frontend: the page's lock (node --test gate.test.mjs)"
+
+gate_out=$(cd "$WEB_DIR" && node --test gate.test.mjs 2>&1)
+if echo "$gate_out" | grep -q "^ℹ fail 0"; then
+    ok "page gate: $(echo "$gate_out" | grep '^ℹ pass' | sed 's/ℹ //')"
+else
+    bad "page gate"
+    echo "$gate_out" | tail -40
+fi
+
 section "Frontend: ESLint"
 # ---------------------------------------------------------------------
 eslint_out=$(cd "$WEB_DIR" && npx eslint . 2>&1)
