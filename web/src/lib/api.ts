@@ -708,6 +708,41 @@ export type NewsResearch = {
   note: string;
 };
 
+export type StrategyFitRow = {
+  strategy: string;
+  label: string;
+  side: "call" | "put";
+  /** Python's arithmetic on real prices, never Jev's. */
+  status: "forming now" | "formed" | "within reach" | "possible next close";
+  pct_to_trigger: number | null;
+  trigger_ranges: [number, number][];
+  base_rate: number;
+  forms_when: string | null;
+  why: string | null;
+  /** Jev: probability today is the kind of market the premise was written for. Null = unjudged. */
+  fit: number | null;
+  evidence: { status: string | null; t: number | null; bar: number | null } | null;
+};
+
+export type StrategyFit = {
+  as_of: string;
+  judged: boolean;
+  judged_at: string | null;
+  note: string | null;
+  question_set: string;
+  market: {
+    index: { level: number; change_today_pct: number | null; as_of: string };
+    trend: { classifier: string; ema20: number | null; ema50: number | null; return_20_sessions_pct: number; below_52_week_high_pct: number };
+    momentum: { rsi_14: number | null; adx_14: number | null };
+    volatility: { india_vix: number | null; implied_vol_30d_percentile_of_past_year: number | null };
+  };
+  rows: StrategyFitRow[];
+  judged_by: string;
+  caveat: string;
+};
+
+export const fetchStrategyFit = () => get<StrategyFit>("/api/strategy_fit");
+
 export const fetchNewsResearch = () => get<NewsResearch>("/api/news/research");
 
 export type OptionChain = {

@@ -69,6 +69,16 @@ unjudged rather than as neutral. `api/data/news.db` is forward-only and **cannot
 free source publishes dated Indian market headlines going back, so every row exists only because the
 system was running that day. It is in the nightly backup set.
 
+**"Which strategies fit today" (Market tab, `/api/strategy_fit`).** Python shortlists what is actually
+forming — formed on the last close, would form if the index closed now (live 15-minute data), or within
+1% of its trigger — and Jev reads, per strategy, whether today's trend, momentum and volatility are the
+kind its premise was written for. Jev never sees a strategy's record, verdict or trigger, is never asked
+about returns or direction, and its reading reaches neither the recommendation nor the paper book. Paid:
+one request per reading, stored, and asked again only when the market picture changes and 15 minutes
+have passed (question set `fit_v1` — bump it, never edit the wording). First reading, 25 Sep 01:34:
+Prev-Day-Low Breakdown 0.91, Stochastic Oversold Reversal 0.86, Prev-Day-High Breakout 0.06 — all
+three rejected on 2024-26, which the card shows beside them.
+
 **Whether news pays is being tested, not assumed.** GDELT gives away a daily news-tone series back to
 2018, which is why this could be backtested on the same 2018–23 / 2024–26 split as everything else.
 Five hypotheses were registered before any was computed (hash `30439303ef31c290`), raising the family

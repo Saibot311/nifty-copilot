@@ -230,6 +230,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `market_engine/who_wins.py` | The variance risk premium; the cost of buying options without a signal; SEBI's published figures | Showing the forward-looking study as a current signal |
 | `market_engine/positioning.py` | NSE participant-wise open interest, zero-sum checked | Reading overnight OI as intraday retail behaviour |
 | `market_engine/expiry.py` | Expiry-day footprint studies; unusual strike activity against the same point in past expiries | Calling a statistic evidence against a participant |
+| `market_engine/strategy_fit.py` | Which strategies today's market suits: whether each is forming (Python, real prices) beside Jev's yes/no on whether today is the kind of market its premise was written for; one request per reading, at most every 15 min and only when the picture changed; stored in `data/strategy_fit.db` | Showing Jev a strategy's record, verdict or trigger; letting a fit reach the recommendation or the paper book (a test reads their source) |
 | `market_engine/knowledge.py` | The research as sourced principles, for the dashboard and the copilot | Any unsourced claim, or advice |
 | `audit/` | Phase-by-phase deep audit on real data, with independent reference implementations; `scripts/audit.py`, `check_all.sh --deep` | Mocks and fixtures — that is what `tests/` is for |
 | `web/src/components/ui.tsx` | Shared primitives (Panel, Pill, Stat…) | Feature components |

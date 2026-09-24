@@ -1,4 +1,5 @@
-import type { GiftNifty, MarketContext, NewsView, MarketStudies, MarketToday, Principle, StructuralResearch } from "@/lib/api";
+import type { GiftNifty, MarketContext, NewsView, MarketStudies, MarketToday, Principle, StrategyFit, StructuralResearch } from "@/lib/api";
+import { StrategyFitSection } from "./StrategyFitCard";
 import { NewsSection } from "./NewsCard";
 import { Offline, Panel, Pill, SectionLabel, minus } from "./ui";
 
@@ -313,9 +314,9 @@ export function GiftNiftyCard({ g }: { g: GiftNifty }) {
   );
 }
 
-export function MarketTab({ data, structural, gift, news }: {
+export function MarketTab({ data, structural, gift, news, fit }: {
   data: MarketContext | null; structural?: StructuralResearch | null; gift?: GiftNifty | null;
-  news?: NewsView | null;
+  news?: NewsView | null; fit?: StrategyFit | null;
 }) {
   if (!data) return <Offline what="Market context" />;
   return (
@@ -326,6 +327,9 @@ export function MarketTab({ data, structural, gift, news }: {
             change your next action. If the pre-registered tone study ever
             reports an edge, that is when it earns a place there. */}
         <NewsSection data={news ?? null} />
+        {/* Market, not Today, for the same reason as the news: a reading of
+            conditions with no demonstrated predictive value. */}
+        <StrategyFitSection data={fit ?? null} />
         {gift && (
           <section className="min-w-0">
             <SectionLabel hint="NIFTY futures in GIFT City — context, not a signal">GIFT Nifty now</SectionLabel>

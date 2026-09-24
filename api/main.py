@@ -712,6 +712,20 @@ def news_research() -> dict:
     return out
 
 
+@app.get("/api/strategy_fit")
+def strategy_fit() -> dict:
+    """Which strategies today's market suits: whether each is forming (Python,
+    on real prices) beside Jev's reading of whether today's conditions are the
+    kind its premise was written for. A description, not a signal — it
+    reaches neither the recommendation nor the paper book. Jev is asked at
+    most every fifteen minutes, and only when the market picture changed."""
+    from market_engine.strategy_fit import reading
+    try:
+        return cached("strategy_fit", ttl_seconds=60, producer=reading, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Strategy fit unavailable: {e}")
+
+
 @app.get("/api/gift-nifty")
 def gift_nifty() -> dict:
     """GIFT Nifty — NIFTY futures trading in GIFT City while India is shut.

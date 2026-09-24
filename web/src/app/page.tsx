@@ -49,6 +49,7 @@ import {
   fetchResearchCompare,
   fetchSimilarity,
   fetchSnapshot,
+  fetchStrategyFit,
 } from "@/lib/api";
 
 export default async function Home() {
@@ -77,6 +78,7 @@ export default async function Home() {
     news,
     optionChain,
     newsResearch,
+    strategyFit,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -102,6 +104,7 @@ export default async function Home() {
     fetchNews(),
     fetchOptionsChain(),
     fetchNewsResearch(),
+    fetchStrategyFit(),
   ]);
 
   const snap = snapshot.data;
@@ -277,7 +280,7 @@ export default async function Home() {
               </details>
             </div>
           }
-          market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} news={news.data} />}
+          market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} news={news.data} fit={strategyFit.data} />}
           journal={<JournalTab paper={paper.data} />}
         />
 
