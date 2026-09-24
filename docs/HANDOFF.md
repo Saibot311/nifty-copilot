@@ -69,6 +69,14 @@ unjudged rather than as neutral. `api/data/news.db` is forward-only and **cannot
 free source publishes dated Indian market headlines going back, so every row exists only because the
 system was running that day. It is in the nightly backup set.
 
+**The indicator grid under the Today chart (`/api/indicators`, `briefing/live_indicators.py`).** Eight
+readings: price vs EMA20/50, RSI(14), ADX(14), ATR(14), the session range against ATR, the opening gap,
+India VIX with its change on the day, and ATM implied volatility against 20-day realised. Relative volume
+and VWAP were removed: NIFTY has no traded volume on the free feed, so they read "0.0x" and "Unavailable"
+every day. In a session, NSE's open/high/low/last become a provisional candle that every reading
+includes, and the page refreshes the grid every minute; after the close, a session the daily file does
+not have yet is still counted from NSE's feed. Pre-open zeros are never a candle.
+
 **"Which strategies fit today" (Market tab, `/api/strategy_fit`).** Python shortlists what is actually
 forming — formed on the last close, would form if the index closed now (live 15-minute data), or within
 1% of its trigger — and Jev reads, per strategy, whether today's trend, momentum and volatility are the

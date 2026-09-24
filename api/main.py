@@ -95,12 +95,6 @@ class Snapshot(BaseModel):
     regime: str
 
 
-class Indicator(BaseModel):
-    name: str
-    value: str
-    read: str  # "supports" | "conflicts" | "neutral"
-
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -141,73 +135,17 @@ def get_snapshot() -> Snapshot:
     )
 
 
-def _vix_when(as_of: str | None) -> str:
-    """"24 Sep 15:31 IST" for a timestamp, the date alone for a daily close."""
-    if not as_of:
-        return "time unknown"
-    if "T" not in as_of:
-        return as_of
-    t = datetime.fromisoformat(as_of)
-    return f"{t:%d %b %H:%M} IST"
-
-
-@app.get("/api/indicators", response_model=list[Indicator])
-def get_indicators() -> list[Indicator]:
-    ind = _get_analysis()["indicators"]
-    rows = [
-        Indicator(
-            name="EMA 20 vs EMA 50",
-            value=f"EMA20 {'above' if ind['ema_20'] > ind['ema_50'] else 'below'} EMA50 ({ind['ema_20']} / {ind['ema_50']})",
-            read="supports" if ind["ema_20"] > ind["ema_50"] else "conflicts",
-        ),
-        Indicator(
-            name="RSI (14)",
-            value=str(ind["rsi_14"]) if ind["rsi_14"] is not None else "n/a",
-            read="supports" if (ind["rsi_14"] or 0) > 55 else "conflicts" if (ind["rsi_14"] or 100) < 45 else "neutral",
-        ),
-        Indicator(
-            name="ADX (14)",
-            value=f"{ind['adx_14']} ({'trending' if ind['adx_14'] >= 25 else 'not trending'})",
-            read="supports" if ind["adx_14"] >= 25 else "neutral",
-        ),
-        Indicator(
-            name="ATR (14)",
-            value=f"{ind['atr_14']} pts" if ind["atr_14"] is not None else "n/a",
-            read="neutral",
-        ),
-        Indicator(
-            name="Historical Volatility (20d, annualized)",
-            value=f"{ind['historical_volatility_pct']}%" if ind["historical_volatility_pct"] is not None else "n/a",
-            read="neutral",
-        ),
-        Indicator(
-            name="India VIX",
-            # With its source and time: a VIX with no date on it once sat two
-            # sessions stale beside a live price.
-            value=(f"{ind['india_vix']} ({ind.get('india_vix_source')}, {_vix_when(ind.get('india_vix_as_of'))})"
-                   if ind["india_vix"] is not None else "n/a"),
-            read="neutral",
-        ),
-        Indicator(
-            name="Relative Volume",
-            value=(
-                f"{ind['relative_volume']}x (⚠ index has no real volume — not reliable)"
-                if ind["relative_volume"] is not None
-                else "n/a (index has no real volume)"
-            ),
-            read="neutral",
-        ),
-        Indicator(
-            name="VWAP",
-            value=(
-                f"{ind['vwap']['value']} ({ind['vwap']['price_vs_vwap_pct']:+.2f}% vs price)"
-                if ind["vwap"] and ind["vwap"]["value"] is not None
-                else "Unavailable — index reports 0 intraday volume for free tier"
-            ),
-            read="neutral",
-        ),
-    ]
-    return rows
+@app.get("/api/indicators")
+def get_indicators() -> dict:
+    """The grid under the Today chart. In a session every reading includes
+    today's candle so far (provisional until 15:30); relative volume and
+    VWAP are gone — NIFTY has no traded volume on the free feed. Cached 30s:
+    the page refreshes it once a minute while the market is open."""
+    from briefing.live_indicators import live_indicators
+    try:
+        return cached("live_indicators", ttl_seconds=30, producer=live_indicators, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Indicators unavailable: {e}")
 
 
 @app.get("/api/candles")

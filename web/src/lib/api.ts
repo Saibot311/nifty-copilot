@@ -77,10 +77,23 @@ export interface Snapshot {
   regime: Regime;
 }
 
-export interface IndicatorReading {
+export interface IndicatorTile {
+  key: string;
   name: string;
   value: string;
-  read: "supports" | "conflicts" | "neutral";
+  detail: string;
+  state: string;
+  as_of: string;
+}
+
+// The grid under the Today chart. `live` means today's candle so far is in
+// every reading (provisional until 15:30); `basis` says which candle.
+export interface Indicators {
+  live: boolean;
+  basis: string;
+  as_of: string;
+  session: string;
+  tiles: IndicatorTile[];
 }
 
 export interface Candle {
@@ -266,7 +279,7 @@ export const fetchForwardLog = () => get<ForwardLog>("/api/forward_log");
 export const fetchLiveQuote = () => get<LiveQuote>("/api/live");
 export const fetchRecommendation = () => get<Recommendation>("/api/recommendation");
 export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
-export const fetchIndicators = () => get<IndicatorReading[]>("/api/indicators");
+export const fetchIndicators = () => get<Indicators>("/api/indicators");
 export type ChartCandle = {
   date: string; open: number; high: number; low: number; close: number;
   /** Computed in Python over the full history — the grid's own EMA values. */

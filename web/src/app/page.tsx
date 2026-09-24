@@ -156,7 +156,7 @@ export default async function Home() {
                   <SectionLabel hint="and the closes that would form a pattern">Where NIFTY stands</SectionLabel>
                   <TodayChart data={candles.data} />
                   <div className="mt-3">
-                    <IndicatorGrid indicators={indicators.data} />
+                    <IndicatorGrid initial={indicators.data} />
                   </div>
                 </section>
               </div>

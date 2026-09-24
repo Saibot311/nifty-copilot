@@ -99,6 +99,7 @@ Shared primitives live in `components/ui.tsx`; use them rather than restyling.
 | `PatternTable` | many rows of the same shape: one row per idea, click to expand |
 | `RangeBar` (in `PatternTable`) | a 95% interval on a scale shared by every row, with ₹0 marked |
 | `TodayChart` | the Today tab's chart, answering "what close would change the call": candles and EMAs, the previous high/low, the price now on the axis, a "next close" column of amber bands where a pattern would form, a strip of the days each formed, and a crosshair readout. Drawn at the box's real width (30 candles on a phone, 60 on a desk), never a wide SVG scrolling sideways |
+| `IndicatorGrid` | the eight readings under the Today chart, two to a row at every width. Each tile is a name, a figure, the state in plain words ("between 30 and 70", "IV above realised") and one line of context; no green or red dots, because none of these is money made or a rule passed. The header says which candle they include; a tile from another moment (the VIX, the option chain) carries its own time. In a session it refreshes every minute and wears the amber "provisional" pill |
 | `EquityCurve` (in `PaperCard`) | what the paper book's trades have made over time, against a dashed line at ₹0 — deposits and withdrawals do not move it |
 | `LiveTicker`, `AutoRefresh` | keeping the page current; nothing else polls |
 
