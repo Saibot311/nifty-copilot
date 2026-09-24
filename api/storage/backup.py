@@ -47,6 +47,20 @@ def backup_paper(source: Path | None = None, dest_dir: Path | None = None, keep:
     return _backup(source or PAPER_PATH, "paper", "paper_trades", dest_dir, keep, today)
 
 
+def backup_news(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                today: date | None = None) -> dict:
+    """The headline archive is forward-only and cannot be rebuilt.
+
+    No free source publishes dated Indian market headlines going back, so
+    every row here exists only because this system was running that day and
+    wrote down when it first saw the story. Lose the file and those days are
+    gone. (news_tone.db is NOT in this set: it is a cache of a public GDELT
+    series and can simply be fetched again.)
+    """
+    from .news_db import DB_PATH as NEWS_PATH
+    return _backup(source or NEWS_PATH, "news", "headlines", dest_dir, keep, today)
+
+
 def _backup(source: Path, stem: str, table: str, dest_dir: Path | None, keep: int, today: date | None) -> dict:
     if not source.exists():
         return {"ok": True, "path": None, "rows": 0, "summary": f"no {stem.replace('_', ' ')} yet — nothing to back up"}

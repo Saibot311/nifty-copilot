@@ -345,11 +345,32 @@ def _trend_read(signal_date: str, closes: dict[str, float], td: list[str]) -> tu
 def _confidence_by_name() -> dict[str, float]:
     """Each rejected hypothesis's holdout t — how far its 2024-26 result
     stood out from buying the same option with no signal. Every one of these
-    is below its bar; this ranks them anyway, which is the point."""
+    is below its bar; this ranks them anyway, which is the point.
+
+    Structural and news hypotheses are pooled because they are measured the
+    same way, against the same baseline, on the same holdout. A news signal
+    therefore earns its place here only by its record, exactly like the
+    others — it is not given one for being newer or for having Jev behind it.
+    """
     from backtest.structural_research import load_structural_research
-    r = load_structural_research() or {}
-    return {h["name"]: h["holdout"].get("t") for h in r.get("hypotheses", [])
-            if h["holdout"].get("t") is not None}
+
+    out: dict[str, float] = {}
+    loaders = [load_structural_research]
+    try:
+        from backtest.news_research import load_news_research
+        loaders.append(load_news_research)
+    except Exception:
+        pass  # the news study is optional; the book works without it
+    for load in loaders:
+        try:
+            r = load() or {}
+        except Exception:
+            continue
+        for h in r.get("hypotheses", []):
+            t = (h.get("holdout") or {}).get("t")
+            if t is not None:
+                out[h["name"]] = t
+    return out
 
 
 def _confident_read(signal_date: str, closes: dict[str, float], td: list[str]) -> dict | None:
@@ -363,9 +384,17 @@ def _confident_read(signal_date: str, closes: dict[str, float], td: list[str]) -
     from backtest.structural_research import signals_on
 
     try:
-        fired = signals_on(signal_date)
+        fired = dict(signals_on(signal_date))
     except Exception:
         fired = {}
+    # News signals join the same pool. They are ranked by the same measured
+    # t as everything else, so a news read can only win by having the better
+    # record — never by being the newest idea in the file.
+    try:
+        from backtest.news_research import signals_on as news_signals_on
+        fired.update(news_signals_on(signal_date))
+    except Exception:
+        pass
     confidence = _confidence_by_name()
     ranked = sorted(
         ({"source": name, "direction": kind, "confidence": confidence[name]}

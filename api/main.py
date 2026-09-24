@@ -599,6 +599,51 @@ def journal_delete(entry_id: int) -> dict:
     return {"ok": True}
 
 
+@app.get("/api/news")
+def news(limit: int = 12, refresh_feeds: bool = True) -> dict:
+    """What is being reported, split by when it arrived relative to the
+    session an option buyer can act in.
+
+    Not a signal. Jev says whether each headline is the kind of event that
+    moves an index and which way it would push; that is a description of the
+    news, and whether it predicts a return is a separate study.
+
+    The feed pull is cached: several open dashboards must not multiply into
+    a request per tab at every publisher on the list.
+    """
+    from news.feed import refresh as news_refresh
+    from news.feed import view as news_view
+
+    pulled = None
+    if refresh_feeds:
+        try:
+            pulled = cached("news_refresh", ttl_seconds=180,
+                            producer=lambda: news_refresh(), stale_ok=True)
+        except Exception as e:
+            pulled = {"error": str(e)[:160]}
+    try:
+        out = news_view(limit=limit)
+    except Exception as e:
+        raise HTTPException(503, f"News unavailable: {e}")
+    return {**out, "last_pull": pulled}
+
+
+@app.get("/api/news/research")
+def news_research() -> dict:
+    """The pre-registered news-tone hypotheses and their verdicts.
+
+    Backtestable because GDELT gives away a daily tone series to 2018; the
+    headline archive beside it can only run forward. Stored output, not a
+    live recomputation."""
+    from backtest.news_research import load_news_research
+
+    out = load_news_research()
+    if out is None:
+        raise HTTPException(503, "News research has not been run yet "
+                                 "(api/scripts/backfill_news_tone.py, then news_research.py).")
+    return out
+
+
 @app.get("/api/gift-nifty")
 def gift_nifty() -> dict:
     """GIFT Nifty — NIFTY futures trading in GIFT City while India is shut.

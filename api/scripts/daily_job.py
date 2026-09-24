@@ -116,12 +116,12 @@ def step_audit() -> bool:
 
 
 def step_backup() -> bool:
-    from storage.backup import backup_forward_log
+    from storage.backup import backup_forward_log, backup_news
 
     from storage.backup import backup_journal, backup_paper
 
     ok = True
-    for r in (backup_forward_log(), backup_journal(), backup_paper()):
+    for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
@@ -139,6 +139,29 @@ def step_login_record() -> bool:
     """Record whether today had a Zerodha session. Never prompts at 19:30 —
     the market is shut and a login then is worth nothing."""
     return run_script("scripts/kite_login.py", "--check-only")
+
+
+def _tone_from() -> str:
+    """Only re-fetch the recent window: the archive already holds the rest,
+    and GDELT answers 429 to anyone who asks for eight years nightly."""
+    from datetime import date, timedelta
+
+    return (date.today() - timedelta(days=45)).isoformat()
+
+
+def step_news() -> bool:
+    """Pull every feed, store what is new, and send the newest unjudged
+    headlines to Jev. Judging is best-effort: the archive is the part that
+    cannot be rebuilt later, and a judgment can always be added afterwards."""
+    from news.feed import JUDGE_NIGHTLY, refresh
+
+    out = refresh(judge=JUDGE_NIGHTLY)
+    log(f"    {out['new']} new of {out['fetched']} fetched, {out['judged']} judged")
+    if out.get("failed"):
+        log(f"    sources that failed: {', '.join(out['failed'])}")
+    if out.get("judge_error"):
+        log(f"    judging: {out['judge_error']}")
+    return True
 
 
 def step_kite_bars() -> bool:
@@ -173,6 +196,11 @@ def main() -> int:
         ("replication on other indices", lambda: run_script("scripts/replication.py")),
         ("paper observation", step_paper),
         ("market context studies", lambda: run_script("scripts/market_research.py")),
+        # News: archive today's headlines and judge them, then top the GDELT
+        # tone series up to yesterday and re-run the pre-registered study.
+        ("news archive and judging", step_news),
+        ("news tone series", lambda: run_script("scripts/backfill_news_tone.py", "--from", _tone_from())),
+        ("news hypotheses", lambda: run_script("scripts/news_research.py")),
         ("GIFT Nifty snapshot", step_gift_nifty),
         ("audit", step_audit),
     ]

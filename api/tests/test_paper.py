@@ -316,3 +316,38 @@ def test_the_objective_is_stated_and_cannot_reach_the_recommendation():
     # The gate must not be able to see the paper book at all.
     source = inspect.getsource(rec)
     assert "paper" not in source.lower()
+
+
+def test_a_news_signal_is_ranked_by_its_record_like_every_other(monkeypatch):
+    """News joins the candidate pool on measured evidence, not on novelty.
+    A structural signal with the better holdout t still wins."""
+    import backtest.news_research as nr
+    import backtest.structural_research as sr
+
+    monkeypatch.setattr(paper, "_confidence_by_name",
+                        lambda: {"absorbed_gap": 1.4, "tone_shock_down": 0.9})
+    monkeypatch.setattr(sr, "signals_on", lambda d, symbol="^NSEI": {"absorbed_gap": "CE"})
+    monkeypatch.setattr(nr, "signals_on", lambda d, symbol="^NSEI": {"tone_shock_down": "PE"})
+    read = paper._confident_read("2026-09-22", {}, [])
+    assert read["source"] == "absorbed_gap" and read["direction"] == "CE"
+
+
+def test_a_news_signal_can_win_when_it_has_the_better_record(monkeypatch):
+    import backtest.news_research as nr
+    import backtest.structural_research as sr
+
+    monkeypatch.setattr(paper, "_confidence_by_name",
+                        lambda: {"absorbed_gap": 0.3, "tone_shock_down": 1.1})
+    monkeypatch.setattr(sr, "signals_on", lambda d, symbol="^NSEI": {"absorbed_gap": "CE"})
+    monkeypatch.setattr(nr, "signals_on", lambda d, symbol="^NSEI": {"tone_shock_down": "PE"})
+    read = paper._confident_read("2026-09-22", {}, [])
+    assert read["source"] == "tone_shock_down" and read["direction"] == "PE"
+    assert "still rejected" in read["why"]
+
+
+def test_the_book_works_when_the_news_study_has_never_been_run(monkeypatch):
+    """The news study is optional. A missing file must not stop the book."""
+    import backtest.news_research as nr
+
+    monkeypatch.setattr(nr, "load_news_research", lambda: None)
+    assert isinstance(paper._confidence_by_name(), dict)

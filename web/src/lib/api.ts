@@ -670,6 +670,53 @@ export async function journalRequest<T>(path: string, method: "GET" | "POST" | "
   }
 }
 
+export type NewsRow = {
+  id: string;
+  title: string;
+  summary: string | null;
+  url: string | null;
+  first_seen: string;
+  published_at: string | null;
+  source: string;
+  source_name: string;
+  tier: number;
+  phase: string;
+  /** Jev: probability this is the kind of event that moves an index.
+   *  Null means not yet read — never "judged to be nothing". */
+  market_moving: number | null;
+  direction: "higher" | "lower" | "unclear" | null;
+  dir_conf: number | null;
+  topic: string | null;
+};
+
+export type NewsWindow = {
+  label: string;
+  means: string;
+  rows: NewsRow[];
+  tone: {
+    market_moving: number;
+    of_total: number;
+    pointing: { higher: number; lower: number; unclear: number };
+    topics: Record<string, number>;
+    unjudged: number;
+  };
+};
+
+export type NewsView = {
+  phase: string;
+  says: string;
+  as_of: string;
+  session_date: string;
+  windows: Record<string, NewsWindow>;
+  sources: Record<string, { name: string; tier: number; about: string }>;
+  archive: { headlines: number; sessions: number; question_set: string };
+  judged_by: string;
+  note: string;
+  last_pull?: unknown;
+};
+
+export const fetchNews = () => get<NewsView>("/api/news");
+
 export type GiftNifty = {
   symbol: string;
   expiry: string;

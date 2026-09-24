@@ -37,6 +37,7 @@ import {
   fetchIndicators,
   fetchLivePatterns,
   fetchLiveQuote,
+  fetchNews,
   fetchPatternOptions,
   fetchPatternsToday,
   fetchPlaybook,
@@ -69,6 +70,7 @@ export default async function Home() {
     replication,
     zerodha,
     paper,
+    news,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -91,6 +93,7 @@ export default async function Home() {
     fetchReplication(),
     fetchZerodhaStatus(),
     fetchPaper(),
+    fetchNews(),
   ]);
 
   const snap = snapshot.data;
@@ -249,7 +252,7 @@ export default async function Home() {
               </details>
             </div>
           }
-          market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} />}
+          market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} news={news.data} />}
           journal={<JournalTab paper={paper.data} />}
         />
 

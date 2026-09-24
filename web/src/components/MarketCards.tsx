@@ -1,4 +1,5 @@
-import type { GiftNifty, MarketContext, MarketStudies, MarketToday, Principle, StructuralResearch } from "@/lib/api";
+import type { GiftNifty, MarketContext, NewsView, MarketStudies, MarketToday, Principle, StructuralResearch } from "@/lib/api";
+import { NewsSection } from "./NewsCard";
 import { Offline, Panel, Pill, SectionLabel } from "./ui";
 
 function signed(v: number | null | undefined, digits = 2, unit = "%") {
@@ -312,13 +313,19 @@ export function GiftNiftyCard({ g }: { g: GiftNifty }) {
   );
 }
 
-export function MarketTab({ data, structural, gift }: {
+export function MarketTab({ data, structural, gift, news }: {
   data: MarketContext | null; structural?: StructuralResearch | null; gift?: GiftNifty | null;
+  news?: NewsView | null;
 }) {
   if (!data) return <Offline what="Market context" />;
   return (
     <>
       <div className="grid gap-6 xl:grid-cols-2">
+        {/* News sits on Market, not Today: it has no demonstrated predictive
+            value, and DESIGN.md is strict that Today is only what would
+            change your next action. If the pre-registered tone study ever
+            reports an edge, that is when it earns a place there. */}
+        <NewsSection data={news ?? null} />
         {gift && (
           <section className="min-w-0">
             <SectionLabel hint="NIFTY futures in GIFT City — context, not a signal">GIFT Nifty now</SectionLabel>
