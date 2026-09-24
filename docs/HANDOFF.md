@@ -35,7 +35,10 @@ option and future).
 
 **The paper book has allocated funds and a daily policy.** Set the amount on the Journal tab; positions
 size in whole lots against the book's current value, at most 40% each. Three policies are measured apart: patterns that
-formed; `best_read` when nothing formed — one 2% in-the-money option, one direction, from the
+formed; `best_read` when nothing formed — one option, one direction, at the strike the money allows
+(`briefing/option_choice.py`: the best *typical* 2018-23 trade among strikes whose whole lot fits —
+never the mean, which would buy far out-of-the-money lottery tickets; in practice the deepest in the
+money that fits), from the
 best-evidenced signal firing that day (all of them rejected; a negative t is never followed), falling
 back to the 20-session trend; and a weekly no-signal control, one lot each way, as the yardstick.
 **The book takes one position a session, in one direction** — and never bets against itself: while a

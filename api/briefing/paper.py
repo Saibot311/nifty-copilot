@@ -24,8 +24,13 @@ reverse.
 Three policies run side by side, each on its own row, each measured
 separately:
 
-    pattern     a pattern formed -> its own tested setup
-    best_read   nothing formed -> one 2% in-the-money option, in one
+    pattern     a pattern formed -> its own tested setup; when a lot of it
+                does not fit the budget, the pattern's next best strike on
+                2018-23 (same expiry and hold) that does
+    best_read   nothing formed -> one option, at the strike the money
+                allows (briefing/option_choice.py: the best 2018-23 typical
+                trade whose whole lot fits — the deepest in the money that
+                does, in practice), in one
                 direction only, taken from whichever signal has the most
                 evidence behind it that day — the highest holdout t, even
                 though every one of them was rejected. When no rejected
@@ -51,12 +56,14 @@ import statistics
 from datetime import date, datetime, timedelta, timezone
 
 from backtest.options_engine import OptionsCostModel, select_contract
-from backtest.pattern_options import LOT_SIZE, load_research
+from backtest.pattern_options import LOT_SIZE, load_research, moneyness_label
 from backtest.strategies import STRATEGY_REGISTRY, load_daily_data
 from quant.regime import classify_regime_series
 from market_data.kite_session import IST
 from storage import connect as options_connect
 from storage import paper_db
+
+from .option_choice import baseline_menu, choose, pattern_menu
 
 _COSTS = OptionsCostModel()
 # A flat round trip (~3.3%): the reserve a position is sized with, and what
@@ -77,9 +84,10 @@ MIN_OPEN_INTEREST = 1000
 # option blind costs, with the direction taken out — and wrong for the book,
 # which is why it sits outside it.
 CONTROL = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": 0.0, "max_lots": 1, "funded": False}
-# The daily trade is in the money by the research grid's own step, and
-# one-sided: a call or a put, never both. Negative is in the money, as in
-# pattern_options — above spot for a put, below it for a call.
+# The daily trade's first choice when the money allows it — the strike is
+# judged each evening (option_choice), and 2% in the money is where the
+# 2018-23 typical trade did best. One-sided: a call or a put, never both.
+# Negative is in the money, as in pattern_options.
 ITM_PCT = -2.0
 BEST_READ = {"hold_days": 5, "min_days_to_expiry": 7, "moneyness_pct": ITM_PCT}
 
@@ -241,6 +249,9 @@ def observe(now: datetime | None = None) -> dict:
     # yardstick, reported apart from it — counting the two together is what
     # made a single session look like two trades.
     opened, closed, skipped, passed_over, benchmark = [], [], [], [], []
+    # Every strike comparison made tonight, with its reasons: which one was
+    # bought, and which did not fit.
+    choices: list[dict] = []
 
     with options_connect() as conn:
         archived = conn.execute("SELECT MAX(trade_date) AS d FROM option_bars").fetchone()["d"]
@@ -279,6 +290,21 @@ def observe(now: datetime | None = None) -> dict:
                             "option_type": opt["type"], "moneyness_pct": opt["moneyness_pct"],
                             "min_days_to_expiry": opt["min_days_to_expiry"], "hold_days": opt["hold_days"],
                             "spot": closes[entry_date]}
+                    # The tested option when it fits — that is what is being
+                    # tested forward. When it does not, the pattern's own next
+                    # best strike on 2018-23, same expiry and hold, that does.
+                    tested = moneyness_label(opt["moneyness_pct"])
+                    if _fit(conn, spec, [{"moneyness_pct": opt["moneyness_pct"], "label": tested,
+                                           "dev_median_pct": 0.0}], entry_date, planned)["choice"] is None:
+                        alt = _fit(conn, spec, [c for c in pattern_menu(r)
+                                                if c["moneyness_pct"] != opt["moneyness_pct"]], entry_date, planned)
+                        choices.append({"for": f"{p['label']} (the tested {tested} did not fit)",
+                                        "summary": alt["summary"], "compared": _compact(alt["compared"])})
+                        if alt["choice"] is None:
+                            skipped.append(f"{p['label']}: the tested {tested} did not fit, and {alt['summary']}")
+                            continue
+                        spec = {**spec, "moneyness_pct": alt["choice"]["moneyness_pct"],
+                                "label": f"{p['label']} — {alt['choice']['label']}; the tested {tested} did not fit"}
                     if _open_one(conn, spec, signal_date, entry_date, planned):
                         chosen = p
                         opened.append(f"{p['label']} ({opt['type']})")
@@ -291,8 +317,8 @@ def observe(now: datetime | None = None) -> dict:
                 if chosen is not None:
                     passed_over = [q["label"] for q in formed if q is not chosen]
 
-                # Nothing formed: take one 2% in-the-money option anyway, in
-                # a single direction, from the best-evidenced signal firing
+                # Nothing formed: take one option anyway, at the best strike
+                # the money allows, in a single direction, from the best-evidenced signal firing
                 # that day. No proven edge — the row says so — and the point
                 # is to measure what taking something every day actually
                 # costs.
@@ -305,13 +331,25 @@ def observe(now: datetime | None = None) -> dict:
                     if read:
                         kind = read["direction"]
                         planned = _exit_session(td, entry_date, BEST_READ["hold_days"])
-                        spec = {"source": "best_read", "strategy": "best_read",
-                                "label": f"Most confident signal — {read['why']}", "option_type": kind,
+                        base = {"source": "best_read", "strategy": "best_read", "option_type": kind,
                                 **BEST_READ, "spot": closes[entry_date]}
-                        if _open_one(conn, spec, signal_date, entry_date, planned):
-                            opened.append(f"best read {kind} 2% ITM ({read['why']})")
+                        # The strike is judged, not fixed: the best 2018-23
+                        # median trade whose whole lot the book can afford.
+                        pick = _fit(conn, base, baseline_menu(kind, BEST_READ["min_days_to_expiry"],
+                                                              BEST_READ["hold_days"]), entry_date, planned)
+                        choices.append({"for": "best read", "summary": pick["summary"],
+                                        "compared": _compact(pick["compared"])})
+                        if pick["choice"] is None:
+                            skipped.append(f"best read ({read['why']}): {pick['summary']}")
                         else:
-                            skipped.append(_why_not(conn, spec, entry_date, planned))
+                            label = pick["choice"]["label"]
+                            spec = {**base, "moneyness_pct": pick["choice"]["moneyness_pct"],
+                                    "label": (f"Most confident signal — {read['why']} · {label}, the best "
+                                              "2018-23 typical trade its budget allows")}
+                            if _open_one(conn, spec, signal_date, entry_date, planned):
+                                opened.append(f"best read {kind} {label} ({read['why']})")
+                            else:
+                                skipped.append(_why_not(conn, spec, entry_date, planned))
 
             # The control: one call and one put a week, no signal involved.
             # Outside the gate on purpose — it is not a position in the book
@@ -359,12 +397,25 @@ def observe(now: datetime | None = None) -> dict:
         note = "waiting for the entry session's option prices"
     out = {"opened": opened, "marked": marked, "closed": closed, "skipped": [s for s in skipped if s],
            "passed_over": passed_over, "benchmark_opened": benchmark,
-           "entry_session": entry_date, "signal_session": signal_date, "note": note}
+           "entry_session": entry_date, "signal_session": signal_date, "note": note, "choices": choices}
     try:
         paper_db.record_decision(out)
     except Exception:
         pass  # the record of a decision must never stop the decision
     return out
+
+
+def _fit(conn, spec: dict, menu: list[dict], entry_date: str, planned: str | None) -> dict:
+    """option_choice.choose, sized by this book's own rule and money."""
+    book = cash_and_equity()
+    return choose(conn, menu, option_type=spec["option_type"], dte=spec["min_days_to_expiry"],
+                  entry_date=entry_date, spot=spec["spot"], planned_exit=planned,
+                  lots_for=lambda premium: _lots_for(premium, book["cash_rs"], book["equity_rs"]))
+
+
+def _compact(compared: list[dict]) -> list[dict]:
+    keep = ("label", "strike", "premium", "lot_rs", "fits", "dev_median_pct", "dev_mean_pct")
+    return [{k: c.get(k) for k in keep} for c in compared]
 
 
 def _held_sides(td: list[str], entry_date: str) -> set[str]:

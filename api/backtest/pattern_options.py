@@ -184,6 +184,14 @@ def analyse_pattern(name: str, df, regime_series, ctx) -> dict:
 
     eligible = [g for g in grid if g["dev"]["num_trades"] >= MIN_DEV_TRADES]
     result["configs_tested"] = len(grid)
+    # The whole grid's 2018-23 results — development period only — kept so
+    # the paper book can step to the next best strike when a lot of the
+    # chosen one does not fit its budget (briefing/option_choice.py).
+    result["dev_grid"] = [{"m": g["m"], "dte": g["dte"], "hold": g["hold"],
+                           "num_trades": g["dev"]["num_trades"],
+                           "median_return_pct": g["dev"].get("median_return_pct"),
+                           "avg_return_pct": g["dev"].get("avg_return_pct"),
+                           "avg_premium": g["dev"].get("avg_premium")} for g in grid]
     if not eligible:
         result.update(status="REJECTED", reason=f"Fewer than {MIN_DEV_TRADES} option trades in the development period for every choice — too rare to judge.")
         return result

@@ -927,6 +927,8 @@ export type PaperReport = {
   last_decision?: {
     run_at: string; entry_session: string; signal_session: string;
     opened: string[]; skipped: string[]; passed_over: string[]; benchmark_opened: string[]; note: string | null;
+    /** Each strike comparison made that evening, with its one-line reason. */
+    choices?: { for: string; summary: string }[];
   } | null;
   account: PaperAccount;
   equity_curve: EquityPoint[];

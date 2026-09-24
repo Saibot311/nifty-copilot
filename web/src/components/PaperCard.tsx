@@ -181,7 +181,7 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           )}
         </div>
         <Side title="Patterns, on paper" side={summary.patterns} hint="setups that formed" />
-        <Side title="Best reading" side={summary.best_read} hint="nothing formed → one 2% in-the-money option, strongest signal" />
+        <Side title="Best reading" side={summary.best_read} hint="nothing formed → strongest signal, at the best strike the money allows" />
         <Side title="No signal (control)" side={summary.control} hint="one lot each way, weekly — measured beside the book, not held in it" />
       </div>
       {data.equity_curve.length > 1 && (
@@ -247,6 +247,9 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           {data.last_decision.note && <> {data.last_decision.note}.</>}
           {data.last_decision.skipped.map((why) => (
             <span key={why} className="block text-amber-200/80">Skipped — {why}</span>
+          ))}
+          {(data.last_decision.choices ?? []).map((c) => (
+            <span key={c.for} className="block text-zinc-500">Strike for {c.for}: {c.summary}.</span>
           ))}
           {data.last_decision.passed_over.length > 0 && (
             <span className="block text-zinc-500">

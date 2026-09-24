@@ -509,3 +509,79 @@ def test_positions_recorded_before_the_change_keep_their_own_costs():
     assert t["cost_model"] is None
     pnl = paper._pnl({**t, "mark_premium": 130.0})
     assert pnl["profit_rs"] == round(30.0 * 65 - paper._costs(100.0, 1))
+
+
+# --- the strike the money allows (asked for on 2026-09-24) --------------------
+
+# Premiums fall away from the money; the 2% ITM call is ~Rs 35k a lot.
+STRIKE_PREMIUMS = {22550: 520.0, 22750: 380.0, 23000: 200.0, 23250: 110.0, 23450: 60.0}
+DEV_MENU = [{"moneyness_pct": m, "label": lab, "dev_trades": 246, "dev_median_pct": med, "dev_mean_pct": mean}
+            for m, lab, med, mean in [(-2.0, "2% ITM", -1.0, 1.1), (-1.0, "1% ITM", -7.3, 2.4), (0.0, "ATM", -22.6, 3.7),
+                                      (1.0, "1% OTM", -39.7, 7.9), (2.0, "2% OTM", -63.8, 18.0)]]
+
+
+def _evening_with(monkeypatch, funds, fires_on=None, research=None, read=None):
+    import contextlib
+
+    import pandas as pd
+    paper_db.add_funds(funds, "initial")
+    td = TD[:4]
+    monkeypatch.setattr(paper, "_sessions", lambda: (td, {d: 23000.0 for d in TD}))
+    df = pd.DataFrame({"open": 23000.0, "high": 23100.0, "low": 22900.0, "close": 23000.0},
+                      index=pd.DatetimeIndex([pd.Timestamp(d) for d in td]))
+    monkeypatch.setattr(paper, "load_daily_data", lambda symbol="^NSEI", days=0: (df, None))
+    monkeypatch.setattr(paper, "STRATEGY_REGISTRY", {"fake_pattern": {
+        "fn": lambda d, reg: pd.Series([str(i.date()) == fires_on for i in d.index], index=d.index),
+        "params": {}, "label": "Fake Pattern", "direction": "long", "option_type": "CE"}})
+    monkeypatch.setattr(paper, "load_research", lambda: {"patterns": [research]} if research else {"patterns": []})
+    monkeypatch.setattr(paper, "_confident_read", lambda *a: read)
+    monkeypatch.setattr(paper, "baseline_menu", lambda kind, dte, hold: DEV_MENU)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE option_bars (trade_date TEXT, expiry_date TEXT, strike REAL, option_type TEXT, "
+                 "close REAL, open_interest REAL)")
+    conn.executemany("INSERT INTO option_bars VALUES (?,?,?,?,?,?)",
+                     [("2026-09-23", "2026-10-06", float(k), "CE", p, 5000.0) for k, p in STRIKE_PREMIUMS.items()])
+    monkeypatch.setattr(paper, "options_connect", lambda: contextlib.nullcontext(conn))
+    return paper.observe(now=datetime.now(paper.IST))
+
+
+def _book():
+    return [(t["source"], t["strike"], t["label"]) for t in paper_db.all_trades() if t["funded"]]
+
+
+def test_the_best_read_buys_the_best_strike_the_money_allows(monkeypatch):
+    """₹50,000 caps a position at ₹20,000: 2% and 1% in the money do not fit,
+    so it takes the next best by the 2018-23 median — at the money."""
+    out = _evening_with(monkeypatch, 50_000, read={"direction": "CE", "why": "test signal", "confidence": 1.0})
+    book = _book()
+    assert [(s, k) for s, k, _ in book] == [("best_read", 23000.0)] and "ATM" in book[0][2]
+    choice = out["choices"][0]
+    assert choice["for"] == "best read" and "did not fit" in choice["summary"]
+    assert [c["fits"] for c in choice["compared"]] == [False, False, True, True, True]
+
+
+def test_with_room_the_best_read_still_buys_in_the_money(monkeypatch):
+    _evening_with(monkeypatch, 200_000, read={"direction": "CE", "why": "test signal", "confidence": 1.0})
+    assert [k for _, k, _ in _book()] == [22550.0]
+
+
+def test_a_pattern_keeps_its_tested_option_when_it_fits(monkeypatch):
+    research = {"strategy": "fake_pattern", "holdout_t_stat": 1.0,
+                "suggested_option": {"type": "CE", "moneyness_pct": -1.0, "min_days_to_expiry": 7, "hold_days": 3},
+                "dev_grid": [{"m": -2.0, "dte": 7, "hold": 3, "num_trades": 20, "median_return_pct": 5.0}]}
+    _evening_with(monkeypatch, 200_000, fires_on="2026-09-22", research=research)
+    assert [(s, k) for s, k, _ in _book()] == [("pattern", 22750.0)]   # tested 1% ITM, not the better-median 2% ITM
+
+
+def test_a_pattern_that_does_not_fit_takes_its_next_best_strike(monkeypatch):
+    grid = [{"m": m, "dte": 7, "hold": 3, "num_trades": 20, "median_return_pct": med}
+            for m, med in [(-2.0, -1.0), (-1.0, -5.0), (0.0, -20.0), (1.0, -40.0)]] \
+        + [{"m": 0.0, "dte": 14, "hold": 3, "num_trades": 20, "median_return_pct": 50.0}]  # other expiry: not eligible
+    research = {"strategy": "fake_pattern", "holdout_t_stat": 1.0, "dev_grid": grid,
+                "suggested_option": {"type": "CE", "moneyness_pct": -2.0, "min_days_to_expiry": 7, "hold_days": 3}}
+    out = _evening_with(monkeypatch, 50_000, fires_on="2026-09-22", research=research)
+    book = _book()
+    assert [(s, k) for s, k, _ in book] == [("pattern", 23000.0)]
+    assert "tested 2% ITM did not fit" in book[0][2]
+    assert out["choices"][0]["for"].startswith("Fake Pattern")
