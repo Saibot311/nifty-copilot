@@ -70,7 +70,11 @@ def add(entry: dict, db_path: Path | None = None) -> int:
 
 def close(entry_id: int, exit_premium: float, exit_date: str, db_path: Path | None = None) -> bool:
     with connect(db_path) as conn:
-        cur = conn.execute("UPDATE journal SET exit_premium = ?, exit_date = ? WHERE id = ? AND decision = 'TOOK'",
+        # Open trades only: closing a finished trade again used to replace its
+        # exit price. A wrong exit is corrected by deleting the entry and
+        # adding it again, which leaves a visible record of the change.
+        cur = conn.execute("UPDATE journal SET exit_premium = ?, exit_date = ? "
+                           "WHERE id = ? AND decision = 'TOOK' AND exit_premium IS NULL",
                            (exit_premium, exit_date, entry_id))
         return cur.rowcount == 1
 

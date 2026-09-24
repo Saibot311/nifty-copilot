@@ -93,7 +93,7 @@ def test_closing_records_the_exit_and_stops_marking():
 
 def test_the_report_separates_the_patterns_from_the_no_signal_control():
     paper_db.open_position(_row())
-    paper_db.open_position(_row(source="control", strategy="control_ce", label="No signal"))
+    paper_db.open_position(_row(source="control", strategy="control_ce", label="No signal", funded=0))
     paper_db.close_position(paper_db.all_trades()[0]["id"], "2026-09-28", 150.0)
     s = paper.report()["summary"]
     assert s["patterns"]["open"] + s["patterns"]["closed"] == 1
@@ -227,12 +227,13 @@ def test_the_book_holds_at_most_one_position_for_a_session():
     paper_db.add_funds(100_000, "initial")
     assert paper_db.open_position(_row()) is True
     assert paper_db.funded_on("2026-09-23") == 1
-    # A second pattern the same session would be gated by observe(); the
-    # count is what that gate reads.
-    paper_db.open_position(_row(strategy="rsi_reversal", label="RSI", option_type="PE"))
-    assert paper_db.funded_on("2026-09-23") == 2  # the db records; observe decides
+    # A second pattern the same session is refused by the table itself, not
+    # only by observe(). (This test used to assert the store would take it —
+    # "the db records; observe decides" — which pinned the weaker rule.)
+    assert paper_db.open_position(_row(strategy="rsi_reversal", label="RSI", option_type="PE")) is False
+    assert paper_db.funded_on("2026-09-23") == 1
     held = [t for t in paper_db.all_trades() if t["funded"]]
-    assert len({t["option_type"] for t in held}) <= 2
+    assert len({t["option_type"] for t in held}) == 1
 
 
 def test_the_control_is_not_a_position_in_the_book():
@@ -269,7 +270,7 @@ def test_a_second_pattern_the_same_session_is_passed_over_not_opened(monkeypatch
     def _never(*a, **k):
         raise AssertionError("the gate must stop the session before anything is picked")
 
-    monkeypatch.setattr(paper, "pattern_proximity", _never)
+    monkeypatch.setattr(paper, "_formed_on", _never)
     out = paper.observe(now=datetime.now(paper.IST))
     assert out["opened"] == []
     # Whatever the yardstick does is reported apart from the book: counting
@@ -296,7 +297,7 @@ def test_the_curve_adds_a_win_and_subtracts_a_loss():
     paper_db.open_position(_row(lots=1, entry_cost_rs=214.0))
     tid = paper_db.all_trades()[0]["id"]
     paper_db.close_position(tid, "2026-09-28", 150.0)          # +Rs 3,250 gross
-    paper_db.open_position(_row(signal_date="2026-09-29", lots=1, entry_cost_rs=214.0))
+    paper_db.open_position(_row(signal_date="2026-09-29", entry_date="2026-09-30", lots=1, entry_cost_rs=214.0))
     tid2 = [t for t in paper_db.all_trades() if t["status"] == "OPEN"][0]["id"]
     paper_db.close_position(tid2, "2026-10-05", 60.0)          # -Rs 2,600 gross
     curve = paper.equity_curve()
@@ -351,3 +352,103 @@ def test_the_book_works_when_the_news_study_has_never_been_run(monkeypatch):
 
     monkeypatch.setattr(nr, "load_news_research", lambda: None)
     assert isinstance(paper._confidence_by_name(), dict)
+
+
+# --- which close a pattern is read off --------------------------------------
+
+def _evening_of_the_entry_session(monkeypatch, fires_on: str):
+    """The 19:30 job's real position: the newest final bar is the ENTRY
+    session (09-23), and the signal is the close before it (09-22). The
+    pattern scan the dashboard uses is dated to the entry session."""
+    import contextlib
+    from datetime import date
+
+    import pandas as pd
+
+    paper_db.add_funds(100_000, "initial")
+    td = TD[:4]
+    monkeypatch.setattr(paper, "_sessions", lambda: (td, {d: 23000.0 for d in TD}))
+    df = pd.DataFrame({"open": 23000.0, "high": 23100.0, "low": 22900.0, "close": 23000.0},
+                      index=pd.DatetimeIndex([pd.Timestamp(d) for d in td]))
+    monkeypatch.setattr(paper, "load_daily_data", lambda symbol="^NSEI", days=0: (df, None))
+    monkeypatch.setattr(paper, "STRATEGY_REGISTRY", {"fake_pattern": {
+        "fn": lambda d, reg: pd.Series([str(i.date()) == fires_on for i in d.index], index=d.index),
+        "params": {}, "label": "Fake Pattern", "direction": "long", "option_type": "CE"}})
+    monkeypatch.setattr(paper, "load_research", lambda: {"patterns": [{
+        "strategy": "fake_pattern", "holdout_t_stat": 1.0,
+        "suggested_option": {"type": "CE", "moneyness_pct": -2.0, "min_days_to_expiry": 7, "hold_days": 3}}]})
+    monkeypatch.setattr(paper, "_confident_read", lambda *a: None)  # no best read: isolate the pattern path
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE option_bars (trade_date TEXT, expiry_date TEXT, strike REAL, option_type TEXT, "
+                 "close REAL, open_interest REAL)")
+    conn.executemany("INSERT INTO option_bars VALUES (?,?,?,?,?,?)",
+                     [("2026-09-23", "2026-10-06", float(k), kind, 100.0, 5000.0)
+                      for k in range(22000, 24050, 50) for kind in ("CE", "PE")])
+    monkeypatch.setattr(paper, "options_connect", lambda: contextlib.nullcontext(conn))
+    assert date.fromisoformat(td[-1]) > date.fromisoformat(td[-2])
+    return paper.observe(now=datetime.now(paper.IST))
+
+
+def test_a_pattern_that_formed_on_the_signal_close_opens_the_next_evening(monkeypatch):
+    """It used to keep a pattern only when the scan's date equalled the signal
+    date. At 19:30 the scan is dated to the entry session, so the two never
+    matched and no pattern position could ever open."""
+    out = _evening_of_the_entry_session(monkeypatch, fires_on="2026-09-22")
+    book = [(t["source"], t["strategy"], t["signal_date"], t["entry_date"])
+            for t in paper_db.all_trades() if t["funded"]]
+    assert book == [("pattern", "fake_pattern", "2026-09-22", "2026-09-23")], out
+
+
+def test_a_pattern_forming_on_the_entry_session_is_not_traded_a_session_early(monkeypatch):
+    """The mirror image, and the look-ahead guard: a pattern that forms on
+    the entry close is tomorrow's signal, not today's position."""
+    _evening_of_the_entry_session(monkeypatch, fires_on="2026-09-23")
+    assert [t for t in paper_db.all_trades() if t["funded"]] == []
+
+
+def test_taking_money_out_is_not_a_drawdown():
+    """The book showed "high ₹1,00,000 · −₹50,000 from it" having never
+    traded: ₹1,00,000 in, then withdrawals down to ₹50,000. Moving money in
+    and out is not winning or losing. The high-water mark and the curve are
+    what trades made, which here is nothing."""
+    for amount in (100_000, -5_000, -45_000, -45_000, 45_000):
+        paper_db.add_funds(amount, "flow")
+    book = paper.cash_and_equity()
+    curve = paper.equity_curve()
+    goal = paper.objective(curve, book)
+    assert book["equity_rs"] == 50_000
+    assert goal["profit_rs"] == 0 and goal["below_high_water_rs"] == 0 and goal["pnl_high_rs"] == 0
+    assert all(p["pnl_rs"] == 0 for p in curve)
+
+
+def test_the_high_water_mark_follows_trades_not_deposits():
+    paper_db.add_funds(100_000, "start")
+    paper_db.open_position(_row(lots=1, entry_cost_rs=0.01))
+    paper_db.close_position(paper_db.all_trades()[0]["id"], "2026-09-28", 150.0)   # about +₹3,250
+    paper_db.open_position(_row(signal_date="2026-09-29", entry_date="2026-09-30", lots=1, entry_cost_rs=0.01))
+    loser = [t for t in paper_db.all_trades() if t["status"] == "OPEN"][0]["id"]
+    paper_db.close_position(loser, "2026-10-05", 80.0)                               # about −₹1,300
+    paper_db.add_funds(-60_000, "took some back")
+    goal = paper.objective(paper.equity_curve(), paper.cash_and_equity())
+    assert goal["pnl_high_rs"] == 3250 and goal["below_high_water_rs"] == 1300
+
+
+def test_the_store_itself_refuses_a_second_funded_position_for_one_session():
+    """The one-a-session rule used to live only in observe(): two runs at
+    once (the nightly job and a manual one) could both see an empty session
+    and both open. The table now holds the rule."""
+    assert paper_db.open_position(_row(strategy="first")) is True
+    assert paper_db.open_position(_row(strategy="second", option_type="PE")) is False
+    assert paper_db.open_position(_row(strategy="control_ce", source="control", funded=0)) is True
+    assert paper_db.funded_on("2026-09-23") == 1
+
+
+def test_each_evening_says_what_it_decided_and_why(monkeypatch):
+    """A skipped position used to be explained in a list the nightly job
+    threw away, so an empty book looked like a quiet market."""
+    paper_db.add_funds(50_000, "initial")
+    _evening_of_the_entry_session(monkeypatch, fires_on="2026-09-22")
+    last = paper.report()["last_decision"]
+    assert last["entry_session"] == "2026-09-23" and last["signal_session"] == "2026-09-22"
+    assert last["opened"] and "skipped" in last and "passed_over" in last

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { MeanCI, PatternOptionResult, PatternToday, Verdict } from "@/lib/api";
-import { Pill } from "./ui";
+import { Pill, minus } from "./ui";
 
 /** One row of the table, whichever source it came from. */
 export type PatternRow = {
@@ -93,6 +93,11 @@ function RangeBar({ ci, lo, hi }: { ci: MeanCI | null; lo: number; hi: number })
       <title>{`Average ${rs(ci.mean)}/lot · 95% range ${rs(ci.low)} to ${rs(ci.high)} · ${ci.n} trades`}</title>
       <line x1={x(0)} x2={x(0)} y1="1" y2={H - 1} stroke="var(--line-hi, #3f3f46)" strokeWidth="1" />
       <line x1={x(ci.low)} x2={x(ci.high)} y1={H / 2} y2={H / 2} stroke={colour} strokeWidth="3" strokeLinecap="round" />
+      {/* The scale is clipped so one wild interval cannot flatten the rest; an
+          interval that runs past it gets an arrow, or it would look narrower —
+          more certain — than it is. */}
+      {ci.low < lo && <path d={`M${x(lo) + 5} ${H / 2 - 4} L${x(lo)} ${H / 2} L${x(lo) + 5} ${H / 2 + 4}`} fill="none" stroke={colour} strokeWidth="1.5" />}
+      {ci.high > hi && <path d={`M${x(hi) - 5} ${H / 2 - 4} L${x(hi)} ${H / 2} L${x(hi) - 5} ${H / 2 + 4}`} fill="none" stroke={colour} strokeWidth="1.5" />}
       <circle cx={x(ci.mean)} cy={H / 2} r="4" fill={colour} stroke="var(--ground, #09090b)" strokeWidth="1.5" />
     </svg>
   );
@@ -183,7 +188,7 @@ export function PatternTable({ today, research, caption }: {
                         <p><span className="text-zinc-500">How sure: </span>
                           the average was {rs(r.ci.mean)} per lot over {r.ci.n} trades, but with that few it could
                           as easily have been anywhere from {rs(r.ci.low)} to {rs(r.ci.high)}
-                          {r.t != null && <> (t = {r.t})</>}.
+                          {r.t != null && <> (t = {minus(r.t)})</>}.
                         </p>
                       )}
                       {r.note && <p className="text-zinc-500">{r.note}</p>}

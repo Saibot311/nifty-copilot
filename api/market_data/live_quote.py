@@ -40,13 +40,37 @@ _SESSION = None
 _WAIT_S = 6.0
 
 
+# NSE's client library sends every request without a timeout, including the
+# cookie handshake it makes when it is built. One socket NSE stopped answering
+# on blocked its caller forever — and since polled paths hand everyone else the
+# last value while one thread refreshes, the price, the market status and the
+# option chain froze with nothing on screen saying so.
+NSE_TIMEOUT_S = 8.0
+
+
+def _timeout_session_class():
+    import requests
+
+    class _TimeoutSession(requests.Session):
+        """requests has no session-wide timeout; this gives every call one."""
+
+        def request(self, method, url, **kwargs):
+            kwargs.setdefault("timeout", NSE_TIMEOUT_S)
+            return super().request(method, url, **kwargs)
+
+    return _TimeoutSession
+
+
 def _session():
     global _SESSION
     with _SESSION_LOCK:
         if _SESSION is None:
-            from jugaad_data.nse import NSELive
+            import jugaad_data.nse.live as live
 
-            _SESSION = NSELive()
+            # NSELive builds its own requests.Session by that module-level
+            # name, and uses it at once for the handshake.
+            live.Session = _timeout_session_class()
+            _SESSION = live.NSELive()
         return _SESSION
 
 
@@ -123,6 +147,19 @@ def live_index_quote(index: str = "NIFTY 50") -> dict:
         return _aged(_CACHE[index])
     finally:
         _FETCH_LOCK.release()
+
+
+OPEN_AT = (9, 15)
+CLOSE_AT = (15, 30)
+
+
+def open_by_clock(now: datetime | None = None) -> bool:
+    """What the clock says when NSE cannot be asked: a weekday between 09:15
+    and 15:30 IST. It does not know holidays, so it is only ever shown as a
+    guess beside an unknown status — never as the status itself."""
+    now = (now or datetime.now(IST)).astimezone(IST)
+    t = (now.hour, now.minute)
+    return now.weekday() < 5 and OPEN_AT <= t < CLOSE_AT
 
 
 def market_status() -> dict:

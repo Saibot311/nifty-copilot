@@ -50,8 +50,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from backtest.options_engine import OptionsCostModel, select_contract
 from backtest.pattern_options import LOT_SIZE, load_research
-from backtest.pattern_proximity import pattern_proximity
 from backtest.strategies import STRATEGY_REGISTRY, load_daily_data
+from quant.regime import classify_regime_series
 from market_data.kite_session import IST
 from storage import connect as options_connect
 from storage import paper_db
@@ -236,8 +236,7 @@ def observe(now: datetime | None = None) -> dict:
             # therefore cannot add a second position either.
             if paper_db.funded_on(entry_date) == 0:
                 research = {p["strategy"]: p for p in (load_research() or {}).get("patterns", [])}
-                prox = pattern_proximity("^NSEI")
-                formed = [p for p in prox["patterns"] if p.get("formed_today")] if prox["as_of"] == signal_date else []
+                formed = _formed_on(signal_date)
                 # Strongest evidence first, on the same measure the best read
                 # ranks by — the holdout t against buying with no signal. A
                 # pattern with no measured t sorts last rather than winning
@@ -322,10 +321,45 @@ def observe(now: datetime | None = None) -> dict:
                 paper_db.mark(t["id"], day, premium)
                 marked += 1
 
-    return {"opened": opened, "marked": marked, "closed": closed, "skipped": [s for s in skipped if s],
-            "passed_over": passed_over, "benchmark_opened": benchmark,
-            "entry_session": entry_date, "signal_session": signal_date,
-            "note": None if can_open else "waiting for the entry session's option prices"}
+    if can_open:
+        note = None
+    elif signal_date < FIRST_SIGNAL_DATE:
+        note = f"the signal session ({signal_date}) is before paper observation began ({FIRST_SIGNAL_DATE})"
+    else:
+        note = "waiting for the entry session's option prices"
+    out = {"opened": opened, "marked": marked, "closed": closed, "skipped": [s for s in skipped if s],
+           "passed_over": passed_over, "benchmark_opened": benchmark,
+           "entry_session": entry_date, "signal_session": signal_date, "note": note}
+    try:
+        paper_db.record_decision(out)
+    except Exception:
+        pass  # the record of a decision must never stop the decision
+    return out
+
+
+def _formed_on(signal_date: str) -> list[dict]:
+    """The patterns that formed on the close of `signal_date`, judged on
+    history that ends at that close.
+
+    The evening job runs after the *entry* session has closed, so the newest
+    final bar is the entry session, not the signal one, and the dashboard's
+    pattern scan is dated to it. This used to take that scan and keep it only
+    when its date equalled the signal date, which at 19:30 it never does, so
+    no pattern position could ever open and the best read said "nothing
+    formed" on days a pattern had. Reading each rule off the truncated
+    history answers the question actually being asked, and cannot see the
+    entry session (I1).
+    """
+    df, _ = load_daily_data("^NSEI", 1400)
+    cut = df[df.index <= signal_date]
+    if cut.empty or str(cut.index[-1].date()) != signal_date:
+        return []
+    regime = classify_regime_series(cut)
+    formed = []
+    for name, spec in STRATEGY_REGISTRY.items():
+        if bool(spec["fn"](cut, regime, **spec["params"]).astype(bool).iloc[-1]):
+            formed.append({"strategy": name, "label": spec.get("label", name)})
+    return formed
 
 
 def _trend_read(signal_date: str, closes: dict[str, float], td: list[str]) -> tuple[str, str] | None:
@@ -490,7 +524,7 @@ def live_marks() -> dict:
     # reading — but the book's own figures count only what the book holds.
     held = [t for t in trades if t.get("funded", 1)]
     return {
-        "index": quotes.get("index"), "source": quotes.get("source"),
+        "index": quotes.get("index"), "source": quotes.get("source"), "quote_at": quotes.get("quote_at"),
         "marks": {str(tid): p for tid, p in marks.items()},
         "paper": {**book, "open_positions": len(held),
                   "live_priced": sum(1 for t in held if priced.get(t["id"]) is not None),
@@ -516,15 +550,21 @@ def equity_curve(marks: dict[int, float] | None = None) -> list[dict]:
                 events.append((t["exit_date"] or t["entry_date"], float(pnl["profit_rs"]), t["strategy"]))
     events.sort(key=lambda e: e[0])
 
-    running, curve = 0.0, []
+    # `pnl_rs` is what trades have made, cumulatively. Money moved in or out
+    # changes the book's value but not that: a withdrawal is not a loss.
+    running, pnl, curve = 0.0, 0.0, []
     for day, amount, what in events:
         running += amount
-        curve.append({"date": day, "equity_rs": round(running), "change_rs": round(amount), "what": what})
+        if what not in ("funded", "withdrawn"):
+            pnl += amount
+        curve.append({"date": day, "equity_rs": round(running), "change_rs": round(amount), "what": what,
+                      "pnl_rs": round(pnl)})
     unrealised = sum((_pnl(t, (marks or {}).get(t["id"])) or {}).get("profit_rs", 0)
                      for t in trades if t["status"] == "OPEN")
     if curve and unrealised:
         curve.append({"date": "now", "equity_rs": round(running + unrealised),
-                      "change_rs": round(unrealised), "what": "open positions, marked"})
+                      "change_rs": round(unrealised), "what": "open positions, marked",
+                      "pnl_rs": round(pnl + unrealised)})
     return curve
 
 
@@ -538,18 +578,22 @@ def objective(curve: list[dict], book: dict) -> dict:
     that could talk itself into a signal to make its own number go up would
     be worth nothing.
     """
-    values = [p["equity_rs"] for p in curve] or [book["equity_rs"]]
-    high = max(values) if values else 0
     allocated = book["allocated_rs"]
     equity = book["equity_rs"]
+    # Measured on what trades made, never on the balance: the balance also
+    # moves when money is put in or taken out, and "high ₹1,00,000 · −₹50,000
+    # from it" once described two withdrawals and not a single trade.
+    made = [p.get("pnl_rs", 0) for p in curve] or [0]
+    pnl_now = made[-1]
+    pnl_high = max(0, max(made))
     return {
         "goal": "Grow what has been allocated to the paper book, without inventing a signal to do it.",
         "allocated_rs": allocated,
         "equity_rs": equity,
         "profit_rs": round(equity - allocated),
         "growth_pct": round((equity - allocated) / allocated * 100, 2) if allocated else None,
-        "high_water_rs": round(high),
-        "below_high_water_rs": round(max(high - equity, 0)),
+        "pnl_high_rs": round(pnl_high),
+        "below_high_water_rs": round(max(pnl_high - pnl_now, 0)),
         "sizing_note": (f"Positions are sized off the book as it stands (₹{equity:,}), not off what was first "
                         f"put in: a win raises the next position, a loss lowers it. At most "
                         f"{int(MAX_PER_TRADE * 100)}% of the book goes into one position."),
@@ -582,6 +626,8 @@ def report(marks: dict[int, float] | None = None) -> dict:
     return {
         "trades": trades,
         "benchmark": benchmark,
+        # The latest evening's decision, with what it did not do and why.
+        "last_decision": paper_db.last_decision(),
         "account": {**book, "flows": paper_db.fund_flows(), "max_per_trade_share": MAX_PER_TRADE,
                     "one_a_session": True},
         "equity_curve": curve,
@@ -589,6 +635,8 @@ def report(marks: dict[int, float] | None = None) -> dict:
         "summary": {
             "observing_since": first, "started": FIRST_SIGNAL_DATE,
             "patterns": side("pattern"), "best_read": side("best_read"), "control": side("control"),
+            # The book's own trades — the yardstick is not part of the count.
+            "book_closed": sum(1 for t in trades if t["status"] == "CLOSED"),
             "sessions_needed_before_this_means_anything": 15,
         },
         "note": ("Hypothetical positions at real NSE closing premiums. Nothing is ordered and no money moves. "

@@ -1,5 +1,6 @@
-"""Backups of the forward log — the one file in this project that cannot be
-regenerated. Every other data file can be rebuilt from an exchange archive
+"""Backups of the files in this project that cannot be regenerated: the
+forward log, the journal, the paper book, the news archive, the GIFT Nifty
+snapshots and the hypothesis log. (It began with the forward log alone.) Every other data file can be rebuilt from an exchange archive
 or a broker; each forward-log row was written before its outcome existed,
 and a row recreated afterwards would be a backtest in disguise.
 
@@ -59,6 +60,52 @@ def backup_news(source: Path | None = None, dest_dir: Path | None = None, keep: 
     """
     from .news_db import DB_PATH as NEWS_PATH
     return _backup(source or NEWS_PATH, "news", "headlines", dest_dir, keep, today)
+
+
+def backup_gift_nifty(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                      today: date | None = None) -> dict:
+    """NSE IX publishes no free history, so each nightly GIFT Nifty snapshot
+    is the only copy that will ever exist."""
+    from .gift_nifty_db import DB_PATH as GIFT_PATH
+    return _backup(source or GIFT_PATH, "gift_nifty", "snapshots", dest_dir, keep, today)
+
+
+def backup_hypothesis_log(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                          today: date | None = None) -> dict:
+    """The audit trail of every strategy and parameter set ever run — the
+    record the multiple-comparisons count is read from. It is plain JSON
+    lines, not SQLite, so it is read under the same file lock the writers
+    take (never a half-written line), gzipped, and checked by decompressing
+    the copy and comparing it with what was read."""
+    import fcntl
+    import gzip
+    import hashlib
+
+    if source is None:
+        from backtest.hypothesis_log import LOG_PATH as source
+    if not source.exists():
+        return {"ok": True, "path": None, "rows": 0, "summary": "no hypothesis log yet — nothing to back up"}
+    dest_dir = dest_dir or Path(_env("BACKUP_DIR") or DEFAULT_DIR).expanduser()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"hypothesis_log-{(today or date.today()).isoformat()}.jsonl.gz"
+    with open(source, "rb") as f:
+        fcntl.flock(f, fcntl.LOCK_SH)
+        try:
+            data = f.read()
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+    dest.write_bytes(gzip.compress(data))
+    back = gzip.decompress(dest.read_bytes())
+    rows = data.count(b"\n")
+    if hashlib.sha256(back).digest() != hashlib.sha256(data).digest():
+        dest.unlink(missing_ok=True)
+        return {"ok": False, "path": None, "rows": 0, "summary": "BACKUP FAILED verification: hypothesis log copy differs"}
+    old = sorted(dest_dir.glob("hypothesis_log-*.jsonl.gz"))[:-keep] if keep else []
+    for f in old:
+        f.unlink()
+    return {"ok": True, "path": str(dest), "rows": rows,
+            "summary": f"{rows} rows backed up and verified -> {dest}"
+                       + (f"; removed {len(old)} older backup(s)" if old else "")}
 
 
 def _backup(source: Path, stem: str, table: str, dest_dir: Path | None, keep: int, today: date | None) -> dict:

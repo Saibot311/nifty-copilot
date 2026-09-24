@@ -117,6 +117,8 @@ def walk_forward_test(df: pd.DataFrame, f: pd.DataFrame, fwd: pd.DataFrame) -> d
         "period_start": EVAL_START,
         "rank_correlation": round(ic, 3),
         "t_stat": round(t_stat, 2),
+        # The same rule as the verdict below, so the card never re-judges it.
+        "predictive": t_stat >= 2,
         "direction_hit_rate": round(hit, 3),
         "verdict": (
             "Analogs have predicted the next 10 days better than chance (t >= 2)."

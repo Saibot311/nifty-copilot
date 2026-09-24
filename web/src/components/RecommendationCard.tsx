@@ -1,5 +1,5 @@
 import type { Recommendation } from "@/lib/api";
-import { Offline, Panel, Pill } from "./ui";
+import { Offline, Panel, Pill, minus } from "./ui";
 
 const ACTION_META: Record<
   string,
@@ -77,7 +77,7 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
                     {c.holdout_avg_profit_per_lot_rs != null
                       ? `${c.holdout_avg_profit_per_lot_rs >= 0 ? "+" : "−"}₹${Math.abs(c.holdout_avg_profit_per_lot_rs).toLocaleString("en-IN")}/lot`
                       : "–"}
-                    , t {c.holdout_t_stat ?? "–"}
+                    , t {minus(c.holdout_t_stat)}
                   </p>
                 )}
               </div>
@@ -102,8 +102,8 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
       {rec.evidence_bar && (
         <details className="border-t border-zinc-800/70 px-5 py-3">
           <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-400">
-            Evidence bar: option verdict APPROVED and t ≥ {rec.evidence_bar.min_t} ({rec.evidence_bar.patterns_judged}{" "}
-            patterns judged)
+            Evidence bar: option verdict APPROVED and t ≥ {rec.evidence_bar.min_t} (
+            {rec.evidence_bar.tests_judged ?? rec.evidence_bar.patterns_judged} hypotheses judged on 2024–26)
           </summary>
           <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
             {rec.evidence_bar.methodology_note}

@@ -90,3 +90,22 @@ def test_a_late_row_is_kept_but_never_counted():
     on_time = {"as_of": "2026-09-17", "recorded_at": "2026-09-17T14:00:00+00:00"}  # 19:30 IST, same day
     assert recorded_late(on_time, SESSIONS) is False
     assert "days_excluded_recorded_late" in forward_report()["summary"]
+
+
+def test_a_verdict_cannot_be_recorded_once_the_next_session_is_trading():
+    """The next session is not in the daily data while it trades — Yahoo's
+    bar arrives after the close. With no later session to look at, the check
+    used to say "not started", so a verdict for Wednesday could be written at
+    11:00 on Thursday, with Thursday's move already under way, and count as
+    forward evidence. The calendar stands in for the missing session."""
+    from datetime import date, datetime
+    from briefing.forward_log import IST, outcome_has_started
+    wed = date(2026, 9, 23)
+    sessions = ["2026-09-21", "2026-09-22", "2026-09-23"]
+    assert outcome_has_started(wed, sessions, datetime(2026, 9, 24, 11, 0, tzinfo=IST)) is True
+    assert outcome_has_started(wed, sessions, datetime(2026, 9, 24, 9, 0, tzinfo=IST)) is False
+    assert outcome_has_started(wed, sessions, datetime(2026, 9, 23, 19, 30, tzinfo=IST)) is False
+    fri = date(2026, 9, 25)
+    fri_sessions = sessions + ["2026-09-24", "2026-09-25"]
+    assert outcome_has_started(fri, fri_sessions, datetime(2026, 9, 26, 11, 0, tzinfo=IST)) is False  # Saturday
+    assert outcome_has_started(fri, fri_sessions, datetime(2026, 9, 28, 9, 20, tzinfo=IST)) is True   # Monday

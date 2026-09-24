@@ -60,3 +60,64 @@ def test_pairing_is_refused_to_everyone_but_this_mac():
     source = inspect.getsource(main.access_pairing)
     assert "is_local" in source and "403" in source
     assert "is_local" in inspect.getsource(main.access_rotate)
+
+
+# --- a web page in this Mac's browser is also "this Mac" ----------------------
+
+def _call_gate(method="GET", host="127.0.0.1:8000", origin=None, path="/api/paper", client="127.0.0.1"):
+    """Run a request through the real middleware and return the status."""
+    import asyncio
+
+    from starlette.requests import Request
+    from starlette.responses import PlainTextResponse
+
+    headers = [(b"host", host.encode())] + ([(b"origin", origin.encode())] if origin else [])
+    scope = {"type": "http", "method": method, "path": path, "headers": headers, "query_string": b"",
+             "client": (client, 5555), "server": ("127.0.0.1", 8000), "scheme": "http", "root_path": ""}
+    gate = access.TokenGate(app=None, allowed_origins=["http://localhost:3000", "http://127.0.0.1:3000"])
+
+    async def call_next(req):
+        return PlainTextResponse("handled")
+
+    return asyncio.run(gate.dispatch(Request(scope), call_next)).status_code
+
+
+def test_a_forged_host_is_refused(monkeypatch):
+    """DNS rebinding: a page on attacker.example re-pointed at 127.0.0.1 is
+    "this Mac" by address. The API answered it — pairing token included."""
+    monkeypatch.delenv("DASHBOARD_HOSTS", raising=False)
+    monkeypatch.setattr(access, "ENV_PATH", access.Path("/nonexistent/.env"))
+    assert _call_gate(host="attacker.example:8000") == 400
+    assert _call_gate(path="/api/access/pairing", host="attacker.example") == 400
+    assert _call_gate(host="127.0.0.1:8000") == 200
+    assert _call_gate(host="localhost:8000") == 200
+    assert _call_gate(host="[::1]:8000") == 200
+
+
+def test_the_phones_address_is_a_known_host(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_HOSTS", "192.168.1.20")
+    assert access.host_allowed("192.168.1.20:8000") and not access.host_allowed("192.168.1.21:8000")
+
+
+def test_another_site_cannot_change_anything(monkeypatch):
+    """Any page open in this Mac's browser could POST here as "this Mac" —
+    rotating the pairing token, which locks the phone out."""
+    monkeypatch.delenv("DASHBOARD_HOSTS", raising=False)
+    monkeypatch.setattr(access, "ENV_PATH", access.Path("/nonexistent/.env"))
+    assert _call_gate("POST", origin="https://evil.example", path="/api/access/rotate") == 403
+    assert _call_gate("DELETE", origin="https://evil.example", path="/api/journal/1") == 403
+    assert _call_gate("POST", origin="http://localhost:3000", path="/api/access/rotate") == 200
+    assert _call_gate("POST", origin=None, path="/api/journal") == 200   # curl, scripts: no Origin
+    assert _call_gate("GET", origin="https://evil.example") == 200       # reads are CORS's job
+
+
+def test_the_broker_user_id_is_not_handed_out(monkeypatch, tmp_path):
+    import json
+
+    import main
+    from storage import login_log_db
+    monkeypatch.setattr(login_log_db, "DB_PATH", tmp_path / "login.db")
+    monkeypatch.setattr(main.kite_session, "session_status",
+                        lambda: {"configured": {}, "logged_in": True, "user_id": "ZZ9999", "issued_at": "2026-09-24T10:15:00+05:30"})
+    out = json.dumps(main.zerodha_status())
+    assert "ZZ9999" not in out and "user_id" not in out

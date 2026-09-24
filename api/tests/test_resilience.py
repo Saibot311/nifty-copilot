@@ -84,3 +84,64 @@ def test_one_missed_health_check_is_a_cold_start_two_is_a_wedged_service(fails, 
     # one miss would fight the deploy it just finished.
     assert should_restart(fails) is restart
     assert FAILURES_BEFORE_RESTART == 2
+
+
+def test_the_research_comparison_is_not_recomputed_on_every_page_load(monkeypatch):
+    """It ran all 26 backtests — ten seconds — inside every render of the
+    dashboard, and every render waited for it and appended 26 rows to the
+    hypothesis log. Its inputs change once a day."""
+    import cache
+    import main
+    calls = []
+    monkeypatch.setattr(main, "run_all_strategies", lambda **kw: calls.append(kw) or {"results": {}})
+    cache.invalidate()
+    main.research_compare(symbol="^NSEI", days=7000, hold_days=10)
+    main.research_compare(symbol="^NSEI", days=7000, hold_days=10)
+    assert len(calls) == 1
+    cache.invalidate()
+
+
+def test_the_watchdogs_launchd_log_is_not_the_file_the_script_writes():
+    """launchd could not open health_watch.log — the script had created it,
+    from a shell, without the permission tag launchd needs — so every run
+    failed before Python started (exit 78) and the watchdog never ran once."""
+    from pathlib import Path
+    installer = (Path(__file__).resolve().parents[2] / "scripts" / "install_app_services.sh").read_text()
+    block = installer[installer.index('cat > "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist"'):]
+    block = block[: block.index("\nPLIST\n")]
+    assert "health_watch.launchd.log" in block and "data/health_watch.log<" not in block
+
+
+def test_the_services_may_hold_more_than_256_files():
+    from pathlib import Path
+    installer = (Path(__file__).resolve().parents[2] / "scripts" / "install_app_services.sh").read_text()
+    assert "SoftResourceLimits" in installer and "NumberOfFiles" in installer
+
+
+def test_the_deep_health_check_fails_when_no_file_can_be_opened(monkeypatch):
+    """/health opens nothing, so it answers even when the API has run out of
+    file descriptors and every real endpoint is failing. The watchdog asks
+    the deep one."""
+    import tempfile
+
+    import pytest
+    from fastapi import HTTPException
+
+    import main
+    assert main.health_deep()["status"] == "ok"
+
+    def out_of_files(*a, **k):
+        raise OSError(24, "Too many open files")
+    monkeypatch.setattr(tempfile, "TemporaryFile", out_of_files)
+    with pytest.raises(HTTPException) as e:
+        main.health_deep()
+    assert e.value.status_code == 503
+
+
+def test_the_watchdog_asks_the_deep_check():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("hw", Path(__file__).resolve().parents[1] / "scripts" / "health_watch.py")
+    hw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hw)
+    assert hw.SERVICES["com.niftycopilot.api"].endswith("/health/deep")

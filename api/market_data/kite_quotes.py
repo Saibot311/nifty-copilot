@@ -13,9 +13,9 @@ live price keeps its last closing mark, labelled as such.
 
 import threading
 import time
-from datetime import date
+from datetime import date, datetime
 
-from .kite_session import KiteNotLoggedIn, authenticated_client
+from .kite_session import IST, KiteNotLoggedIn, authenticated_client
 
 _LOCK = threading.Lock()
 _INSTRUMENTS: dict = {"day": None, "by_key": {}}
@@ -71,6 +71,8 @@ def last_prices(tokens: list[int], index: str = "NSE:NIFTY 50") -> dict:
         "by_token": {int(k): v.get("last_price") for k, v in raw.items() if k.isdigit() and v},
         "tokens": list(tokens),
         "source": "Kite (live)",
+        # When this price was fetched, so the dashboard can say how old it is.
+        "quote_at": datetime.now(IST).isoformat(timespec="seconds"),
     }
     with _LOCK:
         _QUOTE_CACHE.update(at=now, data=data)

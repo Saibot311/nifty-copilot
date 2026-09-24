@@ -94,6 +94,7 @@ export function CopilotCard({ status }: { status: CopilotStatus | null }) {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask about today's dashboard…"
+          aria-label="Ask a question about today's dashboard"
           maxLength={1000}
           className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500/50 focus:outline-none"
         />

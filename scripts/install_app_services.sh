@@ -34,15 +34,37 @@ PATH_LINE="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 status() {
     for label in "$API_LABEL" "$WEB_LABEL" "$WATCH_LABEL"; do
         if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
-            state=$(launchctl print "$DOMAIN/$label" | awk -F'= ' '/state = /{print $2; exit}')
-            echo "$label: installed ($state)"
+            info=$(launchctl print "$DOMAIN/$label")
+            state=$(awk -F'= ' '/state = /{print $2; exit}' <<<"$info")
+            runs=$(awk -F'= ' '/runs = /{print $2; exit}' <<<"$info")
+            last=$(awk -F'= ' '/last exit code = /{print $2; exit}' <<<"$info")
+            echo "$label: installed ($state; runs ${runs:-?}; last exit ${last:-none})"
+            # A job that exits 78 never reached its own code: launchd could not
+            # set it up. The watchdog did this silently for its whole life.
+            [[ "$last" == 78* ]] && echo "  WARNING: launchd could not start $label (EX_CONFIG) — see its log paths"
         else
             echo "$label: not installed"
         fi
     done
-    grep -q '^DASHBOARD_HOSTS=' "$API_DIR/.env" 2>/dev/null \
-        && echo "network: reachable from $(grep '^DASHBOARD_HOSTS=' "$API_DIR/.env" | cut -d= -f2) (token required)" \
-        || echo "network: this Mac only"
+    # What the sockets are actually bound to — .env says what they should be,
+    # which is not the same thing (and the LAN address can change under it).
+    for port in 8000 3000; do
+        bound=$(lsof -nP -iTCP:$port -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $9}' | sort -u | tr '\n' ' ')
+        echo "port $port: listening on ${bound:-nothing}"
+    done
+    lan=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+    paired=$(grep '^DASHBOARD_HOSTS=' "$API_DIR/.env" 2>/dev/null | cut -d= -f2 || true)
+    if lsof -nP -iTCP:8000 -sTCP:LISTEN 2>/dev/null | grep -q '\*:8000'; then
+        if [[ -n "$lan" ]]; then
+            lan_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$lan:8000/health" || true)
+            echo "network: every interface; this Mac is $lan now (http://$lan:8000/health -> ${lan_code:-no answer}); phones paired to ${paired:-nothing}"
+            [[ ",$paired," != *",$lan,"* ]] && echo "  WARNING: this Mac's address is not the paired one — re-run with --lan"
+        else
+            echo "network: every interface, but this Mac has no LAN address right now"
+        fi
+    else
+        echo "network: this Mac only (127.0.0.1)"
+    fi
     for url in "http://127.0.0.1:8000/health" "http://127.0.0.1:3000"; do
         # curl prints 000 itself on failure; a second "|| echo 000" made it
         # read "000000". The first hit after a restart can take ~15s.
@@ -59,7 +81,18 @@ status() {
             echo "build: up to date with web/src"
         fi
     fi
-    echo "api: restarts on its own; python is read at start, so re-run this script after backend changes too"
+    # Python is read when the API starts, so backend edits are not live until
+    # it restarts. Say so, as the web build check does.
+    pid=$(lsof -nP -iTCP:8000 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
+    if [[ -n "$pid" ]]; then
+        started=$(ps -o lstart= -p "$pid" | sed 's/^ *//; s/ *$//')
+        newer=$(find "$API_DIR" -name '*.py' -not -path '*/.venv/*' -not -path '*/tests/*' -newermt "$started" 2>/dev/null | head -1)
+        if [[ -n "$newer" ]]; then
+            echo "STALE: backend code changed since the API started ($started) — re-run this script to load it"
+        else
+            echo "api: running the code on disk (started $started)"
+        fi
+    fi
 }
 
 if [[ "${1:-}" == "--status" ]]; then
@@ -123,6 +156,10 @@ write_plist() {
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
     <key>ThrottleInterval</key><integer>10</integer>
+    <!-- launchd's default is 256 open files. A leak (one socket per Yahoo
+         fetch, since fixed) ran the API into it; this is the margin. -->
+    <key>SoftResourceLimits</key>
+    <dict><key>NumberOfFiles</key><integer>4096</integer></dict>
     <key>StandardOutPath</key><string>$logfile</string>
     <key>StandardErrorPath</key><string>$logfile</string>
 </dict>
@@ -158,8 +195,12 @@ cat > "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist" <<PLIST
     <dict><key>PATH</key><string>$PATH_LINE</string></dict>
     <key>StartInterval</key><integer>600</integer>
     <key>RunAtLoad</key><false/>
-    <key>StandardOutPath</key><string>$API_DIR/data/health_watch.log</string>
-    <key>StandardErrorPath</key><string>$API_DIR/data/health_watch.log</string>
+    <!-- Not health_watch.log: the script writes that one itself, and a file it
+         created from a shell carries no permission for launchd to open, so
+         every run failed before Python started (exit 78). launchd makes this
+         one, and owns it. -->
+    <key>StandardOutPath</key><string>$API_DIR/data/health_watch.launchd.log</string>
+    <key>StandardErrorPath</key><string>$API_DIR/data/health_watch.launchd.log</string>
 </dict>
 </plist>
 PLIST
@@ -175,5 +216,5 @@ else
     echo "  dashboard  http://127.0.0.1:3000  (this Mac only — use --lan for your phone)"
 fi
 echo "  api        http://127.0.0.1:8000"
-echo "Logs: $API_DIR/data/api_service.log, web_service.log, health_watch.log"
+echo "Logs: $API_DIR/data/api_service.log, web_service.log, health_watch.log (+ health_watch.launchd.log)"
 echo "A watchdog checks both every 10 minutes and restarts one that stops answering."

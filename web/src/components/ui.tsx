@@ -110,5 +110,19 @@ export function fmtPct(v: number | null | undefined, digits = 2) {
 
 export function fmtNum(v: number | null | undefined) {
   if (v == null) return "–";
-  return v.toLocaleString("en-IN");
+  return v.toLocaleString("en-IN").replace("-", "−");
+}
+
+/** A figure that can be negative — a t, a z, a return — as the API sent it,
+ *  with a real minus. Raw `{x}` in JSX prints a hyphen. */
+export function minus(v: number | null | undefined, digits?: number) {
+  if (v == null) return "–";
+  return (digits == null ? String(v) : v.toFixed(digits)).replace("-", "−");
+}
+
+/** A change that always shows its sign: +12.30 / −12.30. */
+export function fmtSigned(v: number | null | undefined, digits = 2) {
+  if (v == null) return "–";
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  return `${sign}${Math.abs(v).toFixed(digits)}`;
 }

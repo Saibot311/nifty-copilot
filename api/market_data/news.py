@@ -117,12 +117,25 @@ def _norm_title(title: str) -> str:
     return _SPACE.sub(" ", re.sub(r"[^a-z0-9 ]", "", title.lower())).strip()
 
 
+def _safe_url(url: str | None) -> str:
+    """Only web links. A feed is text from someone else's server, and a link
+    the dashboard renders must not be able to run script."""
+    url = (url or "").strip()
+    return url if url.lower().startswith(("https://", "http://")) else ""
+
+
 def fetch_source(key: str, timeout: int = TIMEOUT_S) -> list[dict]:
-    """One feed's items. Raises — the caller decides what a dead feed means."""
+    """One feed's items. Raises — the caller decides what a dead feed means.
+
+    A publisher that answers 200 with an error page, or with a feed holding
+    nothing, raises too: counted as a quiet feed, it looked exactly like a
+    quiet news day."""
     src = SOURCES[key]
     resp = requests.get(src["url"], headers=_HEADERS, timeout=timeout)
     resp.raise_for_status()
     root = ET.fromstring(resp.content)
+    if root.tag.split("}")[-1].lower() not in ("rss", "feed", "rdf"):
+        raise ValueError(f"not a feed (<{root.tag}>)")
     out = []
     for item in root.findall(".//item"):
         title = _clean(item.findtext("title"))
@@ -131,12 +144,14 @@ def fetch_source(key: str, timeout: int = TIMEOUT_S) -> list[dict]:
         out.append({
             "title": title,
             "summary": _clean(item.findtext("description"))[:400],
-            "url": (item.findtext("link") or "").strip(),
+            "url": _safe_url(item.findtext("link")),
             "published_at": _published(item),
             "source": key,
             "source_name": src["name"],
             "tier": src["tier"],
         })
+    if not out:
+        raise ValueError("feed held no items")
     return out
 
 
@@ -195,7 +210,7 @@ def corporate_announcements(limit: int = 20) -> list[dict]:
         out.append({
             "title": f"{name} — {desc}",
             "summary": _clean(r.get("attchmntText"))[:400],
-            "url": (r.get("attchmntFile") or "").strip(),
+            "url": _safe_url(r.get("attchmntFile")),
             "published_at": (r.get("an_dt") or "").strip() or None,
             "source": "nse_filings",
             "source_name": "NSE corporate filings",

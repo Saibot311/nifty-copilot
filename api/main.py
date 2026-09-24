@@ -35,7 +35,7 @@ from storage import archive_stats, record_strategy_evaluation, strategy_history,
 from market_data import Candle, CSVProvider, YFinanceProvider, ZerodhaProvider
 from market_data import kite_session
 from market_data.bar_archive import ArchiveProvider, archive_summary
-from market_data.live_quote import live_index_quote, market_status
+from market_data.live_quote import live_index_quote, market_status, open_by_clock
 from quant import build_analysis
 
 app = FastAPI(title="NIFTY Copilot API")
@@ -71,7 +71,7 @@ PROVIDERS = {
 # Phase 3: only the Next.js dev server needs access, and only during local development.
 # Anything that is not this Mac must present the token (access.py). Added
 # before CORS so the browser still gets its headers on a refusal.
-app.add_middleware(TokenGate)
+app.add_middleware(TokenGate, allowed_origins=_allowed_origins())
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,6 +103,20 @@ class Indicator(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/health/deep")
+def health_deep() -> dict[str, str]:
+    """For the watchdog. /health opens nothing, so it kept answering while
+    the API had run out of file descriptors and every real endpoint — each
+    one opens a database — was failing. This one has to open a file."""
+    import tempfile
+    try:
+        with tempfile.TemporaryFile() as f:
+            f.write(b"ok")
+    except OSError as e:
+        raise HTTPException(503, f"cannot open a file: {e.strerror or e}")
     return {"status": "ok"}
 
 
@@ -224,8 +238,13 @@ def research_compare(
     data with the same costs — a fair side-by-side comparison, not a
     search for whichever one looks best. Every run is logged to the
     hypothesis log regardless of outcome."""
+    # Cached: this is 26 full backtests (~10s) on daily bars that change once
+    # a day. It used to run inside every dashboard render — which waited for
+    # it — and append 26 rows to the hypothesis log each time.
     try:
-        return run_all_strategies(symbol=symbol, days=days, hold_days=hold_days)
+        return cached(f"research_compare:{symbol}:{days}:{hold_days}", ttl_seconds=6 * 3600,
+                      producer=lambda: run_all_strategies(symbol=symbol, days=days, hold_days=hold_days),
+                      stale_ok=True)
     except Exception as e:
         raise HTTPException(503, f"Research run failed: {e}")
 
@@ -308,8 +327,11 @@ def research_briefing(
 
 @app.get("/api/options/chain")
 def options_chain(
-    symbol: str = Query("NIFTY"),
-    expiry: str | None = Query(None, description="e.g. 22-Sep-2026; defaults to nearest"),
+    # Only NIFTY: any other value used to open a new cache entry and a new
+    # NSE request per spelling.
+    symbol: str = Query("NIFTY", pattern=r"^NIFTY$"),
+    expiry: str | None = Query(None, pattern=r"^\d{2}-[A-Za-z]{3}-\d{4}$",
+                               description="e.g. 22-Sep-2026; defaults to nearest"),
 ) -> dict:
     """Live NIFTY option chain analytics from NSE — PCR, open-interest
     concentrations, the strike ladder, ATM implied volatility. Measurements,
@@ -500,6 +522,21 @@ def access_rotate(request: Request) -> dict:
     return {"ok": True, "note": "Old devices are locked out. Pair them again from the Mac."}
 
 
+# A live price older than this is shown as stale — NSE's feed caches for 15s,
+# so anything past it is a refresh that did not happen.
+LIVE_STALE_AFTER_S = 15
+
+
+def _last_close() -> tuple[str, float]:
+    """The newest final daily close and its date: what the header shows,
+    labelled, when neither live source answers."""
+    from backtest.strategies import load_daily_data
+    df, _ = load_daily_data("^NSEI", 260)
+    if "provisional" in df.columns:
+        df = df[~df["provisional"].astype(bool)]
+    return str(df.index[-1].date()), float(df["close"].iloc[-1])
+
+
 @app.get("/api/live/tick")
 def live_tick() -> dict:
     """The small, fast payload the dashboard polls while the market is open:
@@ -515,18 +552,21 @@ def live_tick() -> dict:
     piled up behind the lock it was holding."""
     from briefing.paper import live_marks
 
-    out: dict = {"as_of": datetime.now(kite_session.IST).isoformat()}
+    now = datetime.now(kite_session.IST)
+    out: dict = {"as_of": now.isoformat()}
     try:
         status = cached("market_status", ttl_seconds=60, producer=market_status, stale_ok=True)
     except Exception:
-        status = {"is_open": None}
-    out["market"] = status
+        # Unknown is not closed: saying "Closed" here once hid a live session
+        # behind a 60-second poll. The clock's guess rides alongside, labelled.
+        status = {"is_open": None, "status": "unknown"}
+    out["market"] = {**status, "open_by_clock": open_by_clock(now)}
 
     try:
         marks = cached("live_marks", ttl_seconds=2, producer=live_marks, stale_ok=True)
     except Exception as e:
         marks = {"error": str(e)[:120], "index": None, "marks": {}, "source": None}
-    out.update({k: marks.get(k) for k in ("index", "marks", "source", "paper")})
+    out.update({k: marks.get(k) for k in ("index", "marks", "source", "paper", "quote_at")})
 
     # The change is computed here, not in the browser: every number on the
     # page comes from Python (I2).
@@ -544,9 +584,30 @@ def live_tick() -> dict:
         try:
             q = live_index_quote()
             out.update(index=q["last"], change=q.get("change"), change_pct=q.get("change_pct"),
-                       source=q.get("source"))
+                       source=q.get("source"), quote_at=q.get("fetched_at"))
+            if q.get("age_s") is not None:
+                out.update(age_s=q["age_s"], stale=bool(q.get("stale")))
         except Exception:
-            out.setdefault("source", "unavailable")
+            pass
+
+    if out.get("index") is None:
+        # Neither live source answered: the last close, said to be exactly that.
+        try:
+            day, close = cached("last_close", ttl_seconds=600, producer=_last_close, stale_ok=True)
+            out.update(index=close, source="last close", quote_at=f"{day}T15:30:00+05:30",
+                       change=None, change_pct=None, stale=True)
+        except Exception:
+            out["source"] = "unavailable"
+
+    # Every price carries its age. A number with no time on it is how a
+    # frozen feed once passed for a live one.
+    if out.get("quote_at") and "age_s" not in out:
+        try:
+            age = (now - datetime.fromisoformat(out["quote_at"])).total_seconds()
+            out["age_s"] = round(max(age, 0.0), 1)
+        except ValueError:
+            pass
+    out.setdefault("stale", out.get("age_s") is not None and out["age_s"] >= LIVE_STALE_AFTER_S)
     return out
 
 
@@ -730,7 +791,12 @@ def zerodha_status() -> dict:
     status = kite_session.session_status()
     if status["logged_in"]:
         login_log_db.record("LOGGED_IN", issued_at=status.get("issued_at"), user_id=status.get("user_id"))
-    return {**status, "history": login_log_db.summary()}
+    # The broker user ID stays in the local log. It used to be returned here —
+    # to a paired phone over plain HTTP too — and nothing on screen uses it.
+    history = login_log_db.summary()
+    history = {**history, "recent": [{k: v for k, v in r.items() if k != "user_id"}
+                                     for r in history.get("recent", [])]}
+    return {**{k: v for k, v in status.items() if k != "user_id"}, "history": history}
 
 
 @app.get("/api/zerodha/login")
@@ -816,7 +882,9 @@ def similarity(symbol: str = SymbolQuery) -> dict:
 
 
 class CopilotQuestion(BaseModel):
-    question: str
+    # The card caps it at 1,000; so does the API, since every question costs
+    # a model call and the guards' calls.
+    question: str = Field(max_length=1000)
 
 
 def _live_or_none() -> dict | None:

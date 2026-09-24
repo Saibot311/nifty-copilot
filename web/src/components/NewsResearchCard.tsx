@@ -1,5 +1,5 @@
 import type { NewsResearch } from "@/lib/api";
-import { Offline, Panel, Pill } from "./ui";
+import { Offline, Panel, Pill, minus } from "./ui";
 
 /** The five pre-registered news-tone hypotheses and what the record says.
  *  Sits on Research, where verdicts live. */
@@ -69,7 +69,7 @@ export function NewsResearchCard({ data }: { data: NewsResearch | null }) {
               overlap rule. 2018–23: {h.development.num_trades ?? 0} trades,{" "}
               {rs(h.development.avg_profit_per_lot_rs)}/lot (no signal{" "}
               {rs(h.development.baseline_avg_profit_per_lot_rs)}). 2024–26: {h.holdout.num_trades ?? 0} trades,
-              t = {h.holdout.t ?? "–"} against a bar of {h.required_t ?? "–"}.
+              t = {minus(h.holdout.t)} against a bar of {minus(h.required_t)}.
             </p>
             <p className="mt-1 text-xs leading-relaxed text-zinc-300">{h.reason}</p>
           </details>

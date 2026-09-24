@@ -13,30 +13,31 @@ function rs(v: number | null | undefined) {
 
 function money(v: number | null | undefined) {
   if (v == null) return "–";
-  return `₹${Math.round(v).toLocaleString("en-IN")}`;
+  return `${v < 0 ? "−" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
 }
 
 function pct(v: number | null | undefined) {
   return v == null ? "–" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%`;
 }
 
-/** The book's value after each event: money in, then every win and loss.
- *  The dashed line is what was put in — above it the book has made money. */
-function EquityCurve({ curve, allocated }: { curve: EquityPoint[]; allocated: number }) {
+/** What trades have made, cumulatively, after each event. Money moved in or
+ *  out does not move it: the balance used to be drawn here, and two
+ *  withdrawals looked like a ₹50,000 loss. The dashed line is ₹0. */
+function EquityCurve({ curve }: { curve: EquityPoint[] }) {
   if (curve.length < 2) return null;
   const W = 260, H = 54, pad = 3;
-  const values = curve.map((p) => p.equity_rs);
-  const lo = Math.min(...values, allocated), hi = Math.max(...values, allocated);
+  const values = curve.map((p) => p.pnl_rs ?? 0);
+  const lo = Math.min(...values, 0), hi = Math.max(...values, 0);
   const span = hi - lo || 1;
   const x = (i: number) => pad + (i / (curve.length - 1)) * (W - 2 * pad);
   const y = (v: number) => H - pad - ((v - lo) / span) * (H - 2 * pad);
-  const path = curve.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.equity_rs).toFixed(1)}`).join(" ");
-  const last = curve[curve.length - 1].equity_rs;
-  const up = last >= allocated;
+  const path = curve.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.pnl_rs ?? 0).toFixed(1)}`).join(" ");
+  const last = values[values.length - 1];
+  const up = last >= 0;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
-      aria-label={`Paper book value over ${curve.length} events, now ${Math.round(last)} rupees against ${allocated} put in`}>
-      <line x1={pad} x2={W - pad} y1={y(allocated)} y2={y(allocated)} stroke="#3f3f46" strokeWidth="1" strokeDasharray="3 3" />
+      aria-label={`What paper trades have made over ${curve.length} events: ${Math.round(last)} rupees`}>
+      <line x1={pad} x2={W - pad} y1={y(0)} y2={y(0)} stroke="#3f3f46" strokeWidth="1" strokeDasharray="3 3" />
       <path d={path} fill="none" stroke={up ? "#34d399" : "#fb7185"} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={x(curve.length - 1)} cy={y(last)} r="3.5" fill={up ? "#34d399" : "#fb7185"} stroke="#09090b" strokeWidth="1.5" />
     </svg>
@@ -160,7 +161,7 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
         {summary.observing_since
           ? `Observing since ${summary.observing_since}. `
           : `Nothing opened yet; observation starts from ${summary.started}. `}
-        {summary.patterns.closed + summary.best_read.closed + summary.control.closed} closed of the ~
+        {summary.book_closed ?? summary.patterns.closed + summary.best_read.closed} of the book&apos;s trades closed, of the ~
         {summary.sessions_needed_before_this_means_anything} it takes before any of these totals mean anything.
       </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -188,11 +189,11 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="text-[11px] uppercase tracking-[0.1em] text-zinc-500">The book, win by win</span>
             <span className="font-mono text-[11px] tabular-nums text-zinc-500">
-              high {money(data.objective.high_water_rs)}
+              made {rs(data.objective.profit_rs)} · best {rs(data.objective.pnl_high_rs)}
               {data.objective.below_high_water_rs > 0 && ` · ${rs(-data.objective.below_high_water_rs)} from it`}
             </span>
           </div>
-          <EquityCurve curve={data.equity_curve} allocated={account.allocated_rs} />
+          <EquityCurve curve={data.equity_curve} />
           <p className="text-[11px] leading-relaxed text-zinc-500">
             <span className="text-zinc-300">Goal: </span>{data.objective.goal} {data.objective.sizing_note}
           </p>
@@ -232,6 +233,27 @@ export function PaperCard({ data: initial }: { data: PaperReport | null }) {
           Nothing opened yet. The first positions open the evening after a setup forms, once that session&apos;s
           option prices are published — starting from {summary.started}.
         </p>
+      )}
+
+      {data.last_decision && (
+        <div className="mt-3 rounded-lg bg-zinc-950/50 p-3 text-[11px] leading-relaxed text-zinc-400">
+          <span className="text-zinc-300">Last evening</span>{" "}
+          <span className="font-mono tabular-nums text-zinc-500">
+            (signal {data.last_decision.signal_session} → entry {data.last_decision.entry_session}):
+          </span>{" "}
+          {data.last_decision.opened.length > 0
+            ? `opened ${data.last_decision.opened.join(", ")}.`
+            : "nothing opened."}
+          {data.last_decision.note && <> {data.last_decision.note}.</>}
+          {data.last_decision.skipped.map((why) => (
+            <span key={why} className="block text-amber-200/80">Skipped — {why}</span>
+          ))}
+          {data.last_decision.passed_over.length > 0 && (
+            <span className="block text-zinc-500">
+              Also formed, passed over (one position a session): {data.last_decision.passed_over.join(", ")}
+            </span>
+          )}
+        </div>
       )}
 
       {benchmark.length > 0 && (

@@ -1,6 +1,6 @@
 # Handoff — read this first
 
-Written 2026-09-21, updated 2026-09-24. Start here, then `ARCHITECTURE.md` (how it's built, the five
+Written 2026-09-21, updated 2026-09-24 (after the deep audit — `AUDIT_REPORT.md`). Start here, then `ARCHITECTURE.md` (how it's built, the five
 invariants) and `PROJECT_PLAN.md` (what was decided and when, newest first).
 
 ## What this is
@@ -30,7 +30,9 @@ the strongest holdout t takes the slot and the rest are reported as passed over.
 *outside* the book: it spends none of the allocated money, moves none of the equity, and cannot take
 the session's slot — it is a measurement, and without it a result has nothing to be compared against.
 An in-the-money lot runs ~₹28,000, so the per-trade cap is 40% of the book — at 20% nothing could
-open. A skipped position reports why. **The book compounds:** wins and losses change its value and
+open. A skipped position reports why — in the nightly log and on the Journal tab ("Last evening"),
+from a record kept in `paper.db` (`paper_sessions`); until the audit the reasons were computed and
+thrown away. **The book compounds:** wins and losses change its value and
 positions are sized off that value, and the Journal tab shows the curve and the stated goal. That
 scoreboard reaches nothing else — a test asserts the recommendation gate cannot see it.
 `best_read` has no proven edge and says so on the row.
@@ -55,9 +57,11 @@ system was running that day. It is in the nightly backup set.
 Five hypotheses were registered before any was computed (hash `30439303ef31c290`), raising the family
 count to 31 — so they face a higher bar than the 26 registered before them. The alignment rule matters
 more here than anywhere: much of a day's market coverage is *about* that day's move, so a signal is
-read off a completed UTC day and entered at the next Indian session's close. **No verdict yet** — the
-tone archive is still backfilling (`api/scripts/backfill_news_tone.py`; GDELT rate-limits hard, so it
-is nine yearly requests, minutes apart). Run `api/scripts/news_research.py` once it is full.
+read off a completed UTC day and entered at the next Indian session's close. **Verdict: 0 of 5** — every
+one rejected on 2024-26 (3,160 days of tone, 2018-01-01 to 2026-09-24). GDELT throttles by the size of
+the request: fetch in 3-month windows (`backfill_news_tone.py` now defaults to it). The study's own bar
+used 31 hypotheses — it left out the 22 replications that had already run; that is frozen in its
+registration and changes nothing (its best t is 0.60 against bars above 3).
 
 **The honest result so far: nothing has a proven edge.** 26 patterns, each judged
 once on 2024–26 option data it never saw: **0 approved, 0 conditional, 26 rejected.**
@@ -100,7 +104,7 @@ found and fixed 14 bugs, and it ends with a ranked list of what to build next.
 ## Running it
 
 ```bash
-./scripts/check_all.sh          # 35 checks, 357 tests — run before and after changes
+./scripts/check_all.sh          # the checks and the whole test suite — run before and after changes
 ./scripts/check_all.sh --fast   # skips endpoint checks (no servers needed)
 ./scripts/check_all.sh --deep   # then the phase-by-phase audit on real data (~3 min)
 ```
@@ -117,7 +121,8 @@ cd api && .venv/bin/python scripts/check_guards.py   # forecast | claims | route
 ```
 
 **The app is deployed on this Mac** (Phase 15): two LaunchAgents run the built dashboard and the API,
-start at login and restart on crash, bound to `127.0.0.1` only.
+start at login and restart on crash — bound to `127.0.0.1`, or to every interface with `--lan` (always
+pass `--lan` if the phone is used; without it the phone cannot connect).
 
 ```bash
 ./scripts/install_app_services.sh            # build + install, this Mac only
@@ -171,7 +176,7 @@ To add one, prompt for it — never put a key in the command text:
 read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.env && unset k && echo " saved"
 ```
 
-## Data on disk (all gitignored, all regenerable except one)
+## Data on disk (all gitignored; the bold ones cannot be regenerated)
 
 | File | What | Rebuild |
 |---|---|---|
@@ -189,7 +194,10 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | **`api/data/journal.db`** | **Your trade journal** | **Cannot be rebuilt** — backed up nightly with the forward log |
 | **`api/data/paper.db`** | **Paper positions, opened forward** | **Cannot be rebuilt** — backed up nightly |
 | `api/data/login_log.db` | Which days had a Zerodha session, and when it started | Accrues daily; deletable |
-| `api/data/gift_nifty.db` | Nightly GIFT Nifty snapshots, from 2026-09-22 | Cannot be rebuilt (no free history exists) |
+| **`api/data/gift_nifty.db`** | **Nightly GIFT Nifty snapshots, from 2026-09-22** | **Cannot be rebuilt** (no free history exists) — backed up nightly since the audit |
+| **`api/data/news.db`** | **Every headline, stamped when this system first saw it, and Jev's one judgment of it** | **Cannot be rebuilt** — backed up nightly |
+| `api/data/news_tone.db` | GDELT daily tone, 2018→ | `scripts/backfill_news_tone.py` (3-month windows) |
+| **`api/backtest/hypothesis_log.jsonl`** | **Every strategy and parameter set ever run** | **Cannot be rebuilt** — backed up nightly (gzipped) since the audit |
 | `api/data/participant_oi.db` | NSE participant-wise open interest (Client/DII/FII/Pro), 2019→ | `scripts/backfill_participant_oi.py` |
 | `api/data/market_research.json` | The market engine's studies | `scripts/market_research.py` |
 | `api/data/copilot_log.db` | Every answer, its grades, and the Gemini-vs-composed comparison | Accrues in use; deletable (holds your questions) |
@@ -312,16 +320,39 @@ of identical cards before 2026-09-23 — don't let it drift back.
 - **KeepAlive does not catch a wedged process**, only a dead one. That is what the watchdog is for.
 - **An exception raised inside a middleware never reaches FastAPI's handler** — it becomes an opaque
   500. The token gate returns its refusal instead, so a phone is told what to do.
+- **A library can hold a request open forever.** NSE's client sends every request — its cookie
+  handshake included — with no timeout; one silent socket froze the price, the market status and the
+  option chain behind a stale-while-revalidate cache that no longer refreshed. The shared session now
+  carries an 8s default (`live_quote._timeout_session_class`).
+- **`yf.download` leaks a connection per call.** 40 fetches left 40 sockets open, which garbage
+  collection never freed, against launchd's 256-file limit. `Ticker.history` on one shared session holds
+  the count flat; the services now also run with 4,096.
+- **`/health` proves nothing about files.** It answered while every endpoint that opens a database would
+  have failed. The watchdog asks `/health/deep`.
+- **A file a script made from a shell is not one launchd may open.** The watchdog's stdout pointed at
+  the log its own script created; launchd refused it (exit 78) on every run, so the watchdog never ran.
+  Give a LaunchAgent a log file of its own.
+- **Yahoo drops sessions in the middle of the series, and the series then changes under you.** 22 Sep
+  2026 was there that evening (topped up from NSE) and gone the next day. Recent gaps are filled from
+  NSE's own report (`nse_indices.GAP_FILL_FROM`); older ones are left as the research measured them.
+- **A check dated to the wrong session can never be true.** The paper book kept a pattern only if the
+  scan's date equalled the signal date; at 19:30 the scan is dated to the entry session, so no pattern
+  position ever opened. Read the rule off history truncated at the signal close.
+- **The evidence bar counts every family that looked at the holdout** — patterns, IV, structural,
+  replication and news (`backtest/family.py`, 53 on 2026-09-24). A family added later has to be added
+  there, or the bar quietly stays low.
+- **Tomorrow is not in the data while it trades.** "No later session" is not "not started": the forward
+  log now falls back to the calendar before accepting a row.
+- **Taking money out of the paper book is not a loss.** Its high-water mark once showed −₹50,000 after
+  two withdrawals. Drawdown is measured on what trades made.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps
 
 1. **Let the paper record and the journal run.** Paper observation gives the rejected setups a live,
    out-of-sample test at zero risk; it needs about 15 closed trades before it says anything.
-2. **Use the journal every session.** It and the forward log are the only evidence that can't be
-   fooled by better backtesting; both need calendar time.
-2. **Let the forward log accrue.** It is the only out-of-sample evidence that can't be
-   fooled by better backtesting.
+2. **Use the journal every session, and let the forward log accrue.** They are the only evidence that
+   can't be fooled by better backtesting; both need calendar time.
 3. **Intraday: mining for edge, if you still want to.** The execution studies are done
    (see below). Anything further — opening-range breakouts, time-of-day effects — is a
    new hypothesis family that raises the Bonferroni bar for the daily patterns, and it

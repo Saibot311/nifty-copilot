@@ -18,20 +18,38 @@ failure this is built to avoid.
 
 from backtest.pattern_options import load_research
 from backtest.pattern_proximity import pattern_proximity
-from backtest.structural_research import holdout_tests_judged
+from backtest.family import holdout_family
 from cache import cached
 from stats.multiple_comparisons import FAMILY_ALPHA, required_t
+
+
+def _now():
+    from datetime import datetime
+
+    from market_data.live_quote import IST
+    return datetime.now(IST)
+
+
+def _next_close_phrase(as_of: str) -> str:
+    """Which close "could form" refers to. After 15:30 on a weekday whose own
+    close is not in the data yet (NSE's file arrives with the evening job),
+    the next close in the data is today's — already over, just not recorded."""
+    now = _now()
+    if now.weekday() < 5 and (now.hour, now.minute) >= (15, 30) and as_of < now.date().isoformat():
+        return "today's close (already over, not in the data yet — the evening job records it)"
+    return "the next close"
 
 
 def build_recommendation(symbol: str = "^NSEI") -> dict:
     prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
     research = load_research()
     by_name = {p["strategy"]: p for p in (research or {}).get("patterns", [])}
-    judged = sum(1 for p in by_name.values() if (p.get("holdout") or {}).get("num_trades"))
     # The bar is corrected for every hypothesis that has had its look at the
-    # holdout, not just the patterns: the IV filter and the structural tests
-    # took theirs too, and each one was another chance for luck to clear it.
-    tests = holdout_tests_judged(research)
+    # holdout, not just the patterns: the IV filter, the structural tests, the
+    # replications and the news-tone tests took theirs too, and each one was
+    # another chance for luck to clear it.
+    family = holdout_family(research)
+    judged, tests = family["patterns"], family["total"]
     # The large-sample bar: the lowest it can be. Each candidate is held to
     # the bar for its own sample size, which is higher.
     min_t = required_t(tests)
@@ -41,9 +59,11 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
         "min_t": min_t,
         "patterns_judged": judged,
         "tests_judged": tests,
+        "family": {k: v for k, v in family.items() if k != "total"},
         "methodology_note": (
-            f"{tests} hypotheses have each been judged once on 2024-26 option data — {judged} patterns, and "
-            f"{tests - judged} other tests (implied volatility, structural). To keep the chance of any "
+            f"{tests} hypotheses have each been judged once on 2024-26 option data — {judged} patterns, "
+            f"{family['structural']} structural tests, {family['replication']} replications on other indices, "
+            f"{family['news_tone']} news-tone tests and {family['iv_filter']} implied-volatility filter. To keep the chance of any "
             f"false recommendation across all of them near {FAMILY_ALPHA:.0%}, a pattern needs APPROVED and "
             f"a holdout t of at least {min_t} (Bonferroni) — more when it rests on few trades, because the "
             "bar is Student's t at the pattern's own degrees of freedom."
@@ -84,7 +104,8 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
         could = [p["label"] for p in prox["patterns"] if (p.get("probability_next") or 0) >= 0.02]
         return {**base, "action": "NO_TRADE", "headline": "No pattern formed on the last close.",
                 "reason": (f"None of the {len(prox['patterns'])} patterns formed on {close_txt}. "
-                           + (f"Could form on the next close: {', '.join(could)} — see Patterns." if could else "")),
+                           + (f"Could form on {_next_close_phrase(prox['as_of'])}: {', '.join(could)} — see Patterns."
+                              if could else "")),
                 "candidates": [], "warnings": [], "evidence_bar": bar}
 
     qualified = [c for c in candidates if c["qualifies"]]

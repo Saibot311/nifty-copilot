@@ -66,14 +66,52 @@ def is_local(request: Request) -> bool:
     return host in LOCAL_HOSTS
 
 
+# The names this API answers to. A request is "this Mac" by its address, and
+# a DNS-rebinding page — attacker.example re-pointed at 127.0.0.1 — has this
+# Mac's address too; what it cannot fake is a Host header naming this Mac.
+LOCAL_NAMES = {"127.0.0.1", "localhost", "::1", "[::1]"}
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def allowed_hosts() -> set[str]:
+    extra = {h.strip().lower() for h in (_env("DASHBOARD_HOSTS") or "").split(",") if h.strip()}
+    return LOCAL_NAMES | extra
+
+
+def host_allowed(host_header: str | None) -> bool:
+    if not host_header:
+        return False
+    h = host_header.strip().lower()
+    if h.startswith("["):
+        name = h.split("]", 1)[0] + "]"
+    else:
+        name = h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+    return name in allowed_hosts()
+
+
 def _presented(request: Request) -> str | None:
     return request.headers.get(HEADER) or request.query_params.get("token") or request.cookies.get("copilot_token")
 
 
 class TokenGate(BaseHTTPMiddleware):
-    """Local requests pass. Everything else needs the token."""
+    """Local requests pass. Everything else needs the token.
+
+    Two checks come first, because "local" is weaker than it sounds: every
+    page open in this Mac's browser is local too. A request must name this
+    Mac (or its paired LAN address) in its Host header, and a request that
+    changes something must not come from another site's page."""
+
+    def __init__(self, app, allowed_origins: list[str] | tuple[str, ...] = ()):
+        super().__init__(app)
+        self.allowed_origins = set(allowed_origins)
 
     async def dispatch(self, request: Request, call_next):
+        if not host_allowed(request.headers.get("host")):
+            return JSONResponse({"detail": "This dashboard answers only to its own address."}, status_code=400)
+        origin = request.headers.get("origin")
+        if request.method in UNSAFE_METHODS and origin and origin not in self.allowed_origins:
+            return JSONResponse({"detail": "Refused: that request came from another site's page."},
+                                status_code=403)
         if request.method == "OPTIONS" or is_local(request) or request.url.path in OPEN_PATHS:
             return await call_next(request)
         expected = token()

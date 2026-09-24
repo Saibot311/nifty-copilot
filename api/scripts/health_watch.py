@@ -31,7 +31,9 @@ STATE_PATH = API_DIR / "data" / "health_watch.json"
 LOG_PATH = API_DIR / "data" / "health_watch.log"
 
 SERVICES = {
-    "com.niftycopilot.api": "http://127.0.0.1:8000/health",
+    # The deep check opens a file: plain /health answered through a
+    # file-descriptor exhaustion that failed every real endpoint.
+    "com.niftycopilot.api": "http://127.0.0.1:8000/health/deep",
     "com.niftycopilot.web": "http://127.0.0.1:3000",
 }
 TIMEOUT = 20

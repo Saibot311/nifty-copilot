@@ -1,5 +1,5 @@
 import type { Similarity } from "@/lib/api";
-import { Offline, Panel, Pill, fmtPct } from "./ui";
+import { Offline, Panel, Pill, fmtPct, minus } from "./ui";
 
 function rupees(v: number | null) {
   if (v == null) return "–";
@@ -9,7 +9,8 @@ function rupees(v: number | null) {
 export function SimilarityCard({ data }: { data: Similarity | null }) {
   if (!data) return <Offline what="Similar past days" />;
   const wf = data.walk_forward;
-  const predictive = (wf.t_stat ?? 0) >= 2;
+  // Decided in Python with the verdict, not re-judged here (I2).
+  const predictive = wf.predictive === true;
   const a = data.outcomes.analogs;
   const b = data.outcomes.all_days;
   const opt = data.options_on_analog_days;
@@ -22,7 +23,7 @@ export function SimilarityCard({ data }: { data: Similarity | null }) {
         {wf.rank_correlation != null && (
           <span className="text-zinc-400">
             (walk-forward since {wf.period_start?.slice(0, 4)}: {wf.test_points} tests, correlation {wf.rank_correlation}, t{" "}
-            {wf.t_stat}, direction right {((wf.direction_hit_rate ?? 0) * 100).toFixed(0)}% of the time)
+            {minus(wf.t_stat)}, direction right {wf.direction_hit_rate != null ? `${(wf.direction_hit_rate * 100).toFixed(0)}%` : "–"} of the time)
           </span>
         )}
       </div>
@@ -31,7 +32,7 @@ export function SimilarityCard({ data }: { data: Similarity | null }) {
         {Object.entries(data.today).map(([k, v]) => (
           <div key={k} className="rounded-lg bg-zinc-950/60 px-2.5 py-2">
             <div className="truncate text-[10px] text-zinc-500">{data.feature_labels[k]}</div>
-            <div className="font-mono text-sm tabular-nums text-zinc-100">{v}</div>
+            <div className="font-mono text-sm tabular-nums text-zinc-100">{typeof v === "number" ? minus(v) : v}</div>
           </div>
         ))}
       </div>
@@ -64,10 +65,10 @@ export function SimilarityCard({ data }: { data: Similarity | null }) {
       {opt && (
         <p className="mt-3 text-[11px] leading-relaxed text-zinc-400">
           On the similar days since 2018, buying an {opt.option.split(",")[0]} option for {opt.hold_days} days made:{" "}
-          <span className="text-emerald-400">CALL {rupees(opt.CE.avg_profit_per_lot_rs)}/lot</span> (won{" "}
-          {((opt.CE.win_rate ?? 0) * 100).toFixed(0)}% of {opt.CE.trades}),{" "}
-          <span className="text-rose-400">PUT {rupees(opt.PE.avg_profit_per_lot_rs)}/lot</span> (won{" "}
-          {((opt.PE.win_rate ?? 0) * 100).toFixed(0)}% of {opt.PE.trades}).
+          <span className="text-zinc-300">CALL {rupees(opt.CE.avg_profit_per_lot_rs)}/lot</span> (won{" "}
+          {opt.CE.win_rate != null ? `${(opt.CE.win_rate * 100).toFixed(0)}%` : "–"} of {opt.CE.trades}),{" "}
+          <span className="text-zinc-300">PUT {rupees(opt.PE.avg_profit_per_lot_rs)}/lot</span> (won{" "}
+          {opt.PE.win_rate != null ? `${(opt.PE.win_rate * 100).toFixed(0)}%` : "–"} of {opt.PE.trades}).
         </p>
       )}
 

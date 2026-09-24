@@ -101,13 +101,23 @@ def load_archive(underlying: str, db_path: Path | None = None) -> pd.DataFrame:
     return df
 
 
+# Sessions from here on are the ones live decisions and forward evidence are
+# made from (the forward log's first rows are from this week). A session Yahoo
+# drops inside this window is filled from NSE's own report. Before it, Yahoo
+# stays the calendar exactly as every registered result was measured on.
+GAP_FILL_FROM = "2026-09-14"
+
+
 def top_up(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     """Append any final sessions NSE has published that Yahoo has not.
 
     Yahoo is sometimes a day late with the close — it cost the forward log a
     day on 21 Sep 2026, and left the snapshot and the briefing showing an
-    older session than the rest of the dashboard. Only sessions after the
-    last one in `df` are added, so history stays a single source.
+    older session than the rest of the dashboard. It also drops sessions
+    outright: 22 Sep 2026 was in the series that evening (added from here)
+    and gone the next, when Yahoo returned the 23rd without it. Sessions
+    after Yahoo's last one are added, and so are recent ones missing from the
+    middle (from GAP_FILL_FROM). Yahoo's own rows are never replaced.
     """
     underlying = YAHOO_TO_UNDERLYING.get(symbol)
     if underlying is None or df.empty:
@@ -119,7 +129,9 @@ def top_up(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     if nse.empty:
         return df
     last = df.index[-1].normalize()
-    extra = nse[(nse.index > last) & nse[["open", "high", "low"]].notna().all(axis=1)]
+    full = nse[["open", "high", "low"]].notna().all(axis=1)
+    missing = ~nse.index.normalize().isin(df.index.normalize())
+    extra = nse[full & ((nse.index > last) | ((nse.index >= GAP_FILL_FROM) & missing))]
     if extra.empty:
         return df
     for col in df.columns:
@@ -128,4 +140,4 @@ def top_up(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     extra = extra[df.columns]
     extra.index = extra.index.astype(df.index.dtype)
     extra.index.name = df.index.name
-    return pd.concat([df, extra])
+    return pd.concat([df, extra]).sort_index()

@@ -86,7 +86,7 @@ def fetch_window(start: date, end: date, mode: str = "timelinetone",
     raise GdeltUnavailable(f"GDELT did not answer for {start}..{end} ({last})")
 
 
-def windows(first: date, last: date, months: int = 12):
+def windows(first: date, last: date, months: int = 3):
     """Request boundaries.
 
     A year at a time, not a month: GDELT still returns one point per day for

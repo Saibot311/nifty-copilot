@@ -95,6 +95,12 @@ def step_paper() -> bool:
         f"closed {len(r['closed'])}" + (f" — {r['note']}" if r.get("note") else ""))
     for name in r["opened"] + r["closed"]:
         log(f"      {name}")
+    # What it did not do, and why — an empty book and a quiet market look the
+    # same otherwise. The same record is kept in paper.db (paper_sessions).
+    for reason in r.get("skipped") or []:
+        log(f"      skipped: {reason}")
+    if r.get("passed_over"):
+        log(f"      passed over (one position a session): {', '.join(r['passed_over'])}")
     return True
 
 
@@ -116,12 +122,15 @@ def step_audit() -> bool:
 
 
 def step_backup() -> bool:
+    """Every file that cannot be regenerated. Runs twice: before the job
+    writes anything, and again after — the forward log and the paper book
+    are written minutes after 19:30, and a backup taken only at the start left
+    each evening's rows in no backup until the next weekday."""
     from storage.backup import backup_forward_log, backup_news
-
-    from storage.backup import backup_journal, backup_paper
-
+    from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_paper
     ok = True
-    for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news()):
+    for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(),
+              backup_gift_nifty(), backup_hypothesis_log()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
@@ -203,6 +212,9 @@ def main() -> int:
         ("paper observation", step_paper),
         ("market context studies", lambda: run_script("scripts/market_research.py")),
         ("GIFT Nifty snapshot", step_gift_nifty),
+        # Same files, same day's name: this copy replaces the 19:30 one and
+        # holds everything written tonight.
+        ("backup again, after tonight's writes", step_backup),
         ("audit", step_audit),
     ]
     failed = []

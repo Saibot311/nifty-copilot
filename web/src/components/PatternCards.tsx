@@ -1,5 +1,5 @@
 import type { OptionPeriodStats, PatternOptionsResearch, PatternToday, PatternsToday, SuggestedOption, Verdict } from "@/lib/api";
-import { Offline, Panel, Pill, fmtPct } from "./ui";
+import { Offline, Panel, Pill, fmtPct, minus } from "./ui";
 
 export const VERDICT_TONE: Record<Verdict, "good" | "warn" | "bad"> = {
   APPROVED: "good",
@@ -36,11 +36,11 @@ export function TrackRecord({
       <p className="text-xs text-zinc-300">{option.description}</p>
       {holdout && holdout.num_trades > 0 ? (
         <p className="font-mono text-[11px] tabular-nums text-zinc-500">
-          2024–26: {holdout.num_trades} trades · win {((holdout.win_rate ?? 0) * 100).toFixed(0)}% · avg{" "}
+          2024–26: {holdout.num_trades} trades · win {holdout.win_rate != null ? `${(holdout.win_rate * 100).toFixed(0)}%` : "–"} · avg{" "}
           <span className={(holdout.avg_profit_per_lot_rs ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}>
             {rupees(holdout.avg_profit_per_lot_rs)}/lot
           </span>{" "}
-          ({fmtPct(holdout.avg_return_pct, 1)}) · no signal {rupees(baselineRs ?? undefined)}/lot · t {t ?? "–"}
+          ({fmtPct(holdout.avg_return_pct, 1)}) · no signal {rupees(baselineRs ?? undefined)}/lot · t {minus(t)}
         </p>
       ) : (
         <p className="text-[11px] text-zinc-600">No trades in 2024–26 to judge it on.</p>

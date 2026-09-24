@@ -7,7 +7,7 @@ sessions later. Returns are gross (before costs) — the cost model lives
 in the backtester and these are for tracking, not P&L.
 """
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import pandas as pd
 
@@ -32,11 +32,24 @@ def outcome_has_started(as_of: date, sessions: list[str], now: datetime) -> bool
     scored against already exists, at least in part. One row (2026-09-21)
     was written this way while the fix for Yahoo's late close was being
     tested, and it is excluded from the summary rather than deleted."""
+    # The next session is not in the daily data while it trades (its bar comes
+    # after the close), and a missing session is not one that has not opened:
+    # "no later session" used to mean "not started", so a verdict could be
+    # written mid-way through the session it would be scored on. The next
+    # weekday stands in, and the earlier of the two is used — a holiday then
+    # refuses a row a day early, which loses a row rather than faking one.
+    entry = _next_weekday(as_of)
     later = [d for d in sessions if d > as_of.isoformat()]
-    if not later:
-        return False
-    entry = date.fromisoformat(later[0])
+    if later:
+        entry = min(entry, date.fromisoformat(later[0]))
     return now.date() > entry or (now.date() == entry and now.time() >= MARKET_OPEN)
+
+
+def _next_weekday(d: date) -> date:
+    d += timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
 
 
 def record_if_final(rec: dict, symbol: str = "^NSEI", now: datetime | None = None) -> bool:

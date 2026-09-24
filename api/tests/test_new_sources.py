@@ -44,6 +44,28 @@ def test_a_session_yahoo_lacks_is_taken_from_nse(monkeypatch):
     assert not df["provisional"].iloc[-1]
 
 
+def test_a_recent_session_missing_in_the_middle_of_yahoo_is_filled_from_nse(monkeypatch):
+    """Yahoo dropped 22 Sep 2026: it was in the series the evening it
+    happened (NSE topped it up) and gone the next day, when Yahoo returned
+    the 23rd without it. Only sessions after Yahoo's last one used to be
+    added, so a hole in the middle stayed a hole: the forward log could not
+    score that day, the paper book counted its hold a session short, and the
+    briefing compared the 23rd with the 21st as "the previous day"."""
+    yahoo = pd.DataFrame({"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10.0, "provisional": False},
+                         index=pd.to_datetime(["2025-01-02", "2026-09-18", "2026-09-21", "2026-09-23"]).rename("timestamp"))
+    nse = pd.DataFrame({"open": 3.0, "high": 4.0, "low": 2.0, "close": [7.0, 8.0, 3.5, 9.0, 5.0]},
+                       index=pd.to_datetime(["2025-01-01", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24"]))
+    monkeypatch.setattr(nse_indices, "load_archive", lambda u, db_path=None: nse)
+    df = strategies._top_up_from_nse(yahoo, "^NSEI")
+    dates = [str(d.date()) for d in df.index]
+    assert dates == ["2025-01-02", "2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24"]
+    assert df.loc["2026-09-22", "close"] == 3.5 and not df.loc["2026-09-22", "provisional"]
+    # Yahoo's own sessions are never replaced, and the research period is left
+    # exactly as it was tested: an old gap (1 Jan 2025) is not filled.
+    assert df.loc["2026-09-21", "close"] == 1.5 and df.loc["2026-09-23", "close"] == 1.5
+    assert "2025-01-01" not in dates
+
+
 def test_no_top_up_for_other_symbols_or_close_only_rows(monkeypatch):
     nse = pd.DataFrame({"open": [None], "high": [None], "low": [None], "close": [3.5]},
                        index=pd.to_datetime(["2026-09-22"]))

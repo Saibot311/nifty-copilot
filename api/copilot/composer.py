@@ -145,11 +145,12 @@ def compose(ctx: dict) -> str:
         opening.append(rec["headline"] if rec["headline"].endswith(".") else rec["headline"] + ".")
 
     bar = rec.get("bar") or {}
-    if bar.get("min_t") is not None and bar.get("patterns_judged"):
+    judged = bar.get("hypotheses_judged") or bar.get("patterns_judged")
+    if bar.get("min_t") is not None and judged:
         opening.append(
-            f"With {bar['patterns_judged']} patterns judged, a result now has to clear a t-statistic of at "
-            f"least {_num(bar['min_t'])} to count as an edge, more when it rests on few trades, because "
-            "testing many patterns makes one look good by chance.")
+            f"With {judged} hypotheses judged on the same holdout data, a result now has to clear a t-statistic "
+            f"of at least {_num(bar['min_t'])} to count as an edge, more when it rests on few trades, because "
+            "testing many ideas makes one look good by chance.")
 
     paragraphs = [
         " ".join(opening),

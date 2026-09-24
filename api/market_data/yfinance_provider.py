@@ -40,6 +40,23 @@ _CACHE_TTL_SECONDS = 60
 # reconfigure yfinance's internal cache.
 _FETCH_LOCK = threading.Lock()
 
+# One HTTP session for every Yahoo call, reused through Ticker.history.
+# `yf.download` opened a fresh connection (and a pipe pair) per call and never
+# closed it — 40 fetches left 40 sockets open, which garbage collection did
+# not free. Under launchd the API may hold 256 files, so a dashboard left open
+# through a session ran it out of descriptors, and every request that touches
+# a file began to fail while /health, which touches none, kept answering.
+_SESSION = None
+
+
+def _session():
+    global _SESSION
+    if _SESSION is None:
+        from curl_cffi import requests as curl_requests
+
+        _SESSION = curl_requests.Session(impersonate="chrome")
+    return _SESSION
+
 
 class YFinanceProvider:
     def get_ohlc(self, symbol: str, timeframe: str, start: date, end: date) -> list[Candle]:
@@ -56,16 +73,19 @@ class YFinanceProvider:
             if cached and (time.monotonic() - cached[0]) < _CACHE_TTL_SECONDS:
                 return cached[1]
 
-            df = yf.download(
-                symbol,
+            df = yf.Ticker(symbol, session=_session()).history(
                 start=start.isoformat(),
                 end=end.isoformat(),
                 interval=interval,
-                progress=False,
                 auto_adjust=False,
+                actions=False,
             )
             if df.empty:
                 return []
+            # history() dates daily bars in the exchange's zone; download()
+            # did not. Keep the plain dates every consumer was built on.
+            if interval == "1d" and df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
 
             # yfinance returns MultiIndex columns when given a single ticker
             # in recent versions — flatten to plain column names.

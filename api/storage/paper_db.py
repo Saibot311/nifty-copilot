@@ -63,6 +63,17 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     UNIQUE (strategy, signal_date, source)
 );
 
+-- What each evening decided, and why — including what it did not do. The
+-- reasons used to be computed and thrown away, so an empty book looked the
+-- same as a quiet market. Appended every run; never edited.
+CREATE TABLE IF NOT EXISTS paper_sessions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at        TEXT NOT NULL,      -- UTC
+    entry_date    TEXT,
+    signal_date   TEXT,
+    decision_json TEXT NOT NULL
+);
+
 -- Money the user has allocated to the paper book, and nothing else. A
 -- deposit is a row; the balance is their sum. Positions are sized against
 -- it, so a paper book cannot spend money that was never allocated.
@@ -97,6 +108,15 @@ def connect(db_path: Path | None = None):
             if name not in have:
                 conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {name} {decl}")
                 added.append(name)
+        # One funded position per entry session, held by the table rather than
+        # by the caller alone: two runs at once could otherwise both see an
+        # empty session and both open. Skipped, not fatal, if old rows ever
+        # broke the rule — the book must still load.
+        try:
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_funded_position_a_session "
+                         "ON paper_trades (entry_date) WHERE funded = 1")
+        except sqlite3.IntegrityError:
+            pass
         if "funded" in added:
             # The control used to be a funded position, and two of them — a
             # call and a put — could be the whole of a session's activity.
@@ -178,6 +198,21 @@ def all_trades(limit: int = 500, db_path: Path | None = None) -> list[dict]:
     with connect(db_path) as conn:
         return [dict(r) for r in conn.execute(
             "SELECT * FROM paper_trades ORDER BY signal_date DESC, id DESC LIMIT ?", (limit,))]
+
+
+def record_decision(decision: dict, db_path: Path | None = None) -> None:
+    import json
+    with connect(db_path) as conn:
+        conn.execute("INSERT INTO paper_sessions (run_at, entry_date, signal_date, decision_json) VALUES (?,?,?,?)",
+                     (datetime.now(timezone.utc).isoformat(), decision.get("entry_session"),
+                      decision.get("signal_session"), json.dumps(decision)))
+
+
+def last_decision(db_path: Path | None = None) -> dict | None:
+    import json
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT run_at, decision_json FROM paper_sessions ORDER BY id DESC LIMIT 1").fetchone()
+    return {**json.loads(row["decision_json"]), "run_at": row["run_at"]} if row else None
 
 
 def funded_on(entry_date: str, db_path: Path | None = None) -> int:

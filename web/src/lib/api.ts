@@ -197,6 +197,8 @@ export interface RecommendationCandidate {
 export interface EvidenceBar {
   min_t: number;
   patterns_judged: number;
+  tests_judged?: number;
+  family?: Record<string, number>;
   methodology_note: string;
 }
 
@@ -510,6 +512,7 @@ export interface Similarity {
     rank_correlation?: number;
     t_stat?: number;
     direction_hit_rate?: number;
+    predictive?: boolean;
     verdict: string;
   };
   method_note: string;
@@ -757,12 +760,15 @@ export type NewsRow = {
   direction: "higher" | "lower" | "unclear" | null;
   dir_conf: number | null;
   topic: string | null;
+  /** Python's call: likely to move an index and not a recap. */
+  moving?: boolean;
 };
 
 export type NewsWindow = {
   label: string;
   means: string;
   rows: NewsRow[];
+  older_copy_hidden?: number;
   tone: {
     market_moving: number;
     of_total: number;
@@ -904,11 +910,11 @@ export type PaperAccount = {
   max_per_trade_share: number; flows: { id: number; ts: string; amount: number; note: string | null }[];
 };
 
-export type EquityPoint = { date: string; equity_rs: number; change_rs: number; what: string };
+export type EquityPoint = { date: string; equity_rs: number; change_rs: number; what: string; pnl_rs?: number };
 
 export type PaperObjective = {
   goal: string; allocated_rs: number; equity_rs: number; profit_rs: number; growth_pct: number | null;
-  high_water_rs: number; below_high_water_rs: number; sizing_note: string; containment: string;
+  pnl_high_rs: number; below_high_water_rs: number; sizing_note: string; containment: string;
 };
 
 export type PaperReport = {
@@ -917,6 +923,11 @@ export type PaperReport = {
   /** The yardstick, priced on the same premiums but outside the book — it
    *  spends none of the allocated money and never takes the session's slot. */
   benchmark?: PaperTrade[];
+  /** The latest evening's decision, including what it did not do and why. */
+  last_decision?: {
+    run_at: string; entry_session: string; signal_session: string;
+    opened: string[]; skipped: string[]; passed_over: string[]; benchmark_opened: string[]; note: string | null;
+  } | null;
   account: PaperAccount;
   equity_curve: EquityPoint[];
   objective: PaperObjective;
@@ -926,6 +937,7 @@ export type PaperReport = {
     patterns: PaperSide;
     best_read: PaperSide;
     control: PaperSide;
+    book_closed?: number;
     sessions_needed_before_this_means_anything: number;
   };
   note: string;
@@ -935,12 +947,18 @@ export const fetchPaper = () => get<PaperReport>("/api/paper");
 
 export type LiveTick = {
   as_of: string;
-  market: { is_open: boolean | null; status?: string; trade_date?: string };
+  market: { is_open: boolean | null; status?: string; trade_date?: string; open_by_clock?: boolean };
   index: number | null;
   previous_close?: number | null;
   change?: number | null;
   change_pct?: number | null;
   source: string | null;
+  /** When the price itself was taken — not when this response was built. */
+  quote_at?: string | null;
+  age_s?: number | null;
+  stale?: boolean;
+  /** Set here, not by the API: the last tick, re-sent when the API stopped answering. */
+  offline?: boolean;
   marks: Record<string, number>;
   paper?: {
     allocated_rs: number; cash_rs: number; equity_rs: number; realised_rs: number;
@@ -959,25 +977,49 @@ export const fetchTick = () => get<LiveTick>("/api/live/tick");
 type TickListener = (tick: LiveTick) => void;
 const listeners = new Set<TickListener>();
 let timer: ReturnType<typeof setTimeout> | null = null;
+// True from the moment a loop is scheduled until it finds nobody listening.
+// Starting a loop is only ever decided by this flag, so no pattern of mounts,
+// unmounts or re-subscribes during a delivery can start a second one.
+let running = false;
 let latest: LiveTick | null = null;
 
 async function pump() {
+  timer = null;
+  if (listeners.size === 0) { running = false; return; }
+  // A background tab has nobody reading it: check back, but ask nothing.
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    timer = setTimeout(pump, 5000);
+    return;
+  }
   const r = await fetchTick();
   if (r.data) {
     latest = r.data;
     listeners.forEach((fn) => fn(r.data as LiveTick));
+  } else if (latest && !latest.offline) {
+    // The API stopped answering. Say so, rather than leave the last price
+    // standing as if it were still current.
+    latest = { ...latest, offline: true, stale: true };
+    listeners.forEach((fn) => fn(latest as LiveTick));
   }
-  if (listeners.size === 0) { timer = null; return; }
-  timer = setTimeout(pump, r.data?.market?.is_open ? 2000 : 60000);
+  if (listeners.size === 0) { running = false; return; }
+  const open = r.data?.market?.is_open ?? r.data?.market?.open_by_clock;
+  timer = setTimeout(pump, open ? 2000 : 60000);
 }
 
 export function subscribeToTick(fn: TickListener): () => void {
   listeners.add(fn);
   if (latest) fn(latest);
-  if (!timer) timer = setTimeout(pump, 0);
+  if (!running) {
+    running = true;
+    timer = setTimeout(pump, 0);
+  }
   return () => {
     listeners.delete(fn);
-    if (listeners.size === 0 && timer) { clearTimeout(timer); timer = null; }
+    if (listeners.size === 0 && timer) {
+      clearTimeout(timer);
+      timer = null;
+      running = false;
+    }
   };
 }
 

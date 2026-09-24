@@ -143,6 +143,19 @@ def for_session(session_date: str, phase: str | None = None, db_path: Path | Non
         return [dict(r) for r in conn.execute(sql + " ORDER BY h.first_seen", args)]
 
 
+def seen_between(after: datetime, before: datetime, db_path: Path | None = None) -> list[dict]:
+    """Headlines first seen strictly after `after` and before `before`, with
+    their judgments. By the research clock, not by the calendar label: the
+    label files Friday evening under Saturday."""
+    with connect(db_path) as conn:
+        return [dict(r) for r in conn.execute(
+            """SELECT h.*, j.market_moving, j.direction, j.dir_conf, j.topic
+               FROM headlines h LEFT JOIN judgments j ON j.headline_id = h.id
+               WHERE h.first_seen > ? AND h.first_seen < ?
+               ORDER BY h.first_seen""",
+            (after.isoformat(timespec="seconds"), before.isoformat(timespec="seconds")))]
+
+
 def unjudged(question_set: str, limit: int = 25, db_path: Path | None = None) -> list[dict]:
     with connect(db_path) as conn:
         return [dict(r) for r in conn.execute(
@@ -154,10 +167,14 @@ def unjudged(question_set: str, limit: int = 25, db_path: Path | None = None) ->
 
 def save_judgment(headline_id_: str, question_set: str, verdict: dict,
                   now: datetime | None = None, db_path: Path | None = None) -> None:
+    """Stores a judgment once. A second answer for the same headline and
+    question set is ignored, never swapped in: the dashboard's refresh and
+    the nightly job can both reach the same unjudged headline, and the later
+    answer may come after the market has moved."""
     now = now or datetime.now(IST)
     with connect(db_path) as conn:
         conn.execute(
-            """INSERT OR REPLACE INTO judgments
+            """INSERT OR IGNORE INTO judgments
                (headline_id, judged_at, question_set, market_moving, direction, dir_conf, topic)
                VALUES (?,?,?,?,?,?,?)""",
             (headline_id_, now.isoformat(timespec="seconds"), question_set,

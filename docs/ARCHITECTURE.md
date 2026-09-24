@@ -15,11 +15,11 @@ worth trusting at all. A change that breaks one of these is a bug even if every 
 
 | # | Invariant | Where it's enforced |
 |---|---|---|
-| **I1** | **No look-ahead.** A signal is decided on bar `i`'s close and executed at bar `i+1`'s open. Never same-bar, never a future bar. A bar whose window hasn't closed is `provisional` and is never a signal input or archived. | `backtest/engine.py`, `zerodha_provider.is_provisional`; locked by `tests/test_engine.py`, `tests/test_intraday_bars.py`, and `tests/test_pattern_no_lookahead.py` (every pattern re-run on truncated history must agree) |
+| **I1** | **No look-ahead.** A signal is decided on bar `i`'s close and executed at bar `i+1` — the index engine at its open, the option research and the paper book at its *close* (the archive holds one price per contract per day). Never same-bar, never a future bar. A bar whose window hasn't closed is `provisional` and is never a signal input or archived. | `backtest/engine.py`, `zerodha_provider.is_provisional`; locked by `tests/test_engine.py`, `tests/test_intraday_bars.py`, and `tests/test_pattern_no_lookahead.py` (every pattern re-run on truncated history must agree) |
 | **I2** | **Every number shown is computed by deterministic Python.** No LLM ever produces a statistic. If it isn't computed, the UI says "not available" — it does not guess. | Whole `quant/` + `backtest/` stack; `lib/api.ts` has no mock fallbacks; `copilot/composer.py` writes the daily explanation in Python, so it cannot invent one at all; `copilot/guard.py` withholds any LLM answer containing a number not in the computed data; `copilot/review.py` withholds forecasts, trade instructions and any sentence the computed data does not support |
 | **I3** | **Costs are always applied.** Gross return is never presented as a result. Index and options have separate, realistic cost models. | `backtest/costs.py`, `backtest/options_engine.py`; locked by `tests/test_costs.py` |
-| **I4** | **Nothing is "validated" from a single split, or from drift.** A strategy must survive walk-forward folds *and* an untouched holdout, and in both periods beat simply being in the market in the same direction (same mechanics, same costs), with the holdout edge at t ≥ 2. | `backtest/walkforward.py` (`holdout_verdict`); locked by `tests/test_validation_verdict.py` |
-| **I5** | **The bar rises with the number of hypotheses tested — and with how few trades a result rests on.** 26 patterns each get one holdout test, so one clearing t = 2 by luck is likely. A trade needs t above the Bonferroni line for that count, computed from Student's t at the pattern's own degrees of freedom (2.79 in the large-sample limit, 3.55 on 11 trades). The t itself is Welch's, because the no-signal baseline is a sample too. | `stats/multiple_comparisons.py` (`required_t`), `stats/student_t.py`, `backtest/walkforward.py` (`significance_bar`, `welch_t_stat`), `briefing/recommendation.py`; `backtest/hypothesis_log.py` keeps the full audit trail |
+| **I4** | **Nothing is "validated" from a single split, or from drift.** A strategy must survive walk-forward folds *and* an untouched holdout, and in both periods beat simply being in the market in the same direction (same mechanics, same costs), with the holdout edge clearing the significance bar (and, to reach the recommendation, the Bonferroni bar of I5). | `backtest/walkforward.py` (`holdout_verdict`); locked by `tests/test_validation_verdict.py` |
+| **I5** | **The bar rises with the number of hypotheses tested — and with how few trades a result rests on.** 26 patterns each get one holdout test, so one clearing t = 2 by luck is likely. A trade needs t above the Bonferroni line for that count, computed from Student's t at the pattern's own degrees of freedom (2.79 in the large-sample limit, 3.55 on 11 trades). The t itself is Welch's, because the no-signal baseline is a sample too. | `stats/multiple_comparisons.py` (`required_t`), `stats/student_t.py`, `backtest/walkforward.py` (`significance_bar`, `welch_t_stat`), `backtest/family.py` (the count: every family that has looked at the holdout — 53 on 2026-09-24), `briefing/recommendation.py`; `backtest/hypothesis_log.py` keeps the full audit trail |
 
 **And one product rule:** this is a decision-support tool, not a trading system. There is no
 broker execution path, and there never will be. The user makes every decision.
@@ -223,6 +223,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `news/classify.py` · `news/feed.py` | Jev judges each headline: is this the kind of event that moves an index, which way, what topic. Split into pre-open / live / post-close | Reading the tone tally as a signal, or re-judging a headline after the market has moved |
 | `market_data/gdelt.py` · `storage/news_tone_db.py` | GDELT's free daily news-tone series back to 2018 — the only reason a news edge can be backtested rather than merely started | Editing the frozen query after seeing a result; a reworded query is a new key |
 | `backtest/news_research.py` | Five pre-registered tone hypotheses for an option buyer, one fixed setup each | Using a day's own coverage to trade that day — much of it is *about* that day's move |
+| `backtest/family.py` | How many hypotheses have had their look at the holdout, family by family — the count the recommendation's bar is corrected for | A hard-coded count, or a new family left out of it |
 | `storage/paper_db.py` · `briefing/paper.py` | Phase 14: hypothetical positions at real premiums, opened forward only, with a weekly no-signal control | Opening one for a past signal date — that is a backtest |
 | `storage/journal_db.py` · `briefing/journal.py` | Phase 13: the user's decisions next to the system's verdict; P&L computed, never typed | Letting the user type the system's verdict |
 | `market_engine/drivers.py` | "Why it moved": NIFTY's return against global cues that closed before India opened, betas from earlier days only | A same-date US session — look-ahead |
@@ -248,7 +249,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `api/data/forward_log.db` | Each day's verdict, written before its outcome existed | No — and irreplaceable: back it up, it can't be regenerated |
 | `api/data/pattern_options.json` | Pattern → option research output | No — `scripts/pattern_options.py` |
 | `api/data/strategy_status.db` | Every validation verdict, timestamped | No — regenerated by validation runs |
-| `api/backtest/hypothesis_log.jsonl` | Every backtest run ever executed | No — generated data |
+| `api/backtest/hypothesis_log.jsonl` | Every backtest run ever executed — the audit trail behind the hypothesis counts | No — and not regenerable either: backed up nightly (gzipped) with the other irreplaceable files |
 
 All gitignored: they are *generated*, not source. Anything derivable from code and public
 data should be reproducible, not committed.
@@ -288,7 +289,7 @@ safe to re-run. The LaunchAgent (`scripts/install_daily_job.sh`, weekdays 19:30)
 ./scripts/check_all.sh --fast   # skip endpoint smoke test
 ```
 
-Python syntax · pytest (39) · ruff (if installed) · `tsc --noEmit` · ESLint · every read-only endpoint.
+Python syntax · the whole pytest suite · ruff (if installed) · `tsc --noEmit` · ESLint · every read-only endpoint.
 Exits non-zero on failure, so it drops straight into a pre-commit hook or CI.
 
 The test suite exists because two real bugs were found by hand in one session. Every bug
@@ -301,7 +302,7 @@ rather than decorative.
 
 **Phases 1–12 complete** (Phase 12 awaiting an API key). Phase 10 is live trigger tracking: during the session, today's candle
 is built from completed 15-minute bars (Kite) and every pattern is run on it — "would form if
-today closed now", provisional until 15:30. Phases 13-14 (journal, paper observation) are done; Phase 15 (deployment) is not started. Phase 11, historical similarity: 20 past days nearest
+today closed now", provisional until 15:30. Phases 13-15 (journal, paper observation, deployment as LaunchAgents) are done. Phase 11, historical similarity: 20 past days nearest
 to today on 5 features, shown against the base rate, with a walk-forward test of whether analogs
 predict anything (currently: no — t 0.03 over 410 tests; shown as context, not a forecast).
 

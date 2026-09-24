@@ -19,9 +19,9 @@ function Tone({ tone }: { tone: NewsView["windows"][string]["tone"] }) {
       {tone.market_moving > 0 && (
         <>
           {" · "}
-          <span className="text-emerald-400">{higher} up</span>
+          <span className="text-zinc-300">{higher} up</span>
           {" / "}
-          <span className="text-rose-400">{lower} down</span>
+          <span className="text-zinc-300">{lower} down</span>
           {" / "}
           <span className="text-zinc-500">{unclear} unclear</span>
         </>
@@ -32,16 +32,16 @@ function Tone({ tone }: { tone: NewsView["windows"][string]["tone"] }) {
 }
 
 function Row({ r }: { r: NewsView["windows"][string]["rows"][number] }) {
-  // Matches the server: a session recap is about a move that has already
-  // happened, not an event that might cause one.
-  const moving = (r.market_moving ?? 0) >= 0.5 && r.topic !== "noise";
-  const dir = r.direction === "higher" ? "text-emerald-400"
-    : r.direction === "lower" ? "text-rose-400" : "text-zinc-500";
+  // Decided in Python (feed.is_moving), not re-judged here. Direction is a
+  // word, not a colour: green and red are reserved for money made and lost,
+  // and a headline that "reads higher" is neither.
+  const moving = r.moving === true;
+  const dir = moving ? "text-zinc-300" : "text-zinc-600";
   return (
     <li className="border-b border-zinc-800/50 py-2 last:border-0">
       <div className="flex items-baseline gap-2">
         <span className={`shrink-0 font-mono text-[10px] tabular-nums ${moving ? dir : "text-zinc-700"}`}>
-          {r.market_moving != null ? r.market_moving.toFixed(2) : " -- "}
+          {r.market_moving != null ? r.market_moving.toFixed(2) : "unread"}
         </span>
         <span className={`min-w-0 text-[13px] leading-snug ${moving ? "text-zinc-200" : "text-zinc-500"}`}>
           {r.url ? (
@@ -64,15 +64,15 @@ function Row({ r }: { r: NewsView["windows"][string]["rows"][number] }) {
 }
 
 export function NewsCard({ initial }: { initial?: NewsView | null }) {
-  const [data, setData] = useState<NewsView | null>(initial ?? null);
-
+  // The page's AutoRefresh keeps `initial` current; the card keeps no timer of
+  // its own (DESIGN §9: one poller). It asks once only if the page had none.
+  const [fallback, setFallback] = useState<NewsView | null>(null);
   useEffect(() => {
     let alive = true;
-    const pull = () => fetchNews().then((r) => { if (alive && r.data) setData(r.data); });
-    if (!initial) pull();
-    const id = setInterval(pull, 180_000);  // the feeds themselves are cached server-side
-    return () => { alive = false; clearInterval(id); };
+    if (!initial) fetchNews().then((r) => { if (alive && r.data) setFallback(r.data); });
+    return () => { alive = false; };
   }, [initial]);
+  const data = initial ?? fallback;
 
   if (!data) return <Offline what="Market news" />;
 
@@ -97,7 +97,10 @@ export function NewsCard({ initial }: { initial?: NewsView | null }) {
               </span>
               <span className="text-[10px]"><Tone tone={w.tone} /></span>
             </div>
-            <p className="mt-1 text-[11px] text-zinc-600">{w.means}</p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              {w.means}
+              {(w.older_copy_hidden ?? 0) > 0 && ` ${w.older_copy_hidden} older stories still in the feeds are archived, not shown.`}
+            </p>
             {w.rows.length > 0 ? (
               <ul className="mt-1">{w.rows.map((r) => <Row key={r.id} r={r} />)}</ul>
             ) : (

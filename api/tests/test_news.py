@@ -332,3 +332,80 @@ def test_the_ladder_stays_readable_when_a_peak_is_far_away():
                         "expiryDates": ["29-Sep-2026"], "timestamp": "x"}}
     a = analyse_chain(data)
     assert len(a.ladder) <= LADDER_MAX_ROWS
+
+
+# --- found in the 2026-09-24 audit -------------------------------------------
+
+def test_a_judgment_is_never_overwritten_by_a_second_one():
+    """Jev judges a headline once. The dashboard's refresh and the nightly
+    job can both pick up the same unjudged headline; the later answer —
+    possibly after the market has moved — must not replace the first."""
+    now = datetime(2026, 9, 24, 8, 30, tzinfo=IST)
+    news_db.save_many([_item()], now=now)
+    hid = news_db.recent()[0]["id"]
+    news_db.save_judgment(hid, "news_v1", {"market_moving": 0.9, "direction": "higher", "topic": "policy"}, now=now)
+    news_db.save_judgment(hid, "news_v1", {"market_moving": 0.1, "direction": "lower", "topic": "noise"},
+                          now=datetime(2026, 9, 24, 16, 0, tzinfo=IST))
+    row = news_db.recent()[0]
+    assert row["market_moving"] == 0.9 and row["direction"] == "higher"
+
+
+def test_monday_before_the_open_includes_friday_evening_and_the_weekend():
+    """Headlines after Friday's close are filed under Saturday's calendar
+    date; Monday's pre-open window used to read Monday's date alone and
+    missed all of them."""
+    from news import feed
+    news_db.save_many([_item("Friday evening story", "https://x.test/fri")], now=datetime(2026, 9, 25, 18, 0, tzinfo=IST))
+    news_db.save_many([_item("Sunday story", "https://x.test/sun")], now=datetime(2026, 9, 27, 12, 0, tzinfo=IST))
+    news_db.save_many([_item("Monday early story", "https://x.test/mon")], now=datetime(2026, 9, 28, 8, 0, tzinfo=IST))
+    news_db.save_many([_item("Thursday story", "https://x.test/thu")], now=datetime(2026, 9, 24, 12, 0, tzinfo=IST))
+    v = feed.view(now=datetime(2026, 9, 28, 8, 30, tzinfo=IST))
+    titles = {r["title"] for r in v["windows"]["pre_open"]["rows"]}
+    assert titles == {"Friday evening story", "Sunday story", "Monday early story"}
+
+
+def test_old_copy_republished_in_a_feed_is_not_shown_as_new():
+    """First seen today does not make a story from 2024 today's news."""
+    from news import feed
+    news_db.save_many([{**_item("Old story", "https://x.test/old"), "published_at": "2024-01-01T09:00:00+05:30"},
+                       {**_item("Fresh story", "https://x.test/new"), "published_at": "2026-09-24T07:50:00+05:30"}],
+                      now=datetime(2026, 9, 24, 8, 0, tzinfo=IST))
+    v = feed.view(now=datetime(2026, 9, 24, 8, 30, tzinfo=IST))
+    assert [r["title"] for r in v["windows"]["pre_open"]["rows"]] == ["Fresh story"]
+    assert v["windows"]["pre_open"]["older_copy_hidden"] == 1
+
+
+def test_the_server_says_which_rows_are_events():
+    """The card used to recompute the moving rule in the browser."""
+    from news import feed
+    news_db.save_many([_item()], now=datetime(2026, 9, 24, 8, 0, tzinfo=IST))
+    hid = news_db.recent()[0]["id"]
+    news_db.save_judgment(hid, "news_v1", {"market_moving": 0.8, "direction": "higher", "topic": "noise"})
+    row = feed.view(now=datetime(2026, 9, 24, 8, 30, tzinfo=IST))["windows"]["pre_open"]["rows"][0]
+    assert row["moving"] is False  # a recap is not an event, however high its score
+
+
+def test_a_feed_that_answers_with_an_error_page_counts_as_failed(monkeypatch):
+    import market_data.news as n
+
+    class R:
+        content = b"<html><body>Access denied</body></html>"
+        def raise_for_status(self):
+            pass
+    monkeypatch.setattr(n.requests, "get", lambda *a, **k: R())
+    out = n.fetch_all(["et_markets"])
+    assert out["items"] == [] and "et_markets" in out["failed"]
+
+
+def test_only_web_links_are_kept():
+    import market_data.news as n
+    assert n._safe_url("javascript:alert(1)") == ""
+    assert n._safe_url("https://example.test/a") == "https://example.test/a"
+
+
+def test_the_card_no_longer_says_the_news_study_has_not_reported(monkeypatch):
+    import backtest.news_research as nr
+    from news import feed
+    monkeypatch.setattr(nr, "load_news_research", lambda: {"hypotheses": [{"status": "REJECTED"}] * 5})
+    note = feed.view(now=datetime(2026, 9, 24, 8, 30, tzinfo=IST))["note"]
+    assert "has not reported yet" not in note and "0 of 5" in note

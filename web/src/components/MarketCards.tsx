@@ -1,6 +1,6 @@
 import type { GiftNifty, MarketContext, NewsView, MarketStudies, MarketToday, Principle, StructuralResearch } from "@/lib/api";
 import { NewsSection } from "./NewsCard";
-import { Offline, Panel, Pill, SectionLabel } from "./ui";
+import { Offline, Panel, Pill, SectionLabel, minus } from "./ui";
 
 function signed(v: number | null | undefined, digits = 2, unit = "%") {
   if (v == null) return "–";
@@ -138,9 +138,9 @@ function Footprint({ label, c }: { label: string; c: MarketStudies["expiry_footp
   return (
     <tr className="border-t border-zinc-800/70">
       <td className="py-1.5 font-sans text-zinc-300">{label}</td>
-      <td className="py-1.5 text-right">{pct(c.reversal.expiry_share)} vs {pct(c.reversal.other_share)} <span className={clear(c.reversal.z) ? "text-amber-300" : "text-zinc-600"}>z {c.reversal.z ?? "–"}</span></td>
-      <td className="py-1.5 text-right">{c.settlement_window.expiry_avg_abs_move_pct}% vs {c.settlement_window.other_avg_abs_move_pct}% <span className={clear(c.settlement_window.t) ? "text-amber-300" : "text-zinc-600"}>t {c.settlement_window.t ?? "–"}</span></td>
-      <td className="py-1.5 text-right">{pct(c.pinning.expiry_share_near_strike)} vs {pct(c.pinning.other_share_near_strike)} <span className={clear(c.pinning.z) ? "text-amber-300" : "text-zinc-600"}>z {c.pinning.z ?? "–"}</span></td>
+      <td className="py-1.5 text-right">{pct(c.reversal.expiry_share)} vs {pct(c.reversal.other_share)} <span className={clear(c.reversal.z) ? "text-amber-300" : "text-zinc-600"}>z {minus(c.reversal.z)}</span></td>
+      <td className="py-1.5 text-right">{c.settlement_window.expiry_avg_abs_move_pct}% vs {c.settlement_window.other_avg_abs_move_pct}% <span className={clear(c.settlement_window.t) ? "text-amber-300" : "text-zinc-600"}>t {minus(c.settlement_window.t)}</span></td>
+      <td className="py-1.5 text-right">{pct(c.pinning.expiry_share_near_strike)} vs {pct(c.pinning.other_share_near_strike)} <span className={clear(c.pinning.z) ? "text-amber-300" : "text-zinc-600"}>z {minus(c.pinning.z)}</span></td>
     </tr>
   );
 }
@@ -170,7 +170,7 @@ export function ExpiryCard({ studies, today }: { studies: MarketStudies; today: 
             {u.unusual.map((x) => (
               <li key={`${x.type}${x.moneyness_pct}`}>
                 {x.type} near {x.strike_near.toLocaleString("en-IN")}: {pct(x.share_of_volume)} of the expiry&apos;s volume against a usual{" "}
-                {pct(x.usual_share)} (z {x.z})
+                {pct(x.usual_share)} (z {minus(x.z)})
               </li>
             ))}
           </ul>
@@ -281,7 +281,7 @@ export function StructuralCard({ data }: { data: StructuralResearch }) {
             <p className="mt-1 text-xs leading-relaxed text-zinc-400">
               <span className="text-zinc-300">Record: </span>2018–23 {h.development.num_trades ?? 0} trades,{" "}
               {rupees(h.development.avg_profit_per_lot_rs)}/lot (no signal {rupees(h.development.baseline_avg_profit_per_lot_rs)});
-              2024–26 {h.holdout.num_trades ?? 0} trades, won {pct(h.holdout.win_rate)}, t = {h.holdout.t ?? "–"} against a bar of {h.required_t ?? "–"}.
+              2024–26 {h.holdout.num_trades ?? 0} trades, won {pct(h.holdout.win_rate)}, t = {minus(h.holdout.t)} against a bar of {minus(h.required_t)}.
               {h.holdout.ci_95 && ` With this few trades the average could have been anywhere from ${rupees(Math.round(h.holdout.ci_95.low))} to ${rupees(Math.round(h.holdout.ci_95.high))} per lot.`}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-zinc-300">{h.reason}</p>

@@ -61,7 +61,10 @@ def main() -> int:
     ap.add_argument("--to", dest="until", default=date.today().isoformat())
     ap.add_argument("--volume", action="store_true", help="also fetch article volume")
     ap.add_argument("--pause", type=float, default=60.0)
-    ap.add_argument("--months", type=int, default=12, help="window size per request")
+    # Three months: GDELT throttles by the size of what is asked for. Year
+    # windows were refused under load (2024 failed four times); quarters
+    # went through.
+    ap.add_argument("--months", type=int, default=3, help="window size per request")
     a = ap.parse_args()
     modes = ("timelinetone", "timelinevol") if a.volume else ("timelinetone",)
     return run(datetime.fromisoformat(a.since).date(), datetime.fromisoformat(a.until).date(),

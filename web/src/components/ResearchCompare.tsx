@@ -1,5 +1,5 @@
 import type { ResearchCompareResult } from "@/lib/api";
-import { Offline, Panel, Pill } from "./ui";
+import { Offline, Panel, Pill, fmtPct, minus } from "./ui";
 
 export function ResearchCompare({ result }: { result: ResearchCompareResult | null }) {
   if (!result) return <Offline what="Strategy comparison" />;
@@ -57,16 +57,16 @@ export function ResearchCompare({ result }: { result: ResearchCompareResult | nu
                   </td>
                   <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 tabular-nums">{m.num_trades}</td>
                   <td className={`py-1.5 pr-3 text-right font-mono tabular-nums ${positive ? "text-emerald-400" : "text-rose-400"}`}>
-                    {m.expectancy_pct != null ? `${m.expectancy_pct > 0 ? "+" : ""}${m.expectancy_pct.toFixed(2)}%` : "–"}
+                    {fmtPct(m.expectancy_pct)}
                   </td>
                   <td className={`py-1.5 pr-3 text-right font-mono tabular-nums ${beatsBaseline ? "text-emerald-400" : "text-zinc-600"}`}>
-                    {m.vs_baseline_pct != null ? `${m.vs_baseline_pct > 0 ? "+" : ""}${m.vs_baseline_pct.toFixed(2)}%` : "–"}
+                    {fmtPct(m.vs_baseline_pct)}
                   </td>
                   <td className={`py-1.5 pr-3 text-right font-mono tabular-nums ${(m.profit_factor ?? 0) >= 1 ? "text-emerald-400" : "text-rose-400"}`}>
                     {m.profit_factor != null ? m.profit_factor.toFixed(2) : "–"}
                   </td>
                   <td className="py-1.5 text-right font-mono text-rose-400 tabular-nums">
-                    {m.max_drawdown_pct != null ? `${m.max_drawdown_pct.toFixed(1)}%` : "–"}
+                    {m.max_drawdown_pct != null ? `${minus(m.max_drawdown_pct, 1)}%` : "–"}
                   </td>
                 </tr>
               );

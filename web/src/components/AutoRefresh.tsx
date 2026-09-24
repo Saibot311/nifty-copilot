@@ -22,7 +22,7 @@ export function AutoRefresh() {
 
     // Market state comes from the shared tick rather than a fetch of its own.
     let open = false;
-    const stop = subscribeToTick((t) => { open = !!t.market?.is_open; });
+    const stop = subscribeToTick((t) => { open = !!(t.market?.is_open ?? t.market?.open_by_clock); });
 
     const tick = () => {
       if (!alive) return;

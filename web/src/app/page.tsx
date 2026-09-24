@@ -109,8 +109,9 @@ export default async function Home() {
   // Live NSE feed when reachable, daily close as the fallback — never a
   // fabricated number, and the header says which one is showing.
   const price = live?.last ?? snap?.price ?? null;
-  const change = live?.change ?? snap?.change ?? 0;
-  const changePct = live?.change_pct ?? snap?.change_pct ?? 0;
+  // Missing is shown as missing ("–"), never as a +0.00 the code did not compute.
+  const change = live?.change ?? snap?.change ?? null;
+  const changePct = live?.change_pct ?? snap?.change_pct ?? null;
 
   return (
     <div className="min-h-full bg-zinc-950">
@@ -118,7 +119,7 @@ export default async function Home() {
       <PairingNotice />
       <header className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-8">
-          <div className="flex items-baseline gap-3">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
               NIFTY 50
             </span>

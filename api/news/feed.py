@@ -10,8 +10,9 @@ Three windows, because they mean different things to a buyer:
 
 The tone tally at the bottom counts how many market-moving headlines point
 each way. It is a count of what is being *reported*, not a forecast and not
-a signal: whether it predicts anything is `backtest/news_research.py`, which
-is forward-only and has not reported yet. The card says so in those words.
+a signal. The backtestable part — GDELT's daily tone, 2018 onward — is
+`backtest/news_research.py` (0 of 5, 2026-09-24); the headlines themselves
+can only be studied forward, from this archive.
 """
 
 from datetime import datetime, timedelta
@@ -154,26 +155,75 @@ def _window(rows: list[dict], limit: int) -> list[dict]:
     return out
 
 
+# A story first seen here more than this long after its publisher dated it is
+# old copy the feed is still carrying (and this archive has just met), not
+# today's news. It stays in the archive; it is not shown as new.
+OLD_COPY_HOURS = 72
+
+
+def _last_close_before(now: datetime) -> datetime:
+    """The most recent weekday 15:30 before today — Friday's, on a Monday.
+    It does not know NSE holidays; after one the window starts a day late."""
+    d = now.date() - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return datetime.combine(d, CLOSE_T, tzinfo=IST)
+
+
+def _is_old_copy(r: dict) -> bool:
+    try:
+        published = datetime.fromisoformat(r["published_at"])
+        seen = datetime.fromisoformat(r["first_seen"])
+    except (TypeError, ValueError, KeyError):
+        return False  # undated or unparseable: shown, and its date says so
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=IST)
+    return (seen - published).total_seconds() > OLD_COPY_HOURS * 3600
+
+
+def _panel(rows: list[dict], limit: int, label: str, means: str) -> dict:
+    fresh = [r for r in rows if not _is_old_copy(r)]
+    shown = [{**r, "moving": is_moving(r)} for r in _window(fresh, limit)]
+    return {"label": label, "rows": shown, "tone": _tone(fresh), "means": means,
+            "older_copy_hidden": len(rows) - len(fresh)}
+
+
+def _study_line() -> str:
+    """What the pre-registered news-tone study found, read from its output."""
+    try:
+        from backtest.news_research import load_news_research
+        r = load_news_research()
+    except Exception:
+        r = None
+    if not r:
+        return "The pre-registered news-tone study has not been run on this machine yet."
+    hs = r.get("hypotheses", [])
+    approved = sum(1 for h in hs if h.get("status") == "APPROVED")
+    return (f"The pre-registered study of GDELT's daily news tone, 2018 onward, found {approved} of {len(hs)} "
+            "ideas worth anything to an option buyer (Research tab).")
+
+
 def view(now: datetime | None = None, limit: int = 12) -> dict:
-    """What the dashboard shows. Reads the archive; never invents a headline."""
+    """What the dashboard shows. Reads the archive; never invents a headline.
+
+    Windows are cut by when this system first saw each headline, not by the
+    calendar label stored beside it: that label files Friday evening under
+    Saturday, so Monday's "before the open" used to miss the weekend."""
     now = now or datetime.now(IST)
     here = phase_now(now)
-    today = now.date().isoformat()
-    tomorrow = (now.date() + timedelta(days=1)).isoformat()
-
-    pre = news_db.for_session(today, "pre_open")
-    live = news_db.for_session(today, "live")
-    post = news_db.for_session(tomorrow, "pre_open")  # filed forward: tomorrow's pre-open
-
+    today = now.date()
+    open_t = datetime.combine(today, OPEN_T, tzinfo=IST)
+    close_t = datetime.combine(today, CLOSE_T, tzinfo=IST)
     from .classify import QUESTION_SET
-
+    pre = news_db.seen_between(_last_close_before(now), open_t)
+    live = news_db.seen_between(open_t - timedelta(seconds=1), close_t + timedelta(seconds=1))
+    post = news_db.seen_between(close_t, close_t + timedelta(days=1))
     windows = {
-        "pre_open": {"label": "Before today's open", "rows": _window(pre, limit), "tone": _tone(pre),
-                     "means": "News the session had to price in at 09:15."},
-        "live": {"label": "During the session", "rows": _window(live, limit), "tone": _tone(live),
-                 "means": "Arrived while the market was open; the session is pricing it as it goes."},
-        "post_close": {"label": "After the close — for tomorrow", "rows": _window(post, limit), "tone": _tone(post),
-                       "means": "An option bought today cannot act on this. It is tomorrow's open that can."},
+        "pre_open": _panel(pre, limit, "Before today's open", "News the session had to price in at 09:15."),
+        "live": _panel(live, limit, "During the session",
+                       "Arrived while the market was open; the session is pricing it as it goes."),
+        "post_close": _panel(post, limit, "After the close — for tomorrow",
+                             "An option bought today cannot act on this. It is tomorrow's open that can."),
     }
     return {
         **here,
@@ -184,9 +234,9 @@ def view(now: datetime | None = None, limit: int = 12) -> dict:
         "judged_by": "TypeSafe Jev — a typed judgment per headline, not a text model's opinion",
         "note": ("What is being reported, and when it arrived. Jev reads each headline and says whether it is the "
                  "kind of event that moves an index and which way it would push — a description of the news, not a "
-                 "forecast. The counts below are counts, not a score. Whether any of this predicts a return is a "
-                 "separate pre-registered study that is forward-only and has not reported yet: there is no free "
-                 "archive of dated Indian market headlines to backtest against, so it has to be measured from here."),
+                 "forecast. The counts below are counts, not a score. " + _study_line() + " The headlines "
+                 "themselves have no free dated archive, so whether they predict anything can only be measured "
+                 "forward, from this archive, and it is too young to say."),
     }
 
 

@@ -1,5 +1,5 @@
 import type { Replication } from "@/lib/api";
-import { Panel, Pill } from "./ui";
+import { Panel, Pill, minus } from "./ui";
 
 const INDEX_LABEL: Record<string, string> = { NIFTY: "NIFTY", BANKNIFTY: "Bank", MIDCPNIFTY: "Midcap", SENSEX: "Sensex" };
 
@@ -43,7 +43,7 @@ export function ReplicationCard({ data }: { data: Replication }) {
                   )}
                 </td>
                 <td className="hidden py-1.5 pr-3 font-mono tabular-nums text-zinc-400 sm:table-cell">{h.pooled.holdout_dates}</td>
-                <td className="hidden py-1.5 pr-3 font-mono tabular-nums text-zinc-400 lg:table-cell">{h.pooled.holdout_t ?? "–"} ({h.pooled.required_t ?? "–"})</td>
+                <td className="hidden py-1.5 pr-3 font-mono tabular-nums text-zinc-400 lg:table-cell">{minus(h.pooled.holdout_t)} ({minus(h.pooled.required_t)})</td>
                 {indices.map((u) => {
                   const x = h.per_index[u];
                   const edge = x?.holdout_edge_pct ?? null;
