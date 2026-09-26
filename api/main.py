@@ -180,10 +180,9 @@ def get_candles(
 
 
 @app.get("/api/chart")
-def chart(sessions: int = Query(90, ge=20, le=400)) -> dict:
-    """The Today chart: daily candles with EMA20/EMA50 from the same series
-    and the same function as the indicator grid, so the lines are the numbers
-    beside them (I2). It used to draw Yahoo's raw feed — a day late, with
+def chart(sessions: int = Query(180, ge=20, le=400)) -> dict:
+    """The Today chart: 4-hour candles and the grid's daily ones, 180 sessions
+    of each, so the chart can be scrolled back and switched between them. It used to draw Yahoo's raw feed — a day late, with
     22 Sep 2026 missing — and compute the EMAs in the browser."""
     from briefing.today_chart import today_chart
     try:

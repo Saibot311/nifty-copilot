@@ -35,6 +35,9 @@ BLOCK_STARTS = (time(9, 15), time(13, 15))
 SESSION_END = time(15, 30)
 # Days of 15-minute bars read: enough 4-hour closes for the EMA50 to settle.
 HISTORY_DAYS = 400
+# Sessions of 15-minute candles sent to the page: 25 a session, so 250.
+M15_SESSIONS = 10
+M15 = timedelta(minutes=15)
 
 
 def _now() -> datetime:
@@ -147,6 +150,48 @@ def _forming_block(open_blocks: pd.DataFrame, day: dict, now: datetime) -> dict 
             "provisional": True}
 
 
+def _live_candle_today(grid) -> dict | None:
+    day = _live_candle()
+    if day and (day.get("as_of") or "")[:10] <= str(grid.index[-1].date()):
+        return None
+    return day
+
+
+def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tuple[list[dict], dict | None]:
+    """The 15-minute view: the last M15_SESSIONS sessions of closed bars, with
+    EMAs of 15-minute closes over the whole history, and in a session the bar
+    still forming, carried to the live price."""
+    if bars15.empty:
+        return [], None
+    e20, e50 = ema(bars15["close"], 20), ema(bars15["close"], 50)
+    closed = bars15[[ts + M15 <= pd.Timestamp(now) for ts in bars15.index]]
+    chg = closed["close"].pct_change() * 100
+    days = closed.index.normalize().unique()
+    tail = closed[closed.index.normalize() >= days[-min(M15_SESSIONS, len(days))]]
+    last_slot = (pd.Timestamp.combine(date(2000, 1, 1), SESSION_END) - M15).time()
+    rows = [{"t": f"{ts:%Y-%m-%dT%H:%M}", "date": str(ts.date()), "day_close": ts.time() == last_slot,
+             "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
+             "low": round(float(r["low"]), 2), "close": round(float(r["close"]), 2),
+             "ema20": round(float(e20.loc[ts]), 2), "ema50": round(float(e50.loc[ts]), 2),
+             "change_pct": None if pd.isna(chg.loc[ts]) else round(float(chg.loc[ts]), 2)}
+            for ts, r in tail.iterrows()]
+
+    live = None
+    if day and day.get("close") and BLOCK_STARTS[0] <= now.time() < SESSION_END:
+        open_at = pd.Timestamp.combine(now.date(), BLOCK_STARTS[0]).tz_localize(IST)
+        slot = open_at + M15 * int((pd.Timestamp(now) - open_at) / M15)
+        price = float(day["close"])
+        if slot in bars15.index:
+            b = bars15.loc[slot]
+            o, h, lo = float(b["open"]), max(float(b["high"]), price), min(float(b["low"]), price)
+        else:
+            o = h = lo = price
+        live = {"t": f"{slot:%Y-%m-%dT%H:%M}", "date": str(slot.date()), "open": round(o, 2), "high": round(h, 2),
+                "low": round(lo, 2), "close": round(price, 2), "as_of": day.get("as_of"), "provisional": True,
+                "change_pct": round((price / rows[-1]["close"] - 1) * 100, 2) if rows else None}
+    return rows, live
+
+
 # Test hook: strategies to treat as in play besides those with a zone today.
 IN_PLAY_EXTRA: set[str] = set()
 
@@ -159,7 +204,8 @@ def today_chart(sessions: int = 60) -> dict:
     """The last `sessions` days as 4-hour candles (two a day)."""
     now = _now()
     grid = _grid_frame()
-    h4 = four_hour(_bars15())
+    bars15 = _bars15()
+    h4 = four_hour(bars15)
     e20, e50 = ema(h4["close"], 20), ema(h4["close"], 50)
 
     # A block still in progress is not a candle yet: it is drawn as the
@@ -167,17 +213,41 @@ def today_chart(sessions: int = 60) -> dict:
     done = pd.Series([_block_over(ts, now) for ts in h4.index], index=h4.index, dtype=bool)
     complete = h4[done]
     tail = complete[complete.index.normalize() >= _first_day(complete, sessions)]
+    chg = complete["close"].pct_change() * 100
     candles = [{"t": f"{ts:%Y-%m-%dT%H:%M}", "date": str(ts.date()), "day_close": ts.time() == BLOCK_STARTS[1],
                 "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
                 "low": round(float(r["low"]), 2), "close": round(float(r["close"]), 2),
-                "ema20": round(float(e20.loc[ts]), 2), "ema50": round(float(e50.loc[ts]), 2)}
+                "ema20": round(float(e20.loc[ts]), 2), "ema50": round(float(e50.loc[ts]), 2),
+                "change_pct": None if pd.isna(chg.loc[ts]) else round(float(chg.loc[ts]), 2)}
                for ts, r in tail.iterrows()]
+
+    m15, live_m15 = _fifteen_minute(bars15, _live_candle_today(grid), now)
+
+    # The 1D view: the indicator grid's own daily series and EMAs.
+    d20, d50 = ema(grid["close"], 20), ema(grid["close"], 50)
+    dchg = grid["close"].pct_change() * 100
+    daily = [{"t": str(ts.date()), "date": str(ts.date()), "day_close": True,
+              "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
+              "low": round(float(r["low"]), 2), "close": round(float(r["close"]), 2),
+              "ema20": round(float(d20.loc[ts]), 2), "ema50": round(float(d50.loc[ts]), 2),
+              "change_pct": None if pd.isna(dchg.loc[ts]) else round(float(dchg.loc[ts]), 2)}
+             for ts, r in grid.tail(sessions).iterrows()]
 
     last = grid.iloc[-1]
     day_live = _live_candle()
     if day_live and (day_live.get("as_of") or "")[:10] <= str(grid.index[-1].date()):
         day_live = None  # that session is already a candle of its own
     live = _forming_block(h4[~done], day_live, now) if day_live else None
+    if live and candles:
+        live["change_pct"] = round((live["close"] / candles[-1]["close"] - 1) * 100, 2)
+    live_day = None
+    if day_live and day_live.get("close"):
+        d = (day_live.get("as_of") or "")[:10]
+        live_day = {"t": d, "date": d, "open": round(float(day_live["open"]), 2),
+                    "high": round(float(day_live["high"]), 2), "low": round(float(day_live["low"]), 2),
+                    "close": round(float(day_live["close"]), 2), "as_of": day_live.get("as_of"),
+                    "provisional": bool(day_live.get("provisional", True)),
+                    "change_pct": round((float(day_live["close"]) / float(grid["close"].iloc[-1]) - 1) * 100, 2)}
     levels = {"session": str(grid.index[-1].date()), "prev_high": round(float(last["high"]), 2),
               "prev_low": round(float(last["low"]), 2), "last_close": round(float(last["close"]), 2)}
     # The price every distance is measured from: the price now in a session,
@@ -211,7 +281,7 @@ def today_chart(sessions: int = 60) -> dict:
 
     # The candles where a rule was actually met — the "signal candle".
     df, regime = _daily()
-    window = {pd.Timestamp(c["date"]) for c in candles}
+    window = {pd.Timestamp(c["date"]) for c in candles + daily}
     formed = []
     for name, spec in STRATEGY_REGISTRY.items():
         if name not in in_play:
@@ -236,6 +306,10 @@ def today_chart(sessions: int = 60) -> dict:
         "zones": zones,
         "formed": formed,
         "live": live,
+        "daily": daily,
+        "live_day": live_day,
+        "m15": m15,
+        "live_m15": live_m15,
         "source": "4-hour blocks from NIFTY's 15-minute bars: the local archive, and Yahoo's for days after it",
         "note": ("Shaded bands: where the day's close (15:30) would have to land for a pattern to form; the patterns "
                  "are decided on the daily close, not on a 4-hour one. Every pattern shown "

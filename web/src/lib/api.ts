@@ -286,8 +286,10 @@ export type ChartCandle = {
   /** The 13:15 block, which ends at the 15:30 close the patterns are decided on. */
   day_close: boolean;
   open: number; high: number; low: number; close: number;
-  /** EMAs of the 4-hour closes, computed in Python over the full history. */
+  /** EMAs of this timeframe's closes, computed in Python over the full history. */
   ema20: number; ema50: number;
+  /** Close against the previous candle's close, from Python. */
+  change_pct: number | null;
 };
 export type ChartZone = {
   strategy: string; label: string; side: "call" | "put";
@@ -306,8 +308,17 @@ export type ChartData = {
   zones: ChartZone[];
   formed: { date: string; strategy: string; label: string; side: "call" | "put" }[];
   /** The 4-hour block still forming, following the live price. */
-  live: { t: string; date: string; open: number; high: number; low: number; close: number; as_of: string;
-          basis?: string; provisional: boolean } | null;
+  live: LiveBar | null;
+  /** The 1D view: the indicator grid's daily candles and EMAs, and today's so far. */
+  daily: ChartCandle[];
+  live_day: LiveBar | null;
+  /** The 15m view: the last 10 sessions, and the bar still forming. */
+  m15: ChartCandle[];
+  live_m15: LiveBar | null;
+};
+export type LiveBar = {
+  t: string; date: string; open: number; high: number; low: number; close: number; as_of: string;
+  basis?: string; provisional: boolean; change_pct?: number | null;
 };
 export const fetchChart = () => get<ChartData>("/api/chart");
 

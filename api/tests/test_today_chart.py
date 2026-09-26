@@ -162,3 +162,58 @@ def test_after_the_close_nothing_is_forming_and_the_day_is_two_candles(world, mo
     out = tc.today_chart(sessions=60)
     assert out["live"] is None
     assert [c["t"] for c in out["candles"][-2:]] == ["2026-09-25T09:15", "2026-09-25T13:15"]
+
+
+def test_the_daily_view_is_the_grids_own_candles_and_emas(world):
+    """The 1D switch: the indicator grid's daily series, so its EMAs are the
+    numbers printed beside the chart."""
+    from quant.indicators import ema
+    out = tc.today_chart(sessions=60)
+    daily = out["daily"]
+    assert len(daily) == 60 and daily[-1]["date"] == "2026-09-24" and daily[-1]["day_close"] is True
+    assert daily[-1]["ema20"] == round(float(ema(world["close"], 20).iloc[-1]), 2)
+
+
+def test_every_candle_carries_its_change_from_the_one_before(world):
+    out = tc.today_chart(sessions=60)
+    c, d = out["candles"], out["daily"]
+    assert c[-1]["change_pct"] == round((c[-1]["close"] / c[-2]["close"] - 1) * 100, 2)
+    assert d[-1]["change_pct"] == round((world["close"].iloc[-1] / world["close"].iloc[-2] - 1) * 100, 2)
+
+
+def test_in_a_session_the_daily_view_gets_todays_candle_so_far(world, monkeypatch):
+    assert tc.today_chart(sessions=60)["live_day"] is None
+    monkeypatch.setattr(tc, "_now", lambda: datetime.fromisoformat("2026-09-25T11:02+05:30"))
+    monkeypatch.setattr(tc, "_live_candle", lambda: {"open": 23100.0, "high": 23150.0, "low": 23020.0,
+                                                     "close": 23080.0, "as_of": "2026-09-25T11:02:00+05:30",
+                                                     "provisional": True})
+    day = tc.today_chart(sessions=60)["live_day"]
+    last = float(world["close"].iloc[-1])
+    assert day["date"] == "2026-09-25" and day["provisional"] is True and day["close"] == 23080.0
+    assert day["change_pct"] == round((23080.0 / last - 1) * 100, 2)
+
+
+def test_the_15_minute_view_is_the_last_sessions_bars_with_their_own_emas(world):
+    from quant.indicators import ema
+    bars = fifteen_minute_bars(IDX[-130:])
+    m15 = tc.today_chart(sessions=60)["m15"]
+    assert len(m15) == tc.M15_SESSIONS * 25
+    assert m15[-1]["t"] == "2026-09-24T15:15" and m15[-1]["day_close"] is True
+    assert sum(c["day_close"] for c in m15) == tc.M15_SESSIONS
+    assert m15[-1]["ema20"] == round(float(ema(bars["close"], 20).iloc[-1]), 2)
+    assert m15[-1]["change_pct"] == round((m15[-1]["close"] / m15[-2]["close"] - 1) * 100, 2)
+
+
+def test_in_a_session_the_15_minute_bar_still_forming_follows_the_price(world, monkeypatch):
+    assert tc.today_chart(sessions=60)["live_m15"] is None
+    today = pd.Timestamp("2026-09-25")
+    bars = fifteen_minute_bars(list(IDX[-130:]) + [today])
+    monkeypatch.setattr(tc, "_bars15", lambda: bars[bars.index < pd.Timestamp("2026-09-25 11:00", tz=IST)])
+    monkeypatch.setattr(tc, "_now", lambda: datetime.fromisoformat("2026-09-25T11:02+05:30"))
+    monkeypatch.setattr(tc, "_live_candle", lambda: {"open": 23100.0, "high": 23150.0, "low": 23020.0,
+                                                     "close": 23080.0, "as_of": "2026-09-25T11:02:00+05:30"})
+    out = tc.today_chart(sessions=60)
+    assert out["m15"][-1]["t"] == "2026-09-25T10:45"
+    bar = out["live_m15"]
+    assert bar["t"] == "2026-09-25T11:00" and bar["provisional"] is True
+    assert bar["open"] == bar["high"] == bar["low"] == bar["close"] == 23080.0   # no 11:00 bar yet
