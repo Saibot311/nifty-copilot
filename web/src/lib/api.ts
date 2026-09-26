@@ -9,8 +9,10 @@ const CONFIGURED = process.env.NEXT_PUBLIC_API_URL;
 function apiBase(): string {
   if (CONFIGURED) return CONFIGURED;
   if (typeof window === "undefined") return "http://localhost:8000";
+  // The page's own host name, always: the API refuses requests a browser
+  // marks cross-site, and to a browser 127.0.0.1 and localhost are different
+  // sites, so a page at 127.0.0.1 calling localhost:8000 would be refused.
   const { protocol, hostname } = window.location;
-  if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:8000";
   return `${protocol}//${hostname}:8000`;
 }
 

@@ -14,16 +14,24 @@ The API secret is read from api/.env (gitignored) and never logged,
 returned from an endpoint, or written anywhere else.
 """
 
+import hmac
 import json
 import os
+import secrets
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from kiteconnect import KiteConnect
 
 API_DIR = Path(__file__).parent.parent
 ENV_PATH = API_DIR / ".env"
 SESSION_PATH = API_DIR / "data" / "kite_session.json"
+# The one-time value a login started here carries through Kite and back. Kept
+# in a file (mode 600), not memory: the morning login check can start a login
+# while the API is down.
+STATE_PATH = API_DIR / "data" / "kite_login_state.json"
+STATE_TTL = timedelta(minutes=15)
 
 IST = timezone(timedelta(hours=5, minutes=30))
 TOKEN_RESET = time(6, 0)  # Kite invalidates all access tokens around 6 AM IST
@@ -63,7 +71,30 @@ def _api_secret() -> str:
 
 
 def login_url() -> str:
-    return KiteConnect(api_key=api_key()).login_url()
+    """Kite's login page, carrying a fresh one-time state that Kite hands back
+    on the redirect (its documented `redirect_params`). Without it, any page
+    could send the browser to the callback with a request token of its own
+    and bind the dashboard to another Kite session."""
+    state = secrets.token_urlsafe(18)
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps({"state": state, "at": datetime.now(IST).isoformat()}))
+    STATE_PATH.chmod(0o600)
+    return KiteConnect(api_key=api_key()).login_url() + "&redirect_params=" + quote(f"state={state}", safe="")
+
+
+def check_state(state: str | None, now: datetime | None = None) -> bool:
+    """Was this login started here, recently? A state works once."""
+    if not state or not STATE_PATH.exists():
+        return False
+    try:
+        saved = json.loads(STATE_PATH.read_text())
+        fresh = (now or datetime.now(IST)) - datetime.fromisoformat(saved["at"]) <= STATE_TTL
+        ok = fresh and hmac.compare_digest(str(saved["state"]), state)
+    except (ValueError, KeyError, TypeError):
+        return False
+    if ok:
+        STATE_PATH.unlink(missing_ok=True)
+    return ok
 
 
 def complete_login(request_token: str) -> dict:

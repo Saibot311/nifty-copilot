@@ -50,7 +50,7 @@ def test_the_token_is_compared_without_leaking_its_length(monkeypatch):
 def test_the_open_paths_reveal_nothing(path):
     # /health and the pairing *check* must work unpaired, so a phone can be
     # told what is wrong. None of them returns data or the token.
-    assert path in {"/health", "/docs", "/openapi.json", "/api/access/check"}
+    assert path in {"/health", "/api/access/check"}
 
 
 def test_pairing_is_refused_to_everyone_but_this_mac():

@@ -1,3 +1,5 @@
+import logging
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from backtest.research import run_all_strategies
 from cache import cached, cached_background
+from ratelimit import Budget
 from backtest.walkforward import evaluate_strategy
 from backtest.intraday import load_research as load_intraday_research
 from backtest.iv_research import load_iv_research, load_series as load_iv_series
@@ -71,6 +74,20 @@ PROVIDERS = {
 # Phase 3: only the Next.js dev server needs access, and only during local development.
 # Anything that is not this Mac must present the token (access.py). Added
 # before CORS so the browser still gets its headers on a refusal.
+class RedactTokens(logging.Filter):
+    """Blanks token values in the request log. Kite's one-time request_token
+    arrived in the callback's URL and was written to api_service.log."""
+    PATTERN = re.compile(r"((?:request_|access_)?token=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(self.PATTERN.sub(r"\1<redacted>", a) if isinstance(a, str) else a
+                                for a in record.args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(RedactTokens())
+
 app.add_middleware(TokenGate, allowed_origins=_allowed_origins())
 
 app.add_middleware(
@@ -812,10 +829,14 @@ def zerodha_login() -> RedirectResponse:
 
 
 @app.get("/api/zerodha/callback")
-def zerodha_callback(request_token: str | None = None, status: str | None = None) -> RedirectResponse:
+def zerodha_callback(request_token: str | None = None, status: str | None = None,
+                     state: str | None = None) -> RedirectResponse:
     """Kite redirects here after the user logs in on zerodha.com."""
     if status != "success" or not request_token:
         raise HTTPException(400, f"Kite login did not succeed (status={status}).")
+    if not kite_session.check_state(state):
+        raise HTTPException(400, "This Kite login was not started from this dashboard, or took over 15 minutes. "
+                                 "Start it again from the dashboard's Zerodha button.")
     try:
         done = kite_session.complete_login(request_token)
         login_log_db.record("LOGGED_IN", issued_at=done["issued_at"], user_id=done.get("user_id"),
@@ -940,8 +961,16 @@ def copilot_explain() -> dict:
     return _copilot_call(copilot.explain_today)
 
 
+# Each question is a paid model call plus the guards' calls.
+COPILOT_BUDGET = Budget(per_minute=6, per_day=150)
+
+
 @app.post("/api/copilot/ask")
 def copilot_ask(body: CopilotQuestion) -> dict:
     if not body.question.strip():
         raise HTTPException(400, "Empty question.")
+    wait = COPILOT_BUDGET.take()
+    if wait is not None:
+        raise HTTPException(429, f"Question limit reached (6 a minute, 150 a day). Try again in {wait} s.",
+                            headers={"Retry-After": str(wait)})
     return _copilot_call(lambda: copilot.ask(body.question, live=_live_or_none()))

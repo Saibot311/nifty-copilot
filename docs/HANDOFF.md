@@ -187,6 +187,13 @@ API call sends it (`credentials: "include"`; CORS allows credentials for the nam
 API no longer accepts `?token=` — a URL lands in logs, history and Referer headers. Phones paired
 before 2026-09-26 kept a copy in localStorage; it is sent as a header until `/api/access/check`
 reports the cookie works, then deleted.
+Since the same day the API also refuses any request a browser marks `Sec-Fetch-Site: cross-site`
+(a page elsewhere could otherwise make it fetch and pay to judge news), except Kite's redirect back,
+which must carry the one-time `state` that `kite_session.login_url()` put in `redirect_params` (file
+`data/kite_login_state.json`, 15 minutes, single use). The page calls the API on its own host name
+(127.0.0.1 and localhost are different sites to a browser). `/docs` and `/openapi.json` need the token
+off the Mac, Copilot questions are capped at 6 a minute and 150 a day (`ratelimit.py`, 429 with
+Retry-After), and token values are blanked in the uvicorn access log (`main.RedactTokens`).
 Both also refuse a Host header that does not name this Mac (DNS rebinding) and writes from another
 site's page. Pair from the dashboard *on the Mac* — "Use this on my
 phone" shows a QR code; the token is written to `api/.env` and shown nowhere else, not in a log and

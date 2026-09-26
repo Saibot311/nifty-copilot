@@ -29,8 +29,13 @@ TOKEN_KEY = "DASHBOARD_TOKEN"
 HEADER = "X-Copilot-Token"
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost"}
 # Reachable without a token, because a phone needs them to say hello and
-# because neither reveals anything.
-OPEN_PATHS = {"/health", "/docs", "/openapi.json", "/api/access/check"}
+# because neither reveals anything. The API's docs are not among them: the
+# map of every endpoint is for this Mac, not for the Wi-Fi.
+OPEN_PATHS = {"/health", "/api/access/check"}
+# The one path a page on another site may send the browser to: Kite's
+# redirect back after login. Its one-time state (kite_session.check_state)
+# guards it instead.
+CROSS_SITE_PATHS = {"/api/zerodha/callback"}
 
 
 def _env(name: str) -> str | None:
@@ -124,6 +129,14 @@ class TokenGate(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if not host_allowed(request.headers.get("host")):
             return JSONResponse({"detail": "This dashboard answers only to its own address."}, status_code=400)
+        # A page on another site, open in this Mac's browser, is "this Mac" by
+        # address, and a GET needs no Origin: it could make the API fetch news
+        # (and pay to judge it) or re-read strategy fit. Browsers say where a
+        # request came from; the dashboard's own page is same-site (:3000 and
+        # :8000 share the host), and server renders and scripts send nothing.
+        if request.headers.get("sec-fetch-site") == "cross-site" and request.url.path not in CROSS_SITE_PATHS:
+            return JSONResponse({"detail": "Refused: that request came from another site's page."},
+                                status_code=403)
         origin = request.headers.get("origin")
         if request.method in UNSAFE_METHODS and origin and origin not in self.allowed_origins:
             return JSONResponse({"detail": "Refused: that request came from another site's page."},
