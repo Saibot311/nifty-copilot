@@ -181,8 +181,12 @@ pass `--lan` if the phone is used; without it the phone cannot connect).
 **Phone access** (`--lan`): both services bind every interface, and both demand the token from
 anything that is not this Mac — the API in `api/access.py`, the page itself in `web/gate.mjs`, run by
 `web/server.mjs` (a thin custom server, because only the socket knows who is asking; until 2026-09-24
-the page was served to any device on the Wi-Fi). A phone carries the token as a cookie, set the first
-time it opens the pairing link; phones paired before then send their stored token once, automatically.
+the page was served to any device on the Wi-Fi). A phone carries the token only in an HttpOnly cookie:
+opening the pairing link sets it and redirects (303) to the same page without the token, and every
+API call sends it (`credentials: "include"`; CORS allows credentials for the named origins only). The
+API no longer accepts `?token=` — a URL lands in logs, history and Referer headers. Phones paired
+before 2026-09-26 kept a copy in localStorage; it is sent as a header until `/api/access/check`
+reports the cookie works, then deleted.
 Both also refuse a Host header that does not name this Mac (DNS rebinding) and writes from another
 site's page. Pair from the dashboard *on the Mac* — "Use this on my
 phone" shows a QR code; the token is written to `api/.env` and shown nowhere else, not in a log and

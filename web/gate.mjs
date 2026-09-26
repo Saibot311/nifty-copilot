@@ -56,7 +56,16 @@ export function cookieToken(cookieHeader) {
   return null;
 }
 
-/** "open" | "pair" (set the cookie, then serve) | "refuse-host" | "refuse" */
+/** The address to send a just-paired device to: the same page, without the
+ *  token. A URL is kept in history and sent as a Referer; the cookie is not. */
+export function withoutToken(pathname, search) {
+  const params = new URLSearchParams(search ?? "");
+  params.delete("token");
+  const rest = params.toString();
+  return rest ? `${pathname}?${rest}` : pathname;
+}
+
+/** "open" | "pair" (set the cookie, then redirect) | "refuse-host" | "refuse" */
 export function decide({ remoteAddress, host, path, query, cookie }, env) {
   const paired = (env.DASHBOARD_HOSTS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (!hostAllowed(host, paired)) return "refuse-host";

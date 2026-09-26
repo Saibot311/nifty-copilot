@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { get } from "@/lib/api";
+import { forgetStoredToken, get } from "@/lib/api";
 
-type Access = { local: boolean; token_required: boolean; paired: boolean };
+type Access = { local: boolean; token_required: boolean; paired: boolean; cookie?: boolean };
 
 /** Tells an unpaired phone what is wrong.
  *
@@ -16,7 +16,10 @@ export function PairingNotice() {
   useEffect(() => {
     let alive = true;
     get<Access>("/api/access/check").then((r) => {
-      if (alive && r.data) setAccess(r.data);
+      if (!alive || !r.data) return;
+      // The HttpOnly cookie works on its own: the copy page scripts could read goes.
+      if (r.data.cookie) forgetStoredToken();
+      setAccess(r.data);
     });
     return () => { alive = false; };
   }, []);

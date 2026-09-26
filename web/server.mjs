@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import next from "next";
-import { COOKIE, PAIR_PAGE, decide, readEnv } from "./gate.mjs";
+import { COOKIE, PAIR_PAGE, decide, readEnv, withoutToken } from "./gate.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = path.join(here, "..", "api", ".env");
@@ -42,9 +42,18 @@ createServer((req, res) => {
     return;
   }
   if (verdict === "pair") {
+    // Set the cookie, then send the device to the same page without the token,
+    // so it is not left in the address bar or the browser's history. From
+    // here on the cookie carries it, to this page and to the API.
     // No Secure flag: this is plain HTTP on a home network (see access.py).
-    res.setHeader("set-cookie",
-      `${COOKIE}=${encodeURIComponent(env.DASHBOARD_TOKEN)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`);
+    res.writeHead(303, {
+      "set-cookie": `${COOKIE}=${encodeURIComponent(env.DASHBOARD_TOKEN)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`,
+      location: withoutToken(url.pathname, url.search),
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+    });
+    res.end();
+    return;
   }
   handle(req, res);
 }).listen(port, hostname, () => {

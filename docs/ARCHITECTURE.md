@@ -238,7 +238,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `audit/` | Phase-by-phase deep audit on real data, with independent reference implementations; `scripts/audit.py`, `check_all.sh --deep` | Mocks and fixtures — that is what `tests/` is for |
 | `web/src/components/ui.tsx` | Shared primitives (Panel, Pill, Stat…) | Feature components |
 | `web/src/lib/api.ts` | Typed fetches. **No mock fallbacks (I2).** | Computation |
-| `web/server.mjs` · `web/gate.mjs` | The production server and the page's lock: this Mac by socket address, every other device by the pairing token (cookie), Host must name this Mac; `node --test gate.test.mjs` | Deciding "this Mac" from a header |
+| `web/server.mjs` · `web/gate.mjs` | The production server and the page's lock: this Mac by socket address, every other device by the pairing token (HttpOnly cookie; the pairing link redirects the token out of the URL), Host must name this Mac; `node --test gate.test.mjs` | Deciding "this Mac" from a header |
 
 ---
 

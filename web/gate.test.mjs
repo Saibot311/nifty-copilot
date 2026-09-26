@@ -1,7 +1,7 @@
 // node --test gate.test.mjs — the page's lock, without a browser.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cookieToken, decide, hostAllowed, isLocal, sameToken } from "./gate.mjs";
+import { cookieToken, decide, hostAllowed, isLocal, sameToken, withoutToken } from "./gate.mjs";
 
 const env = { DASHBOARD_TOKEN: "t0ken-abcdefghijklmnopqrstuvwx", DASHBOARD_HOSTS: "192.168.1.20" };
 const req = (o) => ({ remoteAddress: "192.168.1.30", host: "192.168.1.20:3000", path: "/", query: "", cookie: "", ...o });
@@ -38,4 +38,11 @@ test("build files carry no data and load unpaired", () => {
 test("tokens compare in constant time and cookies parse", () => {
   assert.ok(sameToken("abc", "abc") && !sameToken("abc", "abd") && !sameToken("", "abc"));
   assert.equal(cookieToken("x=1; copilot_token=a%3Db"), "a=b");
+});
+
+test("after pairing, the token leaves the URL and everything else stays", () => {
+  assert.equal(withoutToken("/", "?token=abc"), "/");
+  assert.equal(withoutToken("/", "?token=abc&tab=market"), "/?tab=market");
+  assert.equal(withoutToken("/journal", "?tab=x&token=abc"), "/journal?tab=x");
+  assert.equal(withoutToken("/", ""), "/");
 });

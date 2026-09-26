@@ -64,7 +64,8 @@ def test_pairing_is_refused_to_everyone_but_this_mac():
 
 # --- a web page in this Mac's browser is also "this Mac" ----------------------
 
-def _call_gate(method="GET", host="127.0.0.1:8000", origin=None, path="/api/paper", client="127.0.0.1"):
+def _call_gate(method="GET", host="127.0.0.1:8000", origin=None, path="/api/paper", client="127.0.0.1",
+               query="", extra_headers=()):
     """Run a request through the real middleware and return the status."""
     import asyncio
 
@@ -72,7 +73,8 @@ def _call_gate(method="GET", host="127.0.0.1:8000", origin=None, path="/api/pape
     from starlette.responses import PlainTextResponse
 
     headers = [(b"host", host.encode())] + ([(b"origin", origin.encode())] if origin else [])
-    scope = {"type": "http", "method": method, "path": path, "headers": headers, "query_string": b"",
+    headers += [(k.encode(), v.encode()) for k, v in extra_headers]
+    scope = {"type": "http", "method": method, "path": path, "headers": headers, "query_string": query.encode(),
              "client": (client, 5555), "server": ("127.0.0.1", 8000), "scheme": "http", "root_path": ""}
     gate = access.TokenGate(app=None, allowed_origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
@@ -121,3 +123,40 @@ def test_the_broker_user_id_is_not_handed_out(monkeypatch, tmp_path):
                         lambda: {"configured": {}, "logged_in": True, "user_id": "ZZ9999", "issued_at": "2026-09-24T10:15:00+05:30"})
     out = json.dumps(main.zerodha_status())
     assert "ZZ9999" not in out and "user_id" not in out
+
+
+# --- the token never rides in a URL ---------------------------------------------
+
+TOKEN = "t0ken-abcdefghijklmnopqrstuvwx"
+
+
+@pytest.fixture
+def phone(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_HOSTS", "192.168.1.20")
+    monkeypatch.setenv(access.TOKEN_KEY, TOKEN)
+    return dict(host="192.168.1.20:8000", client="192.168.1.30")
+
+
+def test_a_token_in_the_url_is_not_accepted(phone):
+    """A URL is written to server logs, browser history and Referer headers;
+    the header and the HttpOnly cookie are not."""
+    assert _call_gate(query=f"token={TOKEN}", **phone) == 401
+    assert _call_gate(extra_headers=[("x-copilot-token", TOKEN)], **phone) == 200
+    assert _call_gate(extra_headers=[("cookie", f"copilot_token={TOKEN}")], **phone) == 200
+    assert _call_gate(extra_headers=[("cookie", "copilot_token=wrong")], **phone) == 401
+
+
+def test_the_check_says_whether_the_cookie_works(phone):
+    """The page asks, and once the cookie is known to work it deletes the copy
+    of the token it kept where page scripts can read it."""
+    assert access.cookie_ok(_Req(host="192.168.1.30", cookies={"copilot_token": TOKEN}))
+    assert not access.cookie_ok(_Req(host="192.168.1.30", cookies={"copilot_token": "wrong"}))
+    assert not access.cookie_ok(_Req(host="192.168.1.30"))
+
+
+def test_the_phone_may_send_its_cookie_across_ports():
+    """The page is served on :3000 and the API on :8000: the browser sends the
+    cookie only if the API allows credentials, for named origins only."""
+    import main
+    cors = next(m for m in main.app.user_middleware if m.cls.__name__ == "CORSMiddleware")
+    assert cors.kwargs["allow_credentials"] is True and "*" not in cors.kwargs["allow_origins"]

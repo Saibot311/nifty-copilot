@@ -89,8 +89,24 @@ def host_allowed(host_header: str | None) -> bool:
     return name in allowed_hosts()
 
 
+COOKIE = "copilot_token"
+
+
 def _presented(request: Request) -> str | None:
-    return request.headers.get(HEADER) or request.query_params.get("token") or request.cookies.get("copilot_token")
+    # The header or the HttpOnly cookie — never the URL. A URL is written to
+    # server logs, browser history and Referer headers.
+    return request.headers.get(HEADER) or request.cookies.get(COOKIE)
+
+
+def _matches(given: str | None) -> bool:
+    expected = token()
+    return bool(given and expected and hmac.compare_digest(given, expected))
+
+
+def cookie_ok(request: Request) -> bool:
+    """Does this caller's cookie alone open the door? Then the page can drop
+    the copy of the token it kept where its scripts can read it."""
+    return _matches(request.cookies.get(COOKIE))
 
 
 class TokenGate(BaseHTTPMiddleware):

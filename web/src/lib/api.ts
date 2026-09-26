@@ -16,24 +16,23 @@ function apiBase(): string {
 
 const TOKEN_KEY = "copilot_token";
 
-/** The pairing token, kept in this browser only. A link carrying ?token=...
- *  stores it once and is stripped from the address bar, so it does not sit
- *  in history or get shared by accident. */
+/** The pairing token now lives in an HttpOnly cookie that page scripts
+ *  cannot read: the dashboard server sets it from the pairing link and sends
+ *  the phone on without the token in its URL, and every API call carries it
+ *  (`credentials: "include"`). A phone paired before that kept a copy in
+ *  localStorage; it is still sent as a header until the API confirms the
+ *  cookie works, and then deleted (forgetStoredToken). */
 function token(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const url = new URL(window.location.href);
-    const fromLink = url.searchParams.get("token");
-    if (fromLink) {
-      localStorage.setItem(TOKEN_KEY, fromLink);
-      url.searchParams.delete("token");
-      window.history.replaceState({}, "", url.toString());
-      return fromLink;
-    }
     return localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
+}
+
+export function forgetStoredToken(): void {
+  try { localStorage.removeItem(TOKEN_KEY); } catch { /* nothing stored */ }
 }
 
 export function isPaired(): boolean {
@@ -59,7 +58,7 @@ export interface ApiResult<T> {
  *  with a warning banner attached. */
 export async function get<T>(path: string): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(`${apiBase()}${path}`, { cache: "no-store", headers: authHeaders() });
+    const res = await fetch(`${apiBase()}${path}`, { cache: "no-store", credentials: "include", headers: authHeaders() });
     if (!res.ok) throw new Error(`API returned ${res.status}`);
     return { data: (await res.json()) as T, live: true };
   } catch {
@@ -615,8 +614,8 @@ export const fetchCopilotStatus = () => get<CopilotStatus>("/api/copilot/status"
 export async function copilotRequest(path: string, question?: string): Promise<{ data?: CopilotAnswer; error?: string }> {
   try {
     const res = await fetch(`${apiBase()}${path}`, question
-      ? { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ question }) }
-      : { cache: "no-store", headers: authHeaders() });
+      ? { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ question }) }
+      : { cache: "no-store", credentials: "include", headers: authHeaders() });
     const body = await res.json();
     return res.ok ? { data: body as CopilotAnswer } : { error: body.detail ?? `HTTP ${res.status}` };
   } catch {
@@ -716,6 +715,7 @@ export async function journalRequest<T>(path: string, method: "GET" | "POST" | "
     const res = await fetch(`${apiBase()}${path}`, {
       method,
       cache: "no-store",
+      credentials: "include",
       headers: authHeaders(body ? { "Content-Type": "application/json" } : undefined),
       body: body ? JSON.stringify(body) : undefined,
     });

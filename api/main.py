@@ -82,6 +82,9 @@ app.add_middleware(
     allow_origins=_allowed_origins(),
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
+    # The phone's page (:3000) sends its HttpOnly pairing cookie to the API
+    # (:8000). Credentials are allowed for the named origins only, never "*".
+    allow_credentials=True,
 )
 
 
@@ -451,8 +454,10 @@ def access_check(request: Request) -> dict:
     """Does this caller already have what it needs? The phone asks this
     before anything else, so an unpaired device gets a clear answer rather
     than a wall of failed fetches."""
+    cookie = access.cookie_ok(request)
     return {"local": access.is_local(request), "token_required": not access.is_local(request),
-            "paired": access.is_local(request) or bool(request.headers.get(access.HEADER))}
+            "paired": access.is_local(request) or cookie or bool(request.headers.get(access.HEADER)),
+            "cookie": cookie}
 
 
 @app.get("/api/access/pairing")
