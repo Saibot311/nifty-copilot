@@ -1,0 +1,406 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "NIFTY Copilot — runtime architecture",
+    "output": "runtime-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Saibot311/nifty-copilot",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "67fd0e5ccf4fa8de0fffaa8e733f4d49e8fc8d12"
+    },
+    "views": [
+      {
+        "id": "live-path",
+        "label": "During a session",
+        "focus": [
+          "viewers",
+          "web",
+          "api",
+          "market",
+          "data"
+        ],
+        "note": "The page renders on the Next.js server; the browser then polls the API's live tick itself."
+      },
+      {
+        "id": "nightly",
+        "label": "The 19:30 nightly job",
+        "focus": [
+          "job",
+          "market",
+          "news",
+          "data",
+          "icloud"
+        ],
+        "note": "Fetch, record, research, back up and audit, once each weekday evening."
+      },
+      {
+        "id": "keeping-up",
+        "label": "Keeping it running",
+        "focus": [
+          "watchdog",
+          "web",
+          "api"
+        ],
+        "note": "Every 10 minutes the watchdog asks both services for their health and restarts one that does not answer."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "watchdog",
+      "type": "backend",
+      "label": "Watchdog",
+      "sublabel": "launchd, every 10 min",
+      "pos": [
+        430,
+        60
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "api/scripts/health_watch.py",
+          "label": "health_watch.py"
+        }
+      ]
+    },
+    {
+      "id": "ai",
+      "type": "cloud",
+      "label": "Jev + LLM",
+      "sublabel": "TypeSafe (paid) · Gemini",
+      "pos": [
+        1040,
+        60
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "paid calls",
+      "sources": [
+        {
+          "path": "api/copilot/jev.py",
+          "label": "jev.py"
+        },
+        {
+          "path": "api/copilot/llm_client.py",
+          "label": "llm_client.py"
+        }
+      ]
+    },
+    {
+      "id": "viewers",
+      "type": "external",
+      "label": "Your browser",
+      "sublabel": "Mac or paired phone",
+      "pos": [
+        40,
+        220
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Dashboard",
+      "sublabel": "Next.js :3000",
+      "pos": [
+        300,
+        220
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "web/server.mjs",
+          "label": "server.mjs"
+        },
+        {
+          "path": "web/src/app/page.tsx",
+          "label": "page.tsx"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API",
+      "sublabel": "FastAPI :8000",
+      "pos": [
+        560,
+        220
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "TTL cache",
+      "sources": [
+        {
+          "path": "api/main.py",
+          "label": "main.py"
+        },
+        {
+          "path": "api/cache.py",
+          "label": "cache.py"
+        }
+      ]
+    },
+    {
+      "id": "market",
+      "type": "external",
+      "label": "Market data",
+      "sublabel": "NSE · NSE IX · Yahoo · Kite",
+      "pos": [
+        1040,
+        220
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "api/market_data/live_quote.py",
+          "label": "live_quote.py"
+        },
+        {
+          "path": "api/market_data/gift_nifty.py",
+          "label": "gift_nifty.py"
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "type": "database",
+      "label": "Local data",
+      "sublabel": "18 SQLite DBs · research log",
+      "pos": [
+        560,
+        385
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "api/storage/sqlite_open.py",
+          "label": "sqlite_open.py"
+        }
+      ]
+    },
+    {
+      "id": "job",
+      "type": "backend",
+      "label": "Nightly job",
+      "sublabel": "19:30 IST, weekdays",
+      "pos": [
+        800,
+        385
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "api/scripts/daily_job.py",
+          "label": "daily_job.py"
+        }
+      ]
+    },
+    {
+      "id": "news",
+      "type": "external",
+      "label": "News feeds",
+      "sublabel": "RSS: ET, Mint, BS, RBI",
+      "pos": [
+        1040,
+        385
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "api/news/feed.py",
+          "label": "feed.py"
+        }
+      ]
+    },
+    {
+      "id": "icloud",
+      "type": "cloud",
+      "label": "iCloud Drive",
+      "sublabel": "verified backups",
+      "pos": [
+        800,
+        515
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "api/storage/backup.py",
+          "label": "backup.py"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "This Mac · launchd services",
+      "wraps": [
+        "watchdog",
+        "web",
+        "api",
+        "data",
+        "job"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Token gate: pairing cookie, Host and Origin checks",
+      "wraps": [
+        "web",
+        "api"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "open-page",
+      "from": "viewers",
+      "to": "web",
+      "label": "page",
+      "variant": "emphasis"
+    },
+    {
+      "id": "render",
+      "from": "web",
+      "to": "api",
+      "label": "render, every 60s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "live-tick",
+      "from": "viewers",
+      "to": "api",
+      "label": "live tick, every 2s",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    },
+    {
+      "id": "quotes",
+      "from": "api",
+      "to": "market",
+      "label": "quotes · option chain",
+      "variant": "emphasis"
+    },
+    {
+      "id": "judgments",
+      "from": "api",
+      "to": "ai",
+      "label": "strategy fit · copilot",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "reads",
+      "from": "api",
+      "to": "data",
+      "label": "SQLite (WAL)",
+      "labelDy": 80
+    },
+    {
+      "id": "writes",
+      "from": "job",
+      "to": "data",
+      "label": "append rows"
+    },
+    {
+      "id": "backfill",
+      "from": "job",
+      "to": "market",
+      "label": "bars · option files",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "headlines",
+      "from": "job",
+      "to": "news",
+      "label": "headlines"
+    },
+    {
+      "id": "backups",
+      "from": "job",
+      "to": "icloud",
+      "label": "backups",
+      "labelDy": 24
+    },
+    {
+      "id": "check-web",
+      "from": "watchdog",
+      "to": "web",
+      "label": "health",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "check-api",
+      "from": "watchdog",
+      "to": "api",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "During a session",
+      "items": [
+        "The browser polls the API's live tick: every 2s open, 60s shut",
+        "The page re-renders every 60s; no card runs its own timer",
+        "Slow feeds refresh on a background thread"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Nightly job",
+      "items": [
+        "Backups, bars, research, paper book, audit",
+        "Runs under caffeinate; the forward log is retried",
+        "Irreplaceable rows are appended, never rewritten"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Paid and outside calls",
+      "items": [
+        "Jev judges each headline once, in the nightly job",
+        "Strategy fit asks Jev at most every 15 minutes",
+        "Kite answers only after a login made in your browser"
+      ]
+    }
+  ]
+}
