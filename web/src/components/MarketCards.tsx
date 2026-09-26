@@ -1,4 +1,5 @@
-import type { GiftNifty, MarketContext, NewsView, MarketStudies, MarketToday, Principle, StrategyFit, StructuralResearch } from "@/lib/api";
+import type { IndicesBoard, MarketContext, NewsView, MarketStudies, MarketToday, Principle, StrategyFit, StructuralResearch } from "@/lib/api";
+import { IndicesCard } from "./IndicesCard";
 import { StrategyFitSection } from "./StrategyFitCard";
 import { NewsSection } from "./NewsCard";
 import { Offline, Panel, Pill, SectionLabel, minus } from "./ui";
@@ -299,29 +300,20 @@ export function StructuralCard({ data }: { data: StructuralResearch }) {
   );
 }
 
-export function GiftNiftyCard({ g }: { g: GiftNifty }) {
-  return (
-    <Panel className="p-4">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className="font-mono text-2xl tabular-nums text-zinc-100">{g.last.toLocaleString("en-IN")}</span>
-        <span className={`font-mono text-sm tabular-nums ${(g.change_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-          {signed(g.change_pct)}
-        </span>
-        <span className="text-xs text-zinc-500">{g.symbol} futures, {g.expiry} expiry · last trade {g.last_trade_time} IST</span>
-      </div>
-      <p className="mt-2 text-xs leading-relaxed text-zinc-500">{g.note} Snapshots so far: {g.snapshots_archived}.</p>
-    </Panel>
-  );
-}
-
-export function MarketTab({ data, structural, gift, news, fit }: {
-  data: MarketContext | null; structural?: StructuralResearch | null; gift?: GiftNifty | null;
+export function MarketTab({ data, structural, indices, news, fit }: {
+  data: MarketContext | null; structural?: StructuralResearch | null; indices?: IndicesBoard | null;
   news?: NewsView | null; fit?: StrategyFit | null;
 }) {
   if (!data) return <Offline what="Market context" />;
   return (
     <>
       <div className="grid gap-6 xl:grid-cols-2">
+        <section className="min-w-0 xl:col-span-2">
+          <SectionLabel hint="live, each with its own time — describes the moves, never suggests one">
+            Indices now
+          </SectionLabel>
+          <IndicesCard initial={indices ?? null} />
+        </section>
         {/* News sits on Market, not Today: it has no demonstrated predictive
             value, and DESIGN.md is strict that Today is only what would
             change your next action. If the pre-registered tone study ever
@@ -330,12 +322,6 @@ export function MarketTab({ data, structural, gift, news, fit }: {
         {/* Market, not Today, for the same reason as the news: a reading of
             conditions with no demonstrated predictive value. */}
         <StrategyFitSection data={fit ?? null} />
-        {gift && (
-          <section className="min-w-0">
-            <SectionLabel hint="NIFTY futures in GIFT City — context, not a signal">GIFT Nifty now</SectionLabel>
-            <GiftNiftyCard g={gift} />
-          </section>
-        )}
         <section className="min-w-0">
           <SectionLabel hint="attribution by association, not a cause">Why it moved</SectionLabel>
           <WhyItMovedCard today={data.today} />

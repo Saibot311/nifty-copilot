@@ -109,3 +109,45 @@ def test_wait_s_gives_up_on_a_slow_producer_and_serves_the_last_value():
     assert cached("slow", ttl_seconds=0, producer=lambda: "never", wait_s=0.3) == "old"
     release.set()
     t.join(timeout=10)
+
+
+def test_background_refresh_never_makes_the_caller_wait():
+    """The tick answers every two seconds; the indices board rides along
+    only from what is already in hand, refreshed on a thread of its own."""
+    import threading
+    import time as _t
+    from cache import cached_background, invalidate
+
+    invalidate("bg-test")
+    release = threading.Event()
+    calls = []
+
+    def slow():
+        calls.append(1)
+        release.wait(5)
+        return len(calls)
+
+    t0 = _t.monotonic()
+    assert cached_background("bg-test", 0, slow) is None         # nothing yet: answers at once
+    assert cached_background("bg-test", 0, slow) is None         # one refresh at a time
+    assert _t.monotonic() - t0 < 0.5 and len(calls) == 1
+    release.set()
+    for _ in range(50):
+        if cached_background("bg-test", 60, slow) is not None:
+            break
+        _t.sleep(0.02)
+    assert cached_background("bg-test", 60, slow) == 1
+
+
+def test_a_failing_background_refresh_keeps_the_last_value():
+    import time as _t
+    from cache import _CACHE, cached_background, invalidate
+
+    invalidate("bg-fail")
+    _CACHE["bg-fail"] = (_t.monotonic() - 100, "old")
+
+    def boom():
+        raise RuntimeError("feed down")
+    assert cached_background("bg-fail", 10, boom) == "old"
+    _t.sleep(0.1)
+    assert cached_background("bg-fail", 10, boom) == "old"

@@ -32,7 +32,7 @@ import {
   fetchImpliedVol,
   fetchMarket,
   fetchStructural,
-  fetchGiftNifty,
+  fetchIndices,
   fetchReplication,
   fetchZerodhaStatus,
   fetchPaper,
@@ -71,7 +71,7 @@ export default async function Home() {
     impliedVol,
     market,
     structural,
-    gift,
+    indices,
     replication,
     zerodha,
     paper,
@@ -97,7 +97,7 @@ export default async function Home() {
     fetchImpliedVol(),
     fetchMarket(),
     fetchStructural(),
-    fetchGiftNifty(),
+    fetchIndices(),
     fetchReplication(),
     fetchZerodhaStatus(),
     fetchPaper(),
@@ -280,7 +280,7 @@ export default async function Home() {
               </details>
             </div>
           }
-          market={<MarketTab data={market.data} structural={structural.data} gift={gift.data} news={news.data} fit={strategyFit.data} />}
+          market={<MarketTab data={market.data} structural={structural.data} indices={indices.data} news={news.data} fit={strategyFit.data} />}
           journal={<JournalTab paper={paper.data} />}
         />
 

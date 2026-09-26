@@ -1,27 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-import { type LivePatterns, get } from "@/lib/api";
+import type { LivePatterns } from "@/lib/api";
 import { OptionPill, TrackRecord, VERDICT_TONE } from "./PatternCards";
 import { Panel, Pill, fmtPct } from "./ui";
-
-const REFRESH_MS = 60_000;
 
 function levels(ranges: [number, number][]) {
   return ranges.map(([a, b]) => `${a.toLocaleString("en-IN")}–${b.toLocaleString("en-IN")}`).join(" or ");
 }
 
 export function LivePatternsCard({ initial }: { initial: LivePatterns | null }) {
-  const [data, setData] = useState(initial);
-
-  useEffect(() => {
-    const id = setInterval(async () => {
-      const res = await get<LivePatterns>("/api/live/patterns");
-      if (res.data) setData(res.data);
-    }, REFRESH_MS);
-    return () => clearInterval(id);
-  }, []);
+  // Kept current by the page's AutoRefresh (every minute in a session).
+  const data = initial;
 
   if (!data) return null;
   if (!data.candle) {

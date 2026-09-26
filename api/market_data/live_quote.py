@@ -112,6 +112,11 @@ def _fetch(index: str) -> dict:
         "previous_close": row.get("previousClose"),
         "year_high": row.get("yearHigh"),
         "year_low": row.get("yearLow"),
+        # The same response carries every NSE index; the indices board reads
+        # Bank Nifty from here rather than asking NSE a second time.
+        "rows": {r.get("index"): {"last": r.get("last"), "previous_close": r.get("previousClose"),
+                                  "open": r.get("open"), "high": r.get("high"), "low": r.get("low")}
+                 for r in rows if r.get("index") in ("NIFTY 50", "NIFTY BANK")},
         "india_vix": vix_row.get("last") if vix_row else None,
         "india_vix_change_pct": vix_row.get("percentChange") if vix_row else None,
         "source": "NSE live feed",

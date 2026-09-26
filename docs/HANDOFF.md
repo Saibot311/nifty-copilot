@@ -77,6 +77,18 @@ every day. In a session, NSE's open/high/low/last become a provisional candle th
 includes, and the page refreshes the grid every minute; after the close, a session the daily file does
 not have yet is still counted from NSE's feed. Pre-open zeros are never a candle.
 
+**Indices now (Market tab, `/api/indices`, `market_data/indices_board.py`).** NIFTY and Bank Nifty from
+NSE, Sensex from Yahoo's 1-minute bars (every BSE endpoint answers 403), GIFT Nifty from NSE IX (it lists
+only NIFTY futures, so there is no GIFT Bank Nifty). It rides the live tick (every 2s open, 60s shut)
+through `cache.cached_background`, which refreshes on a thread of its own so the price never waits on those
+feeds. The commentary is Python, from the numbers, and a test rejects "buy", "sell", "should", "will",
+"expect" and "target" in it.
+
+**How the dashboard updates.** One page refresh (`AutoRefresh`: every 60s in a session, every 15 min
+outside it, and at once when the tick sees the market open) and one live tick (`LiveTicker`'s poller). No
+card keeps a timer of its own (DESIGN §9). The open-interest card once did: every page refresh restarted
+its two-minute timer, so it never fired and the card showed its page-load chain all session.
+
 **"Which strategies fit today" (Market tab, `/api/strategy_fit`).** Python shortlists what is actually
 forming — formed on the last close, would form if the index closed now (live 15-minute data), or within
 1% of its trigger — and Jev reads, per strategy, whether today's trend, momentum and volatility are the

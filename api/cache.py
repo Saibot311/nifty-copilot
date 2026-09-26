@@ -72,6 +72,36 @@ def cached(key: str, ttl_seconds: int, producer: Callable[[], Any],
         lock.release()
 
 
+_REFRESHING: set[str] = set()
+
+
+def cached_background(key: str, ttl_seconds: int, producer: Callable[[], Any]) -> Any:
+    """The value in hand, or None, and never a wait: past its TTL, one
+    daemon thread refreshes it while callers keep getting the last value. A
+    failed refresh keeps that value. For a payload riding on the tick, where
+    a slow outside feed must not hold up the price."""
+    hit = _CACHE.get(key)
+    if hit and (time.monotonic() - hit[0]) < ttl_seconds:
+        return hit[1]
+    with _REGISTRY_LOCK:
+        start = key not in _REFRESHING
+        if start:
+            _REFRESHING.add(key)
+
+    def refresh():
+        try:
+            _CACHE[key] = (time.monotonic(), producer())
+        except Exception:
+            pass
+        finally:
+            with _REGISTRY_LOCK:
+                _REFRESHING.discard(key)
+
+    if start:
+        threading.Thread(target=refresh, daemon=True, name=f"refresh:{key}").start()
+    return hit[1] if hit else None
+
+
 def invalidate(key: str | None = None) -> None:
     with _REGISTRY_LOCK:
         if key is None:

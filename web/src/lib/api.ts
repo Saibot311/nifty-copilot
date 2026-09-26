@@ -881,6 +881,36 @@ export type GiftNifty = {
 
 export const fetchGiftNifty = () => get<GiftNifty>("/api/gift-nifty");
 
+export type IndexRow = {
+  key: "nifty" | "banknifty" | "sensex" | "gift";
+  name: string;
+  last: number;
+  previous_close: number;
+  change: number;
+  change_pct: number;
+  /** "+77.40 (+0.34%)", written by the API with a real minus sign. */
+  change_text: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  /** Where the last price sits in the day's range, 0 = low, 100 = high. */
+  day_position: number | null;
+  as_of: string | null;
+  source: string;
+  /** Minutes behind the other spot indices, in a session. */
+  behind: boolean;
+};
+
+export type IndicesBoard = {
+  market_open: boolean;
+  as_of: string;
+  rows: IndexRow[];
+  /** Sentences written in Python from the numbers: what moved, never what to do. */
+  commentary: string[];
+};
+
+export const fetchIndices = () => get<IndicesBoard>("/api/indices");
+
 export type ReplicationSide = { trades: number; avg_return_pct: number | null; win_rate: number | null };
 
 export type ReplicationHypothesis = {
@@ -1039,6 +1069,8 @@ export type LiveTick = {
     open_positions_value_rs: number; return_pct: number | null; max_per_trade_rs: number;
     open_positions: number; live_priced: number; unrealised_rs: number;
   } | null;
+  /** The Market tab's indices board, from what the API had in hand. */
+  indices?: IndicesBoard | null;
 };
 
 export const fetchTick = () => get<LiveTick>("/api/live/tick");

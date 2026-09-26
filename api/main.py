@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from backtest.research import run_all_strategies
-from cache import cached
+from cache import cached, cached_background
 from backtest.walkforward import evaluate_strategy
 from backtest.intraday import load_research as load_intraday_research
 from backtest.iv_research import load_iv_research, load_series as load_iv_series
@@ -576,6 +576,12 @@ def live_tick() -> dict:
         except ValueError:
             pass
     out.setdefault("stale", out.get("age_s") is not None and out["age_s"] >= LIVE_STALE_AFTER_S)
+
+    # The Market tab's indices board rides along, but only from what is in
+    # hand: Yahoo and NSE IX are refreshed on a thread of their own, so a slow
+    # outside feed never holds up the price.
+    from market_data.indices_board import fetch_board
+    out["indices"] = cached_background("indices_board", 10 if status.get("is_open") else 60, fetch_board)
     return out
 
 
@@ -713,6 +719,18 @@ def gift_nifty() -> dict:
                      "level. Context about the evening — not a forecast, and not something an option bought at "
                      "the close can act on. History is being recorded nightly from 22 Sep 2026; NSE IX publishes "
                      "no free archive.")}
+
+
+@app.get("/api/indices")
+def indices() -> dict:
+    """NIFTY, Bank Nifty and Sensex, with GIFT Nifty beside them, each with
+    its own time and source, and a commentary written in Python from the
+    numbers. The dashboard also gets this on the live tick."""
+    from market_data.indices_board import fetch_board
+    try:
+        return cached("indices_board", ttl_seconds=10, producer=fetch_board, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Indices unavailable: {e}")
 
 
 @app.get("/api/replication")

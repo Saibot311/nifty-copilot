@@ -70,15 +70,17 @@ function Row({ r, max, spot, peakPut, peakCall }: {
 }
 
 export function OpenInterestCard({ initial }: { initial?: OptionChain | null }) {
-  const [data, setData] = useState<OptionChain | null>(initial ?? null);
-
+  // The page's AutoRefresh keeps `initial` current (every minute in a
+  // session). This card once ran a two-minute timer of its own that every
+  // refresh restarted, so it never fired and the card sat on the chain it
+  // was loaded with all day. It asks once only if the page had none.
+  const [fallback, setFallback] = useState<OptionChain | null>(null);
   useEffect(() => {
     let alive = true;
-    const pull = () => fetchOptionsChain().then((r) => { if (alive && r.data) setData(r.data); });
-    if (!initial) pull();
-    const id = setInterval(pull, 120_000);
-    return () => { alive = false; clearInterval(id); };
+    if (!initial) fetchOptionsChain().then((r) => { if (alive && r.data) setFallback(r.data); });
+    return () => { alive = false; };
   }, [initial]);
+  const data = initial ?? fallback;
 
   if (!data) return <Offline what="The open-interest profile" why="NSE's option chain did not answer." />;
 

@@ -1,14 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-import { type Indicators, get } from "@/lib/api";
+import type { Indicators } from "@/lib/api";
 import { Offline, Panel, Pill, SectionLabel } from "./ui";
-
-// In a session the server folds today's candle so far into every reading;
-// out of one, a slow check notices when the next session starts.
-const LIVE_MS = 60_000;
-const IDLE_MS = 300_000;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -19,19 +12,10 @@ function when(asOf: string): string {
   return m && d ? `${d} ${MONTHS[m - 1]}` : asOf;
 }
 
-export function IndicatorGrid({ initial }: { initial: Indicators | null }) {
-  const [data, setData] = useState(initial);
-  const live = data?.live ?? false;
-
-  useEffect(() => {
-    const id = setInterval(async () => {
-      if (document.visibilityState === "hidden") return;
-      const res = await get<Indicators>("/api/indicators");
-      if (res.data) setData(res.data);
-    }, live ? LIVE_MS : IDLE_MS);
-    return () => clearInterval(id);
-  }, [live]);
-
+/** In a session the server folds today's candle so far into every reading,
+ *  and the page's AutoRefresh brings a new set each minute. No timer here
+ *  (DESIGN §9): a card's own timer is how the open-interest card once froze. */
+export function IndicatorGrid({ initial: data }: { initial: Indicators | null }) {
   const hint = data && (
     <>
       {data.basis}
