@@ -34,8 +34,17 @@ cat > "$PLIST" <<EOF
 <plist version="1.0">
 <dict>
     <key>Label</key><string>$LABEL</string>
+    <!-- caffeinate holds the Mac awake until the job exits. Without it the
+         job ran in Power Nap's few-second wakes: on 25 Sep 2026 it took 20
+         hours, and the forward log's Yahoo request died when the Mac slept
+         four seconds after sending it. -i stops idle sleep (on battery too);
+         -s stops system sleep on mains power. Closing the lid on battery
+         still sleeps the Mac: nothing a user agent can override. -->
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>-s</string>
         <string>$API_DIR/.venv/bin/python</string>
         <string>$API_DIR/scripts/daily_job.py</string>
     </array>

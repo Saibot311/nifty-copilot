@@ -51,6 +51,30 @@ def run_script(*args: str) -> bool:
     return proc.returncode == 0
 
 
+# Steps worth a second try once the rest is done. The forward log is the one
+# record that cannot be made up later: on 25 Sep 2026 the Mac slept four
+# seconds after its Yahoo request left, the request died, and the step failed
+# while every later step, run in Power Nap's brief wakes, went through.
+RETRY_AT_END = ("forward log",)
+
+
+def retry(failed: list[str], steps: dict, names: tuple[str, ...]) -> list[str]:
+    """Run each failed step in `names` once more; the ones still failing."""
+    still = []
+    for name in failed:
+        if name not in names:
+            still.append(name)
+            continue
+        log(f"  {name}, second try")
+        try:
+            if not steps[name]():
+                still.append(name)
+        except Exception:
+            still.append(name)
+            log("    " + traceback.format_exc().strip().replace("\n", "\n    "))
+    return still
+
+
 def step_forward_log() -> bool:
     from briefing.forward_log import record_if_final
     from briefing.recommendation import build_recommendation
@@ -226,6 +250,7 @@ def main() -> int:
         except Exception:
             failed.append(name)
             log("    " + traceback.format_exc().strip().replace("\n", "\n    "))
+    failed = retry(failed, dict(steps), RETRY_AT_END)
     log(f"daily job done{' — FAILED: ' + ', '.join(failed) if failed else ''}")
     if failed and failed != ["audit"]:  # the audit step sends its own alert
         notify(f"Nightly job: {', '.join(failed)} failed — see api/data/daily_job.log")

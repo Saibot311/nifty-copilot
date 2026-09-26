@@ -4,21 +4,86 @@ It used to be 110 generic candles with two moving averages — what any
 charting site shows better, and nothing to do with the tab's question. It now
 draws the decision in front of the reader:
 
-  * the recent candles and EMA20/EMA50 — the grid's own series and values;
+  * 4-hour candles (NSE's split: 09:15-13:15 and 13:15-15:30) built from the
+    archived 15-minute bars, with EMA20/EMA50 of those 4-hour closes. These
+    are not the indicator grid's EMAs, which are daily, and the chart says so;
   * the previous session's high and low, which the breakout and breakdown
     rules are judged against at the next close;
   * the bands a close would have to land in for each pattern to form (from
     pattern_proximity), in a "next close" column beside the candles;
-  * the candles where a rule was actually met, marked where they happened;
-  * during a session, today's candle from live 15-minute bars — provisional.
+  * the days a rule was actually met, marked on that day's closing block —
+    the rules are decided on the daily close, whatever the candle size;
+  * during a session, the block still forming, following the live price —
+    provisional.
 
 Everything is computed here (I2); the browser only places it. None of it is
 a signal: every pattern it shows was rejected on 2024-26 option data, and
 the call on the Today tab stays NO TRADE unless one clears the evidence bar.
 """
 
+from datetime import date, datetime, time, timedelta
+
+import pandas as pd
+
 from backtest.strategies import STRATEGY_REGISTRY
+from market_data.kite_session import IST
 from quant.indicators import ema
+
+# NSE's 4-hour split, as the charting sites draw it: the morning block, then
+# the afternoon one that ends at the 15:30 close.
+BLOCK_STARTS = (time(9, 15), time(13, 15))
+SESSION_END = time(15, 30)
+# Days of 15-minute bars read: enough 4-hour closes for the EMA50 to settle.
+HISTORY_DAYS = 400
+
+
+def _now() -> datetime:
+    return datetime.now(IST)
+
+
+def _bars15() -> pd.DataFrame:
+    """NIFTY's 15-minute bars: the local archive (Kite, topped up nightly),
+    then Yahoo's for any day after the archive's last — the evening before
+    the nightly job, and the session in progress."""
+    from market_data.bar_archive import ArchiveProvider
+    from market_data.yfinance_provider import YFinanceProvider
+
+    def frame(candles):
+        if not candles:
+            return pd.DataFrame(columns=["open", "high", "low", "close"])
+        idx = pd.DatetimeIndex([pd.Timestamp(c.timestamp) for c in candles])
+        idx = idx.tz_localize(IST) if idx.tz is None else idx.tz_convert(IST)
+        return pd.DataFrame({"open": [c.open for c in candles], "high": [c.high for c in candles],
+                             "low": [c.low for c in candles], "close": [c.close for c in candles]}, index=idx)
+
+    today = date.today()
+    archived = frame(ArchiveProvider().get_ohlc("^NSEI", "15m", today - timedelta(days=HISTORY_DAYS), today))
+    try:
+        recent = frame(YFinanceProvider().get_ohlc("^NSEI", "15m", today - timedelta(days=7), today))
+    except Exception:
+        recent = archived.iloc[:0]
+    if not archived.empty:
+        recent = recent[recent.index.normalize() > archived.index[-1].normalize()]
+    return pd.concat([archived, recent]).sort_index()
+
+
+def four_hour(bars15: pd.DataFrame) -> pd.DataFrame:
+    """15-minute bars folded into NSE's two 4-hour blocks a day, indexed by
+    each block's start. `bars` counts the 15-minute bars in each block."""
+    idx = bars15.index.tz_convert(IST) if bars15.index.tz is not None else bars15.index
+    afternoon = [t >= BLOCK_STARTS[1] for t in idx.time]
+    starts = pd.DatetimeIndex([pd.Timestamp.combine(d, BLOCK_STARTS[int(a)]) for d, a in zip(idx.date, afternoon)])
+    g = bars15.assign(block=starts.tz_localize(IST)).groupby("block")
+    out = pd.DataFrame({"open": g["open"].first(), "high": g["high"].max(), "low": g["low"].min(),
+                        "close": g["close"].last(), "bars": g["close"].size()})
+    out.index.name = None
+    return out
+
+
+def _block_over(start: pd.Timestamp, now: datetime) -> bool:
+    end = (pd.Timestamp.combine(start.date(), SESSION_END) if start.time() == BLOCK_STARTS[1]
+           else pd.Timestamp.combine(start.date(), BLOCK_STARTS[1])).tz_localize(IST)
+    return now >= end.to_pydatetime()
 
 
 def _grid_frame():
@@ -57,6 +122,31 @@ def _live_candle() -> dict | None:
             "as_of": live.get("as_of"), "basis": live.get("basis"), "provisional": live.get("provisional", True)}
 
 
+def _first_day(complete: pd.DataFrame, sessions: int) -> pd.Timestamp:
+    days = complete.index.normalize().unique()
+    return days[-sessions] if len(days) >= sessions else days[0]
+
+
+def _forming_block(open_blocks: pd.DataFrame, day: dict, now: datetime) -> dict | None:
+    """The block in progress: its 15-minute bars so far, carried to the live
+    price (a 15-minute bar only exists once it has closed). Outside the
+    session nothing is forming: after 15:30 the day's blocks are candles."""
+    if not BLOCK_STARTS[0] <= now.time() < SESSION_END:
+        return None
+    today = [ts for ts in open_blocks.index if ts.date() == now.date()]
+    start = (today[-1] if today else
+             pd.Timestamp.combine(now.date(), BLOCK_STARTS[int(now.time() >= BLOCK_STARTS[1])]).tz_localize(IST))
+    price = float(day["close"])
+    if today:
+        b = open_blocks.loc[start]
+        o, h, lo = float(b["open"]), max(float(b["high"]), price), min(float(b["low"]), price)
+    else:
+        o = h = lo = price
+    return {"t": f"{start:%Y-%m-%dT%H:%M}", "date": str(start.date()), "open": round(o, 2), "high": round(h, 2),
+            "low": round(lo, 2), "close": round(price, 2), "as_of": day.get("as_of"), "basis": day.get("basis"),
+            "provisional": True}
+
+
 # Test hook: strategies to treat as in play besides those with a zone today.
 IN_PLAY_EXTRA: set[str] = set()
 
@@ -65,23 +155,35 @@ def _side(option_type: str | None) -> str:
     return "call" if option_type == "CE" else "put"
 
 
-def today_chart(sessions: int = 90) -> dict:
+def today_chart(sessions: int = 60) -> dict:
+    """The last `sessions` days as 4-hour candles (two a day)."""
+    now = _now()
     grid = _grid_frame()
-    e20, e50 = ema(grid["close"], 20), ema(grid["close"], 50)
-    tail = grid.tail(sessions)
-    candles = [{"date": str(ts.date()), "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
+    h4 = four_hour(_bars15())
+    e20, e50 = ema(h4["close"], 20), ema(h4["close"], 50)
+
+    # A block still in progress is not a candle yet: it is drawn as the
+    # provisional one, following the live price.
+    done = pd.Series([_block_over(ts, now) for ts in h4.index], index=h4.index, dtype=bool)
+    complete = h4[done]
+    tail = complete[complete.index.normalize() >= _first_day(complete, sessions)]
+    candles = [{"t": f"{ts:%Y-%m-%dT%H:%M}", "date": str(ts.date()), "day_close": ts.time() == BLOCK_STARTS[1],
+                "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
                 "low": round(float(r["low"]), 2), "close": round(float(r["close"]), 2),
                 "ema20": round(float(e20.loc[ts]), 2), "ema50": round(float(e50.loc[ts]), 2)}
                for ts, r in tail.iterrows()]
+
     last = grid.iloc[-1]
-    live = _live_candle()
-    if live and (live.get("as_of") or "")[:10] <= str(grid.index[-1].date()):
-        live = None  # that session is already a candle of its own
+    day_live = _live_candle()
+    if day_live and (day_live.get("as_of") or "")[:10] <= str(grid.index[-1].date()):
+        day_live = None  # that session is already a candle of its own
+    live = _forming_block(h4[~done], day_live, now) if day_live else None
     levels = {"session": str(grid.index[-1].date()), "prev_high": round(float(last["high"]), 2),
               "prev_low": round(float(last["low"]), 2), "last_close": round(float(last["close"]), 2)}
-    # The price every distance is measured from: the live candle's close in a
-    # session, the last close otherwise.
-    levels["reference"] = round(float(live["close"]), 2) if live and live.get("close") else levels["last_close"]
+    # The price every distance is measured from: the price now in a session,
+    # the last close otherwise.
+    levels["reference"] = (round(float(day_live["close"]), 2) if day_live and day_live.get("close")
+                           else levels["last_close"])
     ref = levels["reference"]
 
     # Where a close would have to land for each pattern to form. A "partial"
@@ -109,7 +211,7 @@ def today_chart(sessions: int = 90) -> dict:
 
     # The candles where a rule was actually met — the "signal candle".
     df, regime = _daily()
-    window = {ts.normalize() for ts in tail.index}
+    window = {pd.Timestamp(c["date"]) for c in candles}
     formed = []
     for name, spec in STRATEGY_REGISTRY.items():
         if name not in in_play:
@@ -126,14 +228,17 @@ def today_chart(sessions: int = 90) -> dict:
 
     return {
         "as_of": levels["session"],
-        "sessions": len(candles),
+        "timeframe": "4h",
+        "last_candle": candles[-1]["t"] if candles else None,
+        "sessions": len({c["date"] for c in candles}),
         "candles": candles,
         "levels": levels,
         "zones": zones,
         "formed": formed,
-        "live": {"provisional": True, **live} if live else None,
-        "source": "Yahoo daily, with missing or late sessions filled from NSE's index report",
-        "note": ("Shaded bands: where the next close would have to land for a pattern to form. Every pattern shown "
+        "live": live,
+        "source": "4-hour blocks from NIFTY's 15-minute bars: the local archive, and Yahoo's for days after it",
+        "note": ("Shaded bands: where the day's close (15:30) would have to land for a pattern to form; the patterns "
+                 "are decided on the daily close, not on a 4-hour one. Every pattern shown "
                  "was rejected on 2024-26 option data — a band is where a setup appears, not a reason to trade, and "
                  "the call above stays NO TRADE unless one clears the evidence bar."),
     }

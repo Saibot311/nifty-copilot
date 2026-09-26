@@ -281,8 +281,12 @@ export const fetchRecommendation = () => get<Recommendation>("/api/recommendatio
 export const fetchSnapshot = () => get<Snapshot>("/api/snapshot");
 export const fetchIndicators = () => get<Indicators>("/api/indicators");
 export type ChartCandle = {
-  date: string; open: number; high: number; low: number; close: number;
-  /** Computed in Python over the full history — the grid's own EMA values. */
+  /** The 4-hour block's start ("2026-09-25T13:15") and its day. */
+  t: string; date: string;
+  /** The 13:15 block, which ends at the 15:30 close the patterns are decided on. */
+  day_close: boolean;
+  open: number; high: number; low: number; close: number;
+  /** EMAs of the 4-hour closes, computed in Python over the full history. */
   ema20: number; ema50: number;
 };
 export type ChartZone = {
@@ -296,11 +300,14 @@ export type ChartZone = {
 };
 export type ChartData = {
   as_of: string; sessions: number; source: string; note: string;
+  timeframe: "4h"; last_candle: string | null;
   candles: ChartCandle[];
   levels: { session: string; prev_high: number; prev_low: number; last_close: number; reference: number };
   zones: ChartZone[];
   formed: { date: string; strategy: string; label: string; side: "call" | "put" }[];
-  live: { open: number; high: number; low: number; close: number; as_of: string; basis?: string; provisional: boolean } | null;
+  /** The 4-hour block still forming, following the live price. */
+  live: { t: string; date: string; open: number; high: number; low: number; close: number; as_of: string;
+          basis?: string; provisional: boolean } | null;
 };
 export const fetchChart = () => get<ChartData>("/api/chart");
 

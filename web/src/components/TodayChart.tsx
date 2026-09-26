@@ -42,7 +42,13 @@ const short = (label: string, max: number) => {
   return `${cut.slice(0, cut.lastIndexOf(" ") > 4 ? cut.lastIndexOf(" ") : cut.length)}…`;
 };
 
-type Bar = { date: string; open: number; high: number; low: number; close: number; ema20?: number; ema50?: number; live?: boolean };
+type Bar = { t: string; date: string; day_close?: boolean; open: number; high: number; low: number; close: number;
+  ema20?: number; ema50?: number; live?: boolean };
+
+/** "09:15–13:15" or "13:15–15:30" for a block's start. */
+const block = (t: string) => (t.slice(11, 16) === "13:15" ? "13:15–15:30" : "09:15–13:15");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const day = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
 
 export function TodayChart({ data }: { data: ChartData | null }) {
   const wrap = useRef<HTMLDivElement>(null);
@@ -67,7 +73,7 @@ export function TodayChart({ data }: { data: ChartData | null }) {
   const phone = w > 0 && w < 400;
   const n = phone ? 30 : w < 760 ? 45 : 60;
   const bars: Bar[] = data.candles.slice(-n);
-  if (data.live) bars.push({ date: data.live.as_of.slice(0, 10), open: data.live.open, high: data.live.high,
+  if (data.live) bars.push({ t: data.live.t, date: data.live.date, open: data.live.open, high: data.live.high,
     low: data.live.low, close: data.live.close, live: true });
 
   const ref = data.levels.reference;
@@ -148,10 +154,11 @@ export function TodayChart({ data }: { data: ChartData | null }) {
     e.preventDefault();
   };
   const hb = hover != null ? bars[hover] : null;
-  const hFormed = hb ? data.formed.filter((f) => f.date === hb.date).map((f) => f.label) : [];
+  // A pattern forms on the day's close, so it belongs to the block that ends there.
+  const hFormed = hb?.day_close ? data.formed.filter((f) => f.date === hb.date).map((f) => f.label) : [];
 
   const last = data.candles[data.candles.length - 1];
-  const summary = `NIFTY daily candles to the ${data.as_of} close, now ${fmt(ref)}. EMA20 ${fmt(last.ema20)}, EMA50 ${fmt(last.ema50)}. `
+  const summary = `NIFTY 4-hour candles to the ${last.date} ${block(last.t)} block, now ${fmt(ref)}. 4-hour EMA20 ${fmt(last.ema20)}, EMA50 ${fmt(last.ema50)}. `
     + `Previous session high ${fmt(data.levels.prev_high)}, low ${fmt(data.levels.prev_low)}. `
     + lanes.map((z) => `${z.label} (${z.side}) forms on a close ${z.condition} ${z.edge != null ? fmt(z.edge) : "here"}`).join("; ") + ".";
 
@@ -159,19 +166,19 @@ export function TodayChart({ data }: { data: ChartData | null }) {
     <Panel className="p-3">
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px]">
         <span className="text-zinc-400">
-          Daily · to the {data.as_of} close{data.live && <span className="text-zinc-300"> · today {data.live.provisional ? "live (provisional)" : "closed"}</span>}
+          4-hour · to {day(last.date)} {block(last.t)}{data.live && <span className="text-zinc-300"> · {block(data.live.t)} forming (provisional)</span>}
         </span>
         <span className="flex items-center gap-1.5 text-zinc-500">
-          <span className="inline-block h-0.5 w-4 rounded" style={{ background: EMA20 }} />EMA20{" "}
+          <span className="inline-block h-0.5 w-4 rounded" style={{ background: EMA20 }} />EMA20 (4h){" "}
           <span className="font-mono tabular-nums text-zinc-400">{fmt(last.ema20)}</span>
         </span>
         <span className="flex items-center gap-1.5 text-zinc-500">
-          <span className="inline-block h-0.5 w-4 rounded" style={{ background: EMA50 }} />EMA50{" "}
+          <span className="inline-block h-0.5 w-4 rounded" style={{ background: EMA50 }} />EMA50 (4h){" "}
           <span className="font-mono tabular-nums text-zinc-400">{fmt(last.ema50)}</span>
         </span>
         <span className="flex items-center gap-1.5 text-zinc-500">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: ZONE, opacity: 0.35 }} />
-          a pattern forms if the next close lands here
+          a pattern forms if the day&apos;s close lands here
         </span>
       </div>
 
@@ -190,7 +197,7 @@ export function TodayChart({ data }: { data: ChartData | null }) {
 
             {/* the next-close column: where each pattern would form */}
             <rect x={colL} y={padT} width={colW} height={H - padT - padB} fill="#18181b" opacity="0.6" rx="3" />
-            <text x={colL + colW / 2} y={padT - 6} fontSize="9.5" fill="#a1a1aa" textAnchor="middle">next close</text>
+            <text x={colL + colW / 2} y={padT - 6} fontSize="9.5" fill="#a1a1aa" textAnchor="middle">day&apos;s close</text>
             {lanes.map((z: ChartZone, k) => {
               const laneW = (colW - 6) / lanes.length;
               const lx = colL + 3 + k * laneW;
@@ -219,7 +226,7 @@ export function TodayChart({ data }: { data: ChartData | null }) {
               const color = b.close >= b.open ? UP : DOWN;
               const top = y(Math.max(b.open, b.close)), bot = y(Math.min(b.open, b.close));
               return (
-                <g key={b.date + (b.live ? "live" : "")} opacity={hover != null && hover !== i ? 0.55 : 1}>
+                <g key={b.t + (b.live ? "live" : "")} opacity={hover != null && hover !== i ? 0.55 : 1}>
                   <line x1={x(i)} x2={x(i)} y1={y(b.high)} y2={y(b.low)} stroke={color} strokeWidth="1" />
                   <rect x={x(i) - bw / 2} y={top} width={bw} height={Math.max(1, bot - top)}
                     fill={b.live ? "none" : color} stroke={color} strokeWidth={b.live ? 1.5 : 0}
@@ -250,7 +257,7 @@ export function TodayChart({ data }: { data: ChartData | null }) {
 
             {/* dates */}
             {bars.map((b, i) => (i % Math.ceil(bars.length / (phone ? 3 : 6)) === 0 ? (
-              <text key={`d${b.date}`} x={i === 0 ? plotL : x(i)} y={H - 5} fontSize="9.5" fill="#71717a"
+              <text key={`d${b.t}`} x={i === 0 ? plotL : x(i)} y={H - 5} fontSize="9.5" fill="#71717a"
                 textAnchor={i === 0 ? "start" : "middle"} fontFamily="ui-monospace, monospace">{b.date.slice(5)}</text>
             ) : null))}
 
@@ -265,8 +272,8 @@ export function TodayChart({ data }: { data: ChartData | null }) {
               return (
                 <g key={strategy}>
                   <line x1={plotL} x2={plotR} y1={cy} y2={cy} stroke="#27272a" />
-                  {bars.map((b, i) => (days.has(b.date) ? (
-                    <circle key={b.date} cx={x(i)} cy={cy} r={Math.min(3.2, slot / 2.4)} fill="#d4d4d8" />
+                  {bars.map((b, i) => (b.day_close && days.has(b.date) ? (
+                    <circle key={b.t} cx={x(i)} cy={cy} r={Math.min(3.2, slot / 2.4)} fill="#d4d4d8" />
                   ) : null))}
                   <text x={colL} y={cy + 3.5} fontSize="9.5" fill="#a1a1aa">{short(label, phone ? 17 : 26)}</text>
                 </g>
@@ -283,7 +290,7 @@ export function TodayChart({ data }: { data: ChartData | null }) {
         {hb && hover != null && (
           <div className="pointer-events-none absolute top-1 z-10 w-48 rounded-md border border-zinc-700 bg-zinc-900/95 px-2.5 py-2 text-[11px] leading-relaxed shadow-lg"
             style={{ left: Math.min(Math.max(x(hover) - 96, 0), Math.max(W - 196, 0)) }}>
-            <div className="text-zinc-300">{hb.date}{hb.live && (data.live?.provisional ? " · live, provisional" : " · today")}</div>
+            <div className="text-zinc-300">{day(hb.date)} · {block(hb.t)}{hb.live && " · forming, provisional"}</div>
             <div className="grid grid-cols-2 gap-x-2 font-mono tabular-nums">
               <span className="text-zinc-500">Open</span><span className="text-right text-zinc-100">{fmt(hb.open)}</span>
               <span className="text-zinc-500">High</span><span className="text-right text-zinc-100">{fmt(hb.high)}</span>

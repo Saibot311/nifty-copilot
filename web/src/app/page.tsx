@@ -156,7 +156,7 @@ export default async function Home() {
                   </div>
                 </section>
                 <section className="min-w-0 lg:col-span-5">
-                  <SectionLabel hint="and the closes that would form a pattern">Where NIFTY stands</SectionLabel>
+                  <SectionLabel hint="4-hour candles, and the day’s closes that would form a pattern">Where NIFTY stands</SectionLabel>
                   <TodayChart data={candles.data} />
                 </section>
               </div>
