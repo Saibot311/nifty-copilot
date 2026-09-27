@@ -8,6 +8,7 @@ import { NewsResearchCard } from "@/components/NewsResearchCard";
 import { OpenInterestCard } from "@/components/OpenInterestCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
+import { CourseResearchCard } from "@/components/CourseResearchCard";
 import { PatternTable } from "@/components/PatternTable";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { LivePatternsCard } from "@/components/LivePatternsCard";
@@ -34,6 +35,7 @@ import {
   fetchStructural,
   fetchIndices,
   fetchReplication,
+  fetchCourseResearch,
   fetchZerodhaStatus,
   fetchPaper,
   fetchIndicators,
@@ -79,6 +81,7 @@ export default async function Home() {
     optionChain,
     newsResearch,
     strategyFit,
+    courseResearch,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -105,6 +108,7 @@ export default async function Home() {
     fetchOptionsChain(),
     fetchNewsResearch(),
     fetchStrategyFit(),
+    fetchCourseResearch(),
   ]);
 
   const snap = snapshot.data;
@@ -239,6 +243,15 @@ export default async function Home() {
                     Does the news pay a buyer?
                   </SectionLabel>
                   <NewsResearchCard data={newsResearch.data} />
+                </section>
+              )}
+
+              {courseResearch.data && (
+                <section>
+                  <SectionLabel hint="your own strategies, tested the same way as everything else">
+                    Your course strategies
+                  </SectionLabel>
+                  <CourseResearchCard data={courseResearch.data} />
                 </section>
               )}
 

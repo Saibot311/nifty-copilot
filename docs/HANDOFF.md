@@ -77,6 +77,23 @@ every day. In a session, NSE's open/high/low/last become a provisional candle th
 includes, and the page refreshes the grid every minute; after the close, a session the daily file does
 not have yet is still counted from NSE's feed. Pre-open zeros are never a candle.
 
+**The user's course strategies (`backtest/course_strategies.py`, 2026-09-27).** Five intraday strategies from
+the user's Booming Bulls PDFs, pre-registered (hash `42e24490f0b52c4d`) with every "logical" stop, target and
+undefined term fixed before any run, and judged on a modelled option (Black-Scholes on the real 5/15-minute
+path, previous-session IV, real expiries, per-leg costs). 5-minute NIFTY bars back to 2015 were downloaded
+from Kite for it (with the user's approval). All five REJECTED; the family is now 58 (bar 3.13). Gap Fill was
+the only one profitable and ahead of its no-signal baseline in both periods (holdout +8.5% vs -0.1% a trade
+over 46 trades, t 1.51 against 3.33). TMS Pro beat its baseline strongly in development (t 4.27) and lost
+money in the holdout. A hand check of real trades found one implementation bug before the results were
+final — Gap Fill measured the 0.20% distance on either side of the previous close — fixed with a test; the
+registration was not changed. Trap Trading is an adaptation of a EURUSD/GBPUSD strategy, not the original.
+The Trap's 2024-26 loss suggested the opposite idea — afternoon breaks of the morning range keep going — so
+`backtest/breakout_research.py` pre-registered two versions (hash `bbe333f83a7202a8`) and judged them on
+2015-17, which no study had used (2018-26 is where the idea came from). Both REJECTED: the continuation beat
+its no-signal option in 2015-17 (-1.2% vs -3.0% a trade, t 1.89) but lost money; 338 of 479 breakouts closed
+back inside the range. The family is now 60 (bar 3.14). Both studies are on the Research tab ("Your course
+strategies", `/api/course_research`).
+
 **Indices now (Market tab, `/api/indices`, `market_data/indices_board.py`).** NIFTY and Bank Nifty from
 NSE, Sensex from Yahoo's 1-minute bars (every BSE endpoint answers 403), GIFT Nifty from NSE IX (it lists
 only NIFTY futures, so there is no GIFT Bank Nifty). It rides the live tick (every 2s open, 60s shut)

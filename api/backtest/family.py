@@ -4,7 +4,9 @@ count the recommendation's evidence bar is corrected for (I5).
 Every study that judged something on the holdout is counted, from what it
 actually stored rather than from a number typed into a file: the patterns
 with holdout trades, the pre-registered IV filter, the six structural
-tests, the replications on other indices, and the news-tone tests. Each was
+tests, the replications on other indices, the news-tone tests, and the
+five intraday strategies from the user's course and the two afternoon-breakout
+hypotheses that one of them suggested (2026-09-27). Each was
 another chance for luck to clear a bar, so each raises it for all of them.
 
 This used to be `structural_research.holdout_tests_judged`, which stopped at
@@ -21,6 +23,8 @@ clear *now*, and it only ever goes up.
 
 def holdout_family(pattern_research: dict | None) -> dict:
     """{family: hypotheses judged} plus "total"."""
+    from .breakout_research import load_breakout_research
+    from .course_strategies import load_course_research
     from .iv_research import load_iv_research
     from .news_research import load_news_research
     from .replication import load_replication
@@ -43,5 +47,7 @@ def holdout_family(pattern_research: dict | None) -> dict:
         "structural": _count(load_structural_research),
         "replication": _count(load_replication),
         "news_tone": _count(load_news_research),
+        "course": _count(load_course_research),
+        "breakout": _count(load_breakout_research),
     }
     return {**family, "total": sum(family.values())}

@@ -98,15 +98,20 @@ def test_the_bar_counts_every_hypothesis_that_has_looked_at_the_holdout(wire, mo
     monkeypatch.setattr(sr, "load_structural_research", lambda: {"hypotheses": [{}] * 6})
     monkeypatch.setattr(rp, "load_replication", lambda: {"hypotheses": [{}] * 22})
     monkeypatch.setattr(nr, "load_news_research", lambda: {"hypotheses": [{}] * 5})
+    import backtest.course_strategies as cs
+    monkeypatch.setattr(cs, "load_course_research", lambda: {"hypotheses": [{}] * 5})
+    import backtest.breakout_research as brk
+    monkeypatch.setattr(brk, "load_breakout_research", lambda: {"hypotheses": [{}] * 2})
     research = {"patterns": [{"strategy": f"p{i}", "status": "REJECTED", "holdout": {"num_trades": 12}} for i in range(19)]
                 + [{"strategy": "never_formed", "status": "REJECTED", "holdout": {"num_trades": 0}}]}
     wire(_prox(), research)
     from backtest.family import holdout_family
     monkeypatch.setattr(rec_mod, "holdout_family", holdout_family)  # the real count, not the fixture's
     bar = rec_mod.build_recommendation()["evidence_bar"]
-    assert bar["tests_judged"] == 19 + 1 + 6 + 22 + 5 == 53
-    assert bar["min_t"] == required_t(53) == 3.11
-    assert bar["family"] == {"patterns": 19, "iv_filter": 1, "structural": 6, "replication": 22, "news_tone": 5}
+    assert bar["tests_judged"] == 19 + 1 + 6 + 22 + 5 + 5 + 2 == 60
+    assert bar["min_t"] == required_t(60)
+    assert bar["family"] == {"patterns": 19, "iv_filter": 1, "structural": 6, "replication": 22, "news_tone": 5,
+                             "course": 5, "breakout": 2}
 
 
 def test_after_the_close_the_next_close_is_not_called_the_next_one(wire, monkeypatch):

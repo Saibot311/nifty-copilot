@@ -768,6 +768,40 @@ def replication() -> dict:
         "unit": r["preregistered"]["unit"]}
 
 
+def _period(p: dict | None) -> dict | None:
+    if not p or not p.get("num_trades"):
+        return None
+    keep = ("num_trades", "mean_pct", "median_pct", "win_rate", "baseline_mean_pct", "t_vs_baseline",
+            "index_points_mean", "index_win_rate")
+    return {k: p.get(k) for k in keep}
+
+
+@app.get("/api/course_research")
+def course_research() -> dict:
+    """The user's five course strategies and the afternoon-breakout pair one
+    of them suggested, each judged on a modelled bought option against the
+    same option bought at the same times with no signal. Saved by
+    scripts/course_strategies.py and scripts/breakout_research.py."""
+    from backtest.breakout_research import load_breakout_research
+    from backtest.course_strategies import load_course_research
+    course, breakout = load_course_research(), load_breakout_research()
+    if course is None:
+        raise HTTPException(503, "Course strategies not run yet — python scripts/course_strategies.py")
+    rows = [{"name": h["name"], "label": h["label"], "verdict": h["verdict"], "reason": h["reason"],
+             "required_t": h["required_t"], "timeframe": course["preregistered"]["hypotheses"][h["name"]]["timeframe"],
+             "judged": "2024–26", "periods": {"2018–23": _period(h["development"]), "2024–26": _period(h["holdout"])}}
+            for h in course["hypotheses"]]
+    if breakout:
+        rows += [{"name": h["name"], "label": h["label"], "verdict": h["verdict"], "reason": h["reason"],
+                  "required_t": h["required_t"], "timeframe": "5m", "judged": "2015–17",
+                  "periods": {"2015–17": _period(h["confirmation"]), "2018–23": _period(h["discovery_split"]["2018-23"]),
+                              "2024–26": _period(h["discovery_split"]["2024-26"])}}
+                 for h in breakout["hypotheses"]]
+    return {"computed_at": course["computed_at"], "prereg": {"course": course["prereg_hash"],
+            "breakout": breakout["prereg_hash"] if breakout else None},
+            "tests_in_family": (breakout or course)["tests_in_family"], "rows": rows}
+
+
 @app.get("/api/structural")
 def structural() -> dict:
     """Six pre-registered ideas about market structure — volatility pricing,

@@ -967,6 +967,23 @@ export type Replication = {
 
 export const fetchReplication = () => get<Replication>("/api/replication");
 
+export type CoursePeriod = {
+  num_trades: number; mean_pct: number; median_pct: number; win_rate: number;
+  baseline_mean_pct: number | null; t_vs_baseline: number | null;
+  index_points_mean: number | null; index_win_rate: number | null;
+};
+export type CourseRow = {
+  name: string; label: string; verdict: "APPROVED" | "CONDITIONAL" | "REJECTED"; reason: string;
+  required_t: number | null; timeframe: string;
+  /** The period the verdict rests on: 2024–26 for the course, 2015–17 for the breakout pair. */
+  judged: string;
+  periods: Record<string, CoursePeriod | null>;
+};
+export type CourseResearch = {
+  computed_at: string; prereg: { course: string; breakout: string | null }; tests_in_family: number; rows: CourseRow[];
+};
+export const fetchCourseResearch = () => get<CourseResearch>("/api/course_research");
+
 export type LoginDay = {
   trade_date: string;
   status: "LOGGED_IN" | "PROMPTED" | "MISSING";

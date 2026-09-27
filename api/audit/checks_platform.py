@@ -107,7 +107,7 @@ ENDPOINTS = [
     "/api/briefing", "/api/options/chain", "/api/options/archive", "/api/live", "/api/recommendation",
     "/api/forward_log", "/api/bars/archive", "/api/patterns/options", "/api/patterns/today",
     "/api/live/patterns", "/api/similarity", "/api/intraday/research", "/api/copilot/status",
-    "/api/copilot/record", "/api/copilot/composed", "/api/zerodha/status",
+    "/api/copilot/record", "/api/copilot/composed", "/api/zerodha/status", "/api/course_research",
 ]
 
 
