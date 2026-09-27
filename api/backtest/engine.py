@@ -14,6 +14,10 @@ session later than both, so the same words described two different trades.
 
 A trade that cannot complete its hold before the data ends is not a trade:
 it is dropped rather than closed early and counted as if it had run.
+
+Each trade pays its own costs: both legs on their own prices, at the rates
+in force on their own dates (costs.py). Until 2026-09-27 every trade paid
+one flat round trip, whatever its date or direction.
 """
 
 from dataclasses import dataclass
@@ -49,7 +53,6 @@ def run_backtest(
         raise ValueError("df, entry_signal, and regime_series must be the same length and aligned.")
 
     cost_model = cost_model or CostModel()
-    round_trip_cost = cost_model.round_trip_cost_pct()
     sign = 1 if direction == "long" else -1
 
     trades: list[Trade] = []
@@ -67,12 +70,14 @@ def run_backtest(
 
             entry_price = float(df["open"].iloc[entry_idx])
             exit_price = float(df["close"].iloc[exit_idx])
+            entry_date, exit_date = str(df.index[entry_idx].date()), str(df.index[exit_idx].date())
             gross_return_pct = (exit_price - entry_price) / entry_price * 100 * sign
+            round_trip_cost = cost_model.cost_pct(entry_price, exit_price, entry_date, exit_date, direction)
             net_return_pct = gross_return_pct - round_trip_cost
 
             trades.append(Trade(
-                entry_date=str(df.index[entry_idx].date()),
-                exit_date=str(df.index[exit_idx].date()),
+                entry_date=entry_date,
+                exit_date=exit_date,
                 direction=direction,
                 entry_price=round(entry_price, 2),
                 exit_price=round(exit_price, 2),
