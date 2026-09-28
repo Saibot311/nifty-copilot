@@ -41,13 +41,14 @@ def test_nothing_may_be_opened_for_a_session_before_observation_began():
 
 def test_costs_are_charged_on_paper_exactly_as_in_the_backtests():
     from backtest.options_engine import OptionsCostModel
-    assert paper.COST_FRACTION == OptionsCostModel().round_trip_cost_fraction()
-    pnl = paper._pnl({**_row(), "status": "CLOSED", "exit_premium": 130.0, "mark_premium": 130.0,
-                      "cost_model": paper.SPLIT, "entry_cost_rs": None, "exit_cost_rs": None})
+    pnl = paper._pnl({**_row(), "status": "CLOSED", "exit_date": "2026-09-28", "exit_premium": 130.0,
+                      "mark_premium": 130.0, "cost_model": paper.RATE_CARD, "entry_cost_rs": None,
+                      "exit_cost_rs": None})
     assert pnl["gross_pct"] == 30.0
-    # The backtests charge each leg on its own premium; a paper result has to
-    # be comparable with a researched one, so this matches options_engine.
-    assert pnl["net_pct"] == pytest.approx(30.0 - OptionsCostModel().cost_pct(100.0, 130.0), abs=0.01)
+    # The backtests charge each leg on its own premium and day; a paper result
+    # has to be comparable with a researched one, so this matches options_engine.
+    assert pnl["net_pct"] == pytest.approx(
+        30.0 - OptionsCostModel().cost_pct(100.0, 130.0, "2026-09-23", "2026-09-28"), abs=0.01)
     assert pnl["profit_rs"] == round(100.0 * 65 * pnl["net_pct"] / 100)
     assert pnl["realised"] is True
 
@@ -111,18 +112,29 @@ def test_observe_is_safe_to_run_twice(monkeypatch):
 # --- allocated funds, sizing, and the "take something every day" policy -------
 
 def test_nothing_is_sized_against_money_that_was_never_allocated():
-    assert paper._lots_for(premium=150.0, cash=0, book_rs=0) == 0
+    assert paper._lots_for(premium=150.0, cash=0, book_rs=0, on="2026-09-25") == 0
 
 
 def test_a_position_never_takes_more_than_the_per_trade_share():
-    lots = paper._lots_for(premium=150.0, cash=1_000_000, book_rs=100_000)
-    per_lot = 150.0 * 65 * (1 + paper.COST_FRACTION)
-    assert lots == int(100_000 * paper.MAX_PER_TRADE // per_lot)
-    assert lots * per_lot <= 100_000 * paper.MAX_PER_TRADE
+    lots = paper._lots_for(premium=150.0, cash=1_000_000, book_rs=100_000, on="2026-09-25")
+    cap = 100_000 * paper.MAX_PER_TRADE
+    assert lots > 0
+    assert paper._lot_cost(150.0, lots, "2026-09-25") <= cap < paper._lot_cost(150.0, lots + 1, "2026-09-25")
 
 
 def test_whole_lots_only_and_a_premium_that_does_not_fit_is_skipped():
-    assert paper._lots_for(premium=3000.0, cash=100_000, book_rs=100_000) == 0  # a lot costs ~Rs 195k
+    assert paper._lots_for(premium=3000.0, cash=100_000, book_rs=100_000, on="2026-09-25") == 0  # ~Rs 195k a lot
+
+
+def test_a_lot_that_fits_only_before_its_costs_does_not_fit():
+    """Brokerage is rupees an order, so a lot has to leave room for both
+    orders' charges as well as the premium."""
+    from backtest.options_engine import OptionsCostModel
+    m, day = OptionsCostModel(), "2026-09-25"
+    assert paper._lot_cost(100.0, 1, day) == pytest.approx(
+        100.0 * 65 + m.buy_cost_rs(100.0, 65, day) + m.sell_cost_rs(100.0, 65, day))
+    just_the_premium = 100.0 * 65 + 50
+    assert paper._lots_for(premium=100.0, cash=just_the_premium, book_rs=1_000_000, on=day) == 0
 
 
 def test_funds_can_be_added_and_taken_back():
@@ -186,7 +198,7 @@ def test_the_daily_trade_is_in_the_money_on_whichever_side_it_takes():
 def test_the_per_trade_cap_leaves_room_for_a_whole_in_the_money_lot():
     # One 2% in-the-money lot ran about Rs 28,000 at 23,329; a 20% cap on a
     # Rs 1,00,000 book would have meant the daily trade never opened.
-    assert paper._lots_for(premium=422.4, cash=100_000, book_rs=100_000) >= 1
+    assert paper._lots_for(premium=422.4, cash=100_000, book_rs=100_000, on="2026-09-25") >= 1
 
 
 def test_it_follows_the_firing_signal_with_the_most_evidence(monkeypatch):
@@ -283,14 +295,14 @@ def test_a_second_pattern_the_same_session_is_passed_over_not_opened(monkeypatch
 # --- money in, money out, and the drive that must stay contained ------------
 
 def test_a_win_raises_the_next_position_and_a_loss_lowers_it():
-    at_start = paper._lots_for(premium=150.0, cash=100_000, book_rs=100_000)
-    after_win = paper._lots_for(premium=150.0, cash=150_000, book_rs=150_000)
-    after_loss = paper._lots_for(premium=150.0, cash=50_000, book_rs=50_000)
+    at_start = paper._lots_for(premium=150.0, cash=100_000, book_rs=100_000, on="2026-09-25")
+    after_win = paper._lots_for(premium=150.0, cash=150_000, book_rs=150_000, on="2026-09-25")
+    after_loss = paper._lots_for(premium=150.0, cash=50_000, book_rs=50_000, on="2026-09-25")
     assert after_win > at_start > after_loss >= 0
 
 
 def test_a_broke_book_cannot_trade():
-    assert paper._lots_for(premium=150.0, cash=0, book_rs=-500) == 0
+    assert paper._lots_for(premium=150.0, cash=0, book_rs=-500, on="2026-09-25") == 0
 
 
 def test_the_curve_adds_a_win_and_subtracts_a_loss():
@@ -488,17 +500,41 @@ def test_a_position_closing_at_this_close_does_not_block_the_next(monkeypatch):
 # --- each leg on its own premium (decided 2026-09-24) -------------------------
 
 def test_a_new_position_pays_the_sale_on_what_it_sells_for():
-    """Opened from 2026-09-24: the buy leg is charged on entry, the sell leg
-    on the exit (or, while open, on the mark it would be sold at)."""
-    paper_db.open_position(_row(lots=1, entry_cost_rs=round(100.0 * 65 * paper.BUY_FRACTION, 2),
-                                cost_model=paper.SPLIT))
+    """The buy leg is charged on entry, the sell leg on the exit (or, while
+    open, on the mark it would be sold at) — in rupees, on the lots held, at
+    the rates of each leg's day."""
+    from backtest.options_engine import OptionsCostModel
+    m = OptionsCostModel()
+    paper_db.open_position(_row(lots=2, entry_cost_rs=round(m.buy_cost_rs(100.0, 130, "2026-09-23"), 2),
+                                cost_model=paper.RATE_CARD))
     t = paper_db.all_trades()[0]
     open_pnl = paper._pnl({**t, "mark_premium": 300.0})
-    expected = (300.0 - 100.0) * 65 - 100.0 * 65 * paper.BUY_FRACTION - 300.0 * 65 * paper.SELL_FRACTION
+    expected = (300.0 - 100.0) * 130 - m.buy_cost_rs(100.0, 130, "2026-09-23") - m.sell_cost_rs(300.0, 130, "2026-09-28")
     assert open_pnl["profit_rs"] == round(expected)
-    paper_db.close_position(t["id"], "2026-09-28", 300.0, exit_cost_rs=paper._exit_costs(300.0, 1))
+    paper_db.close_position(t["id"], "2026-09-28", 300.0, exit_cost_rs=paper._exit_costs(t, 300.0, "2026-09-28"))
     closed = paper._pnl(paper_db.all_trades()[0])
     assert closed["profit_rs"] == round(expected) and closed["realised"]
+
+
+def test_the_book_values_an_open_position_net_of_the_sale_it_would_take():
+    from backtest.options_engine import OptionsCostModel
+    paper_db.add_funds(100_000)
+    paper_db.open_position(_row(lots=2, entry_cost_rs=200.0, cost_model=paper.RATE_CARD))
+    t = paper_db.all_trades()[0]
+    book = paper.cash_and_equity({t["id"]: 150.0})
+    sale = OptionsCostModel().sell_cost_rs(150.0, 130, "2026-09-27")
+    assert book["open_positions_value_rs"] == round(150.0 * 130 - sale)
+
+
+def test_positions_opened_between_2026_09_24_and_27_keep_the_fractions_they_were_charged():
+    """Rows are never rewritten, and a row is never read under a convention
+    it was not opened with: a 'split' row's sale is charged at the old
+    model's flat 1.6944% of what it sells for, as its purchase was at 1.5974%."""
+    paper_db.open_position(_row(lots=7, entry_premium=37.3, entry_cost_rs=271.1, cost_model=paper.SPLIT))
+    t = paper_db.all_trades()[0]
+    pnl = paper._pnl({**t, "mark_premium": 40.0})
+    assert pnl["profit_rs"] == round((40.0 - 37.3) * 455 - 271.1 - 40.0 * 455 * 0.016944)
+    assert paper._exit_costs(t, 40.0, "2026-09-30") == pytest.approx(40.0 * 455 * 0.016944)
 
 
 def test_positions_recorded_before_the_change_keep_their_own_costs():
@@ -509,6 +545,8 @@ def test_positions_recorded_before_the_change_keep_their_own_costs():
     assert t["cost_model"] is None
     pnl = paper._pnl({**t, "mark_premium": 130.0})
     assert pnl["profit_rs"] == round(30.0 * 65 - paper._costs(100.0, 1))
+    assert paper._costs(100.0, 1) == pytest.approx(100.0 * 65 * 0.032918)   # the old round trip, frozen
+    assert paper._exit_costs(t, 130.0, "2026-09-28") == 0.0                   # paid in full at entry
 
 
 # --- the strike the money allows (asked for on 2026-09-24) --------------------

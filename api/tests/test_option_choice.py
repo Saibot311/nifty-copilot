@@ -76,6 +76,21 @@ def test_the_menu_is_judged_on_2018_to_2023_only(monkeypatch, tmp_path):
     assert oc.baseline_menu("CE", 7, 5) == menu  # cached: the development period does not change
 
 
+def test_a_menu_cached_under_an_older_cost_model_is_recomputed(monkeypatch, tmp_path):
+    """The menu is a median of returns after costs, so it is only as current
+    as the cost model it was computed under — the rate card of 2026-09-27
+    moved every one of them."""
+    import json
+    path = tmp_path / "menu.json"
+    path.write_text(json.dumps({"CE:7:5": [{"moneyness_pct": 0.0, "label": "ATM", "dev_trades": 246,
+                                            "dev_median_pct": -22.6, "dev_mean_pct": 3.7}]}))
+    monkeypatch.setattr(oc, "MENU_PATH", path)
+    T = lambda r, exit_date: type("T", (), {"net_return_pct": r, "exit_date": exit_date, "entry_premium": 100.0})()
+    monkeypatch.setattr(oc, "_trades", lambda option_type, m, dte, hold: [T(-10.0, "2020-01-10")] * 40)
+    menu = oc.baseline_menu("CE", 7, 5)
+    assert len(menu) == 5 and all(c["dev_median_pct"] == -10.0 for c in menu)
+
+
 def test_a_patterns_menu_keeps_its_tested_expiry_and_hold():
     row = {"suggested_option": {"moneyness_pct": -2.0, "min_days_to_expiry": 7, "hold_days": 5},
            "dev_grid": [{"m": m, "dte": dte, "hold": hold, "num_trades": 12, "median_return_pct": -m,

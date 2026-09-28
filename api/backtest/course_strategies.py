@@ -580,7 +580,7 @@ class OptionModel:
         p_out = bs_price(side, spot_out, strike, self.years(exit_ts, exp), vol)
         if p_in <= 0.5:
             return None
-        ret = (p_out / p_in - 1) * 100 - self.cost.cost_pct(p_in, p_out)
+        ret = (p_out / p_in - 1) * 100 - self.cost.cost_pct(p_in, p_out, d, exit_ts.date())
         return {"strike": strike, "expiry": exp.isoformat(), "premium_in": round(p_in, 2),
                 "premium_out": round(p_out, 2), "iv": round(vol, 4), "option_pct": round(ret, 3)}
 

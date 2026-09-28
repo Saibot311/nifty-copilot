@@ -20,6 +20,7 @@ Two honest limitations, stated because they materially affect results:
      liquidity floor are rejected rather than silently used.
 """
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date
 
@@ -28,41 +29,122 @@ import pandas as pd
 from storage import connect
 
 
+# Current NIFTY lot size, read from Kite's instrument list on 2026-09-18.
+# It has changed over the years; rupee figures use today's size so they
+# answer "what would one lot make now", not what it made historically. The
+# cost model charges brokerage per order, so it needs it too.
+LOT_SIZE = 65
+# Today's lot on the other indices the research replicates on, by the same
+# convention: NSE's F&O lot file (fo_mktlots.csv) for BANKNIFTY and MIDCPNIFTY,
+# checked 2026-09-27; SENSEX, a BSE contract, from brokers' notices of BSE's
+# October 2024 revision.
+LOT_SIZES = {"NIFTY": LOT_SIZE, "BANKNIFTY": 30, "MIDCPNIFTY": 120, "SENSEX": 20}
+
+
+# When the cost model's rates were last checked against the broker's and the
+# exchange's. Anything stored from its output is keyed by it, so a change to
+# the model cannot leave a cached result on the old one.
+COSTS_VERSION = "2026-09-27"
+
+# Securities Transaction Tax on the sale of an option, as a fraction of the
+# premium, from the day each rate took effect — each from the NSE circular that
+# announced it. Before the first date no rate was verified, and none is guessed.
+STT_ON_OPTION_SALE = (
+    ("2014-10-01", 0.00017),   # set in 2008; restated by NSE/FATAX/27711
+    ("2016-06-01", 0.0005),    # Finance Act 2016 — NSE/FATAX/32385
+    ("2023-04-01", 0.000625),  # Finance Act 2023 — NSE/FATAX/56235
+    ("2024-10-01", 0.001),     # Finance (No. 2) Act 2024 — NSE/FATAX/63809
+    ("2026-04-01", 0.0015),    # Finance Act 2026 — NSE/FATAX/73524
+)
+# NSE's options transaction charge, a fraction of premium on each leg. Until
+# October 2024 a volume-slab card, of which brokers passed on about Rs 50 a lakh
+# (Rs 53 from 2021 to March 2023: 0.003%, not modelled). Since then one rate for
+# every member (NSE/FA/64232), Rs 3,503 a crore plus Rs 50 to NSE's IPFT — one
+# Rs 3,553 charge from 2026-03-01, the same total (NSE/FA/73061).
+EXCHANGE_CHARGE_ON_OPTIONS = (
+    ("2014-10-01", 0.0005),
+    ("2024-10-01", 0.0003553),
+)
+
+
+def _in_force(schedule: tuple, day) -> float:
+    """The rate in force on `day` — an ISO date string, a date or a timestamp."""
+    key = str(day)[:10]
+    if key < schedule[0][0]:
+        raise ValueError(f"no verified rate before {schedule[0][0]} (asked for {key})")
+    return schedule[bisect_right([d for d, _ in schedule], key) - 1][1]
+
+
 @dataclass
 class OptionsCostModel:
-    """Approximate NSE index-options costs. Percentages apply to PREMIUM,
-    not notional — options costs scale with premium, which is why they bite
-    so much harder proportionally than futures costs do."""
-    brokerage_pct: float = 0.0003      # discount-broker flat fee, approximated as % of premium
-    stt_pct_sell: float = 0.001        # STT on sell-side premium
-    exchange_txn_pct: float = 0.0005   # NSE options transaction charges (much higher than futures)
-    gst_pct: float = 0.18
-    stamp_duty_pct: float = 0.00003    # buy side only
+    """What an NSE index option costs a buyer, each leg at the statutory rates
+    in force on its own date and a discount broker's charges (Zerodha's rate
+    card, checked 2026-09-27). Brokerage is rupees an order; everything else
+    scales with premium, so costs bite hardest on a cheap option.
+
+    Until 2026-09-27 brokerage was 0.03% of premium and STT and the exchange
+    charge were fixed at 0.10% and 0.05%: about Rs 19 a lot at a Rs 100
+    premium, before slippage, where the published rates come to about Rs 63.
+
+    Not modelled: STT on an option held to expiry and exercised (0.125% of
+    intrinsic value, 0.15% from 2026-04-01), since nothing here holds to
+    expiry; stamp duty's state rates before July 2020; an order split at the
+    exchange's freeze quantity."""
+    brokerage_per_order_rs: float = 20.0
+    gst_pct: float = 0.18                # on brokerage, exchange and SEBI charges
+    sebi_fee_pct: float = 0.000001       # Rs 10 a crore, each leg
+    stamp_duty_pct: float = 0.00003      # buy side only
     premium_slippage_pct: float = 0.015  # bid-ask reality, each side
+    # None: each leg pays the rates in force on its own date. A date pins every
+    # leg to that day's rates, to ask what a history would cost today.
+    rates_as_of: str | None = None
 
-    def buy_fraction(self) -> float:
-        """The buying leg, as a fraction of the premium paid."""
-        return (self.brokerage_pct + self.exchange_txn_pct + self.stamp_duty_pct + self.premium_slippage_pct
-                + self.gst_pct * (self.brokerage_pct + self.exchange_txn_pct))
+    def stt_sell_rate(self, on: date | str) -> float:
+        return _in_force(STT_ON_OPTION_SALE, self.rates_as_of or on)
 
-    def sell_fraction(self) -> float:
-        """The selling leg — STT, slippage, fees — as a fraction of the
-        premium *received*."""
-        return (self.brokerage_pct + self.exchange_txn_pct + self.stt_pct_sell + self.premium_slippage_pct
-                + self.gst_pct * (self.brokerage_pct + self.exchange_txn_pct))
+    def exchange_rate(self, on: date | str) -> float:
+        return _in_force(EXCHANGE_CHARGE_ON_OPTIONS, self.rates_as_of or on)
 
-    def round_trip_cost_fraction(self) -> float:
+    def _fees_rs(self, value: float, on: date | str) -> float:
+        """One order's brokerage, exchange and SEBI charges, and GST on them."""
+        return (self.brokerage_per_order_rs + value * (self.exchange_rate(on) + self.sebi_fee_pct)) * (1 + self.gst_pct)
+
+    def buy_cost_rs(self, premium: float, quantity: int, on: date | str) -> float:
+        """The buying leg in rupees: `quantity` units in one order on `on`."""
+        value = premium * quantity
+        return self._fees_rs(value, on) + value * (self.stamp_duty_pct + self.premium_slippage_pct)
+
+    def sell_cost_rs(self, premium: float, quantity: int, on: date | str) -> float:
+        """The selling leg in rupees — STT, slippage, fees — on what it sold
+        for. A sale that would cost more than it fetches is not made: the buyer
+        lets the option lapse, paying nothing and receiving nothing."""
+        value = premium * quantity
+        cost = self._fees_rs(value, on) + value * (self.stt_sell_rate(on) + self.premium_slippage_pct)
+        return min(cost, value)
+
+    def round_trip_cost_fraction(self, premium: float, on: date | str, quantity: int = LOT_SIZE) -> float:
         """Both legs of a trade that sells at what it paid, as a fraction of
-        premium: ~3.3%. The reference figure, and the sizing reserve."""
-        return self.buy_fraction() + self.sell_fraction()
+        premium: ~4% for a lot at Rs 100 today. The reference figure, and the
+        sizing reserve."""
+        return (self.buy_cost_rs(premium, quantity, on) + self.sell_cost_rs(premium, quantity, on)) \
+            / (premium * quantity)
 
-    def cost_pct(self, entry_premium: float, exit_premium: float) -> float:
+    def summary(self, on: date | str) -> str:
+        """The rate card in force on `on`, in words, for a page to state."""
+        pct = lambda f: f"{f * 100:.3g}%"  # noqa: E731
+        return (f"₹{self.brokerage_per_order_rs:g} an order plus {pct(self.gst_pct)} GST, "
+                f"{pct(self.stt_sell_rate(on))} STT on the sale, {pct(self.exchange_rate(on))} exchange charges "
+                f"and {pct(self.premium_slippage_pct)} slippage each way")
+
+    def cost_pct(self, entry_premium: float, exit_premium: float, entry_date: date | str, exit_date: date | str,
+                 quantity: int = LOT_SIZE) -> float:
         """A trade's actual costs as a % of the premium paid, each leg on its
-        own premium. Until 2026-09-24 the whole round trip was charged on the
-        entry premium, so a trade that tripled paid a third of its real exit
-        costs (3.3% where ~7% was due) and one that expired worthless paid
-        exit costs on a sale that never happened. Winners were flattered."""
-        return (entry_premium * self.buy_fraction() + exit_premium * self.sell_fraction()) / entry_premium * 100
+        own premium and date; one lot unless told otherwise. Until 2026-09-24
+        the whole round trip was charged on the entry premium, so a trade that
+        tripled paid a third of its real exit costs and one that expired
+        worthless paid exit costs on a sale that never happened."""
+        return (self.buy_cost_rs(entry_premium, quantity, entry_date)
+                + self.sell_cost_rs(exit_premium, quantity, exit_date)) / (entry_premium * quantity) * 100
 
 
 @dataclass
@@ -144,6 +226,7 @@ def run_options_backtest(
     cost_model: OptionsCostModel | None = None,
     strike_offset_pct: float | None = None,
     db_path=None,
+    quantity: int = LOT_SIZE,
 ) -> list[OptionTrade]:
     """For each signal date, buy one option and hold it `hold_days` trading
     days. Entry is at the *close* of the session after the signal: the
@@ -158,7 +241,10 @@ def run_options_backtest(
 
     `strike_offset_pct`, if given, overrides `strike_offset_pts` with a
     per-trade offset of that % of spot, so "1% OTM" means the same thing in
-    2018 (spot ~10k) as in 2026 (spot ~23k)."""
+    2018 (spot ~10k) as in 2026 (spot ~23k).
+
+    `quantity` is the units in each order — one lot of the archive's index —
+    which a flat per-order brokerage needs to be a share of the premium."""
     cost_model = cost_model or OptionsCostModel()
     day_index = {d: i for i, d in enumerate(trading_days)}
 
@@ -207,7 +293,7 @@ def run_options_backtest(
                 continue
 
             gross = (exit_premium - entry_premium) / entry_premium * 100
-            cost = cost_model.cost_pct(entry_premium, exit_premium)
+            cost = cost_model.cost_pct(entry_premium, exit_premium, entry_date, exit_date, quantity)
             trades.append(OptionTrade(
                 entry_date=entry_date,
                 exit_date=exit_date,

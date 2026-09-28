@@ -25,7 +25,7 @@ import statistics
 from pathlib import Path
 
 from backtest import pattern_options as po
-from backtest.options_engine import select_contract
+from backtest.options_engine import COSTS_VERSION, select_contract
 
 MENU_PATH = Path(__file__).parent.parent / "data" / "option_menu.json"
 MIN_TRADES = 30          # a no-signal menu entry needs at least this many 2018-23 trades
@@ -48,8 +48,8 @@ def baseline_menu(option_type: str, dte: int, hold: int) -> list[dict]:
     """The research grid's strikes, each with how its no-signal buys did on
     2018-23. Trades that finish on or after the split are dropped (the same
     purge as the research), and the result is stored: the development
-    period is fixed, so it only ever needs computing once."""
-    key = f"{option_type}:{dte}:{hold}"
+    period is fixed, so it only needs computing once per cost model."""
+    key = f"{option_type}:{dte}:{hold}:costs {COSTS_VERSION}"
     try:
         stored = json.loads(MENU_PATH.read_text())
     except Exception:

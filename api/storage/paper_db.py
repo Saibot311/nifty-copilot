@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     -- book, because the book takes one position a session and a benchmark
     -- must not be able to take that slot.
     funded        INTEGER NOT NULL DEFAULT 1,
-    cost_model    TEXT,               -- NULL: round trip at entry (pre 2026-09-24); 'split': each leg on its premium
+    cost_model    TEXT,               -- NULL: round trip at entry (pre 2026-09-24); 'split': each leg on its premium;
+                                      -- 'rate_card': each leg in rupees at its own day's rates (from 2026-09-27)
     UNIQUE (strategy, signal_date, source)
 );
 
@@ -93,7 +94,8 @@ _MIGRATIONS = (
     ("exit_cost_rs", "REAL"),
     ("funded", "INTEGER NOT NULL DEFAULT 1"),
     # NULL: the whole round trip was charged at entry (rows before
-    # 2026-09-24). 'split': each leg on its own premium.
+    # 2026-09-24). 'split': each leg on its own premium. 'rate_card': each leg
+    # in rupees at its own day's rates (from 2026-09-27).
     ("cost_model", "TEXT"),
 )
 

@@ -33,7 +33,7 @@ from pathlib import Path
 import pandas as pd
 
 from .hypothesis_log import log_run
-from .options_engine import run_options_backtest
+from .options_engine import LOT_SIZE, run_options_backtest
 from .pattern_info import PATTERN_INFO
 from .strategies import STRATEGY_REGISTRY, load_daily_data
 from stats.bootstrap import difference_ci, mean_ci
@@ -48,11 +48,6 @@ OPTIONS_START = "2018-01-01"
 SPLIT_DATE = "2024-01-01"  # ~6 years to choose on, ~2.7 years to judge on
 MIN_DEV_TRADES = 10
 MIN_HOLDOUT_TRADES = 15
-
-# Current NIFTY lot size, read from Kite's instrument list on 2026-09-18.
-# It has changed over the years; rupee figures use today's size so they
-# answer "what would one lot make now", not what it made historically.
-LOT_SIZE = 65
 
 RESEARCH_PATH = Path(__file__).parent.parent / "data" / "pattern_options.json"
 

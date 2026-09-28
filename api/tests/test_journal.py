@@ -20,12 +20,35 @@ def tmp_journal(tmp_path, monkeypatch):
 
 
 def test_profit_is_computed_after_the_backtests_cost_model():
-    e = {"decision": "TOOK", "entry_premium": 100.0, "exit_premium": 130.0, "quantity": 65}
+    from backtest.options_engine import OptionsCostModel
+    e = {"decision": "TOOK", "trade_date": "2026-03-31", "exit_date": "2026-04-01",
+         "entry_premium": 100.0, "exit_premium": 130.0, "quantity": 65}
     p = journal.pnl(e)
     assert p["gross_rs"] == 1950
-    # Each leg on its own premium: the buy on 100, the sale on 130.
-    assert p["costs_rs"] == round((journal.BUY_FRACTION * 100 + journal.SELL_FRACTION * 130) * 65)
+    # Each leg on its own premium and day: the buy on 100 under the old STT,
+    # the sale on 130 under the Finance Act 2026's.
+    m = OptionsCostModel()
+    assert p["costs_rs"] == round(m.buy_cost_rs(100, 65, "2026-03-31") + m.sell_cost_rs(130, 65, "2026-04-01"))
     assert p["net_rs"] == p["gross_rs"] - p["costs_rs"]
+
+
+def test_a_small_ticket_pays_the_flat_brokerage_in_full():
+    """A lot of a Rs 6.80 option is a Rs 442 ticket; Rs 20 an order each way,
+    with GST, is over a tenth of it before anything else."""
+    e = {"decision": "TOOK", "trade_date": "2026-09-23", "exit_date": "2026-09-25",
+         "entry_premium": 6.8, "exit_premium": 6.8, "quantity": 65}
+    assert journal.pnl(e)["costs_rs"] >= 2 * 20 * 1.18
+
+
+def test_a_trade_closed_without_an_exit_date_is_sold_on_its_own_session():
+    e = {"decision": "TOOK", "trade_date": "2026-09-23", "entry_premium": 100.0, "exit_premium": 130.0,
+         "quantity": 65}
+    assert journal.pnl(e) == journal.pnl({**e, "exit_date": "2026-09-23"})
+
+
+def test_the_note_states_the_rates_it_charged():
+    note = journal.report()["note"]
+    assert "₹20 an order" in note and "0.15% STT" in note
 
 
 def test_an_open_or_skipped_entry_has_no_profit():

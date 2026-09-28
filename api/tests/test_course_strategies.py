@@ -221,7 +221,20 @@ def test_a_flat_trade_loses_the_costs():
     m = cs.OptionModel([date(2024, 1, 1)], [date(2024, 1, 11)], {date(2023, 12, 29): 0.13})
     t = pd.Timestamp("2024-01-01 10:00").tz_localize("Asia/Kolkata")
     r = m.trade_return("gap_fill", 1, t, t, 20000, 20000)
-    assert r["option_pct"] == pytest.approx(-cs.OptionsCostModel().cost_pct(r["premium_in"], r["premium_in"]), abs=1e-3)
+    assert r["option_pct"] == pytest.approx(
+        -cs.OptionsCostModel().cost_pct(r["premium_in"], r["premium_in"], "2024-01-01", "2024-01-01"), abs=1e-3)
+
+
+def test_each_leg_pays_the_rates_of_its_own_day():
+    """A position bought before the Finance Act 2026 and sold after it pays
+    the new STT on the sale."""
+    m = cs.OptionModel([date(2026, 3, 31), date(2026, 4, 1)], [date(2026, 4, 28)], {date(2026, 3, 30): 0.13})
+    t_in = pd.Timestamp("2026-03-31 10:00").tz_localize("Asia/Kolkata")
+    t_out = pd.Timestamp("2026-04-01 10:00").tz_localize("Asia/Kolkata")
+    r = m.trade_return("gap_fill", 1, t_in, t_out, 23000, 23000)
+    gross = (r["premium_out"] / r["premium_in"] - 1) * 100
+    cost = cs.OptionsCostModel().cost_pct(r["premium_in"], r["premium_out"], "2026-03-31", "2026-04-01")
+    assert r["option_pct"] == pytest.approx(gross - cost, abs=0.01)
 
 
 def test_periods_drop_a_trade_that_straddles_the_split():

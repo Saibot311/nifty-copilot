@@ -16,7 +16,8 @@ import pandas as pd
 
 from backtest.costs import CostModel
 from backtest.engine import run_backtest
-from backtest.options_engine import OptionsCostModel
+from backtest.options_engine import (EXCHANGE_CHARGE_ON_OPTIONS, LOT_SIZE, STT_ON_OPTION_SALE,
+                                     OptionsCostModel)
 from backtest.pattern_options import (MIN_HOLDOUT_TRADES, SPLIT_DATE, _run, _rupees, load_research)
 from backtest.strategies import STRATEGY_REGISTRY, load_daily_data
 from stats import student_t
@@ -106,26 +107,37 @@ def costs_applied():
     # Recomputed from the rate-card fields, by hand, in basis points.
     fut_ref = (2 * fut.brokerage_pct + 2 * fut.exchange_txn_pct + fut.stamp_duty_pct + fut.stt_pct
                + 2 * fut.slippage_pct + fut.gst_pct * 2 * (fut.brokerage_pct + fut.exchange_txn_pct)) * 100
-    opt_ref = (2 * opt.brokerage_pct + 2 * opt.exchange_txn_pct + opt.stamp_duty_pct + opt.stt_pct_sell
-               + 2 * opt.premium_slippage_pct + opt.gst_pct * 2 * (opt.brokerage_pct + opt.exchange_txn_pct))
-    # Each leg on its own premium (since 2026-09-24), recomputed by hand from
-    # the same rate-card fields rather than through the model's own method.
-    buy = opt.brokerage_pct + opt.exchange_txn_pct + opt.stamp_duty_pct + opt.premium_slippage_pct \
-        + opt.gst_pct * (opt.brokerage_pct + opt.exchange_txn_pct)
-    sell = opt.brokerage_pct + opt.exchange_txn_pct + opt.stt_pct_sell + opt.premium_slippage_pct \
-        + opt.gst_pct * (opt.brokerage_pct + opt.exchange_txn_pct)
+
+    # Options: rupees on one lot, each leg on its own premium at the rates in
+    # force on its own day (since 2026-09-27), recomputed by hand from the
+    # rate card's fields and the dated schedules rather than the model's methods.
+    def in_force(schedule, day):
+        return [rate for start, rate in schedule if start <= day][-1]
+
+    def by_hand(entry_premium, exit_premium, entry_date, exit_date):
+        paid, got = entry_premium * LOT_SIZE, exit_premium * LOT_SIZE
+        buy = ((opt.brokerage_per_order_rs + paid * (in_force(EXCHANGE_CHARGE_ON_OPTIONS, entry_date) + opt.sebi_fee_pct))
+               * (1 + opt.gst_pct) + paid * (opt.stamp_duty_pct + opt.premium_slippage_pct))
+        sell = ((opt.brokerage_per_order_rs + got * (in_force(EXCHANGE_CHARGE_ON_OPTIONS, exit_date) + opt.sebi_fee_pct))
+                * (1 + opt.gst_pct) + got * (in_force(STT_ON_OPTION_SALE, exit_date) + opt.premium_slippage_pct))
+        return (buy + min(sell, got)) / paid * 100  # a sale costing more than it fetches is not made
+
+    today = str(pd.Timestamp.today().date())
+    opt_ref = by_hand(100.0, 100.0, today, today)
     uncharged = []
     for name, d in _chosen_trades().items():
         for t in d["trades"]:
-            by_hand = (t.entry_premium * buy + t.exit_premium * sell) / t.entry_premium * 100
+            expected = by_hand(t.entry_premium, t.exit_premium, t.entry_date, t.exit_date)
             if (abs((t.gross_return_pct - t.cost_pct) - t.net_return_pct) > 0.02 or t.cost_pct <= 0
-                    or abs(t.cost_pct - by_hand) > 0.01):
+                    or abs(t.cost_pct - expected) > 0.01):
                 uncharged.append((name, t.entry_date))
-    ok = abs(fut.round_trip_cost_pct() - fut_ref) < 1e-9 and abs(opt.round_trip_cost_fraction() - opt_ref) < 1e-12
+    ok = (abs(fut.round_trip_cost_pct() - fut_ref) < 1e-9
+          and abs(opt.cost_pct(100.0, 100.0, today, today) - opt_ref) < 1e-9)
     return Result(FAIL if uncharged or not ok else PASS,
                   f"futures round trip {fut.round_trip_cost_pct():.4f}% of notional, options "
-                  f"{opt.round_trip_cost_fraction() * 100:.3f}% of premium; {len(uncharged)} trade(s) not charged",
-                  {"independent_futures_pct": round(fut_ref, 4), "independent_options_pct": round(opt_ref * 100, 3),
+                  f"{opt_ref:.3f}% of a Rs 100 premium on one lot at today's rates; "
+                  f"{len(uncharged)} trade(s) not charged",
+                  {"independent_futures_pct": round(fut_ref, 4), "independent_options_pct": round(opt_ref, 3),
                    "uncharged": uncharged[:10]})
 
 

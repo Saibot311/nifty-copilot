@@ -66,13 +66,16 @@ from storage import paper_db
 from .option_choice import baseline_menu, choose, pattern_menu
 
 _COSTS = OptionsCostModel()
-# A flat round trip (~3.3%): the reserve a position is sized with, and what
-# rows opened before 2026-09-24 were charged at entry.
-COST_FRACTION = _COSTS.round_trip_cost_fraction()
-# From 2026-09-24 each leg is charged on its own premium, as in the backtests:
-# the buy on what was paid, the sale on what it sold for.
-BUY_FRACTION, SELL_FRACTION = _COSTS.buy_fraction(), _COSTS.sell_fraction()
-SPLIT = "split"
+# How a row was charged, recorded on it so it is never read under another:
+#   NULL        the whole round trip at entry, on the entry premium (before 2026-09-24)
+#   'split'     each leg on its own premium, at the old model's flat fractions
+#   'rate_card' each leg in rupees on the lots held, at its own day's rates, as
+#               in the backtests (from 2026-09-27)
+SPLIT, RATE_CARD = "split", "rate_card"
+# The old model's fractions of premium — 0.03% "brokerage", 0.05% exchange,
+# 0.10% STT, 1.5% slippage, GST and stamp duty — frozen for the rows charged
+# under them. Rows are never rewritten.
+_OLD_ROUND_TRIP, _OLD_BUY, _OLD_SELL = 0.032918, 0.015974, 0.016944
 
 # Paper observation began the day the feature shipped. Nothing before this
 # date may ever be opened: those signals' outcomes already exist.
@@ -104,25 +107,52 @@ MAX_PER_TRADE = 0.4
 
 
 def _costs(premium: float, lots: int) -> float:
-    """The old convention — the whole round trip on the entry premium. Kept
+    """The first convention — the whole round trip on the entry premium. Kept
     for the rows opened under it, which are never rewritten."""
-    return premium * lots * LOT_SIZE * COST_FRACTION
+    return premium * lots * LOT_SIZE * _OLD_ROUND_TRIP
 
 
-def _entry_costs(premium: float, lots: int) -> float:
-    return premium * lots * LOT_SIZE * BUY_FRACTION
+def _entry_costs(t: dict) -> float:
+    """The purchase's costs: as recorded, or — a free trade not being a thing
+    (I3) — computed under the row's own convention."""
+    if t.get("entry_cost_rs"):
+        return t["entry_cost_rs"]
+    lots = t.get("lots") or 1
+    if t.get("cost_model") == RATE_CARD:
+        return _COSTS.buy_cost_rs(t["entry_premium"], lots * LOT_SIZE, t["entry_date"])
+    if t.get("cost_model") == SPLIT:
+        return t["entry_premium"] * lots * LOT_SIZE * _OLD_BUY
+    return _costs(t["entry_premium"], lots)
 
 
-def _exit_costs(premium: float, lots: int) -> float:
-    return premium * lots * LOT_SIZE * SELL_FRACTION
+def _exit_costs(t: dict, premium: float, on: str) -> float:
+    """What selling the row at `premium` on `on` costs under its own
+    convention. Nothing for the oldest rows, which paid it all at entry."""
+    lots = t.get("lots") or 1
+    if t.get("cost_model") == RATE_CARD:
+        return _COSTS.sell_cost_rs(premium, lots * LOT_SIZE, on)
+    if t.get("cost_model") == SPLIT:
+        return premium * lots * LOT_SIZE * _OLD_SELL
+    return 0.0
 
 
-def _lots_for(premium: float, cash: float, book_rs: float) -> int:
+def _lot_cost(premium: float, lots: int, on: str) -> float:
+    """What `lots` lots take to open: the premium, and both orders' costs held
+    back, so a position that fits can also be sold."""
+    qty = lots * LOT_SIZE
+    return premium * qty + _COSTS.buy_cost_rs(premium, qty, on) + _COSTS.sell_cost_rs(premium, qty, on)
+
+
+def _lots_for(premium: float, cash: float, book_rs: float, on: str) -> int:
     """Whole lots only, inside both the cash on hand and the per-trade cap.
     `book_rs` is the book's value now — profits raise it, losses lower it."""
-    per_lot = premium * LOT_SIZE * (1 + COST_FRACTION)
     budget = min(cash, book_rs * MAX_PER_TRADE) if book_rs > 0 else 0
-    return int(budget // per_lot) if per_lot > 0 else 0
+    if premium <= 0:
+        return 0
+    lots = int(budget // (premium * LOT_SIZE))
+    while lots > 0 and _lot_cost(premium, lots, on) > budget:
+        lots -= 1  # brokerage is per order, so a lot may not fit once its costs are added
+    return lots
 
 
 def _sessions() -> tuple[list[str], dict[str, float]]:
@@ -156,7 +186,7 @@ def _why_not(conn, spec: dict, entry_date: str, planned_exit: str | None) -> str
     if premium is None:
         return f"{spec['strategy']}: that contract has no closing price"
     book = cash_and_equity()
-    lot = premium * LOT_SIZE * (1 + COST_FRACTION)
+    lot = _lot_cost(premium, 1, entry_date)
     if not book["allocated_rs"]:
         return f"{spec['strategy']}: no paper funds allocated"
     return (f"{spec['strategy']}: one lot costs ₹{lot:,.0f} — more than the ₹{book['max_per_trade_rs']:,} "
@@ -177,22 +207,21 @@ def cash_and_equity(marks: dict[int, float] | None = None) -> dict:
     # The yardstick is priced, not held: it never spends the book's cash and
     # never moves its equity.
     trades = [t for t in paper_db.all_trades() if t.get("funded", 1)]
-    spent = sum((t["entry_premium"] * (t.get("lots") or 1) * LOT_SIZE
-                 + (t.get("entry_cost_rs") or _costs(t["entry_premium"], t.get("lots") or 1)))
+    spent = sum(t["entry_premium"] * (t.get("lots") or 1) * LOT_SIZE + _entry_costs(t)
                 for t in trades if t["status"] == "OPEN")
     realised = 0.0
     for t in trades:
         if t["status"] == "CLOSED" and t["exit_premium"] is not None:
             gross = (t["exit_premium"] - t["entry_premium"]) * (t.get("lots") or 1) * LOT_SIZE
             realised += gross - (t.get("entry_cost_rs") or 0) - (t.get("exit_cost_rs") or 0)
-    open_value = 0.0
+    open_value, today = 0.0, date.today().isoformat()
     for t in trades:
         if t["status"] != "OPEN":
             continue
         mark = (marks or {}).get(t["id"], t["mark_premium"] if t["mark_premium"] is not None else t["entry_premium"])
         value = mark * (t.get("lots") or 1) * LOT_SIZE
         # What it would fetch if sold now: the sale's costs are not paid yet.
-        open_value += value * (1 - SELL_FRACTION) if t.get("cost_model") == SPLIT else value
+        open_value += value - _exit_costs(t, mark, today)
     cash = allocated_rs + realised - spent
     return {"allocated_rs": round(allocated_rs), "cash_rs": round(cash),
             "open_positions_value_rs": round(open_value), "equity_rs": round(cash + open_value),
@@ -218,7 +247,7 @@ def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit:
     funded = spec.get("funded", True)
     if funded:
         book = cash_and_equity()
-        lots = _lots_for(premium, book["cash_rs"], book["equity_rs"])
+        lots = _lots_for(premium, book["cash_rs"], book["equity_rs"], entry_date)
     else:
         # A yardstick is a fixed size by definition: sizing it off a book it
         # is not in would make it measure the book instead of the market.
@@ -233,7 +262,8 @@ def _open_one(conn, spec: dict, signal_date: str, entry_date: str, planned_exit:
         "signal_date": signal_date, "underlying": "NIFTY", "option_type": spec["option_type"],
         "strike": strike, "expiry": expiry, "entry_date": entry_date, "entry_premium": premium,
         "hold_days": spec["hold_days"], "planned_exit": planned_exit,
-        "lots": lots, "entry_cost_rs": round(_entry_costs(premium, lots), 2), "cost_model": SPLIT,
+        "lots": lots, "entry_cost_rs": round(_COSTS.buy_cost_rs(premium, lots * LOT_SIZE, entry_date), 2),
+        "cost_model": RATE_CARD,
     })
 
 
@@ -379,10 +409,9 @@ def observe(now: datetime | None = None) -> dict:
             exit_idx = _exit_index(td, t["entry_date"], t["hold_days"])
             if exit_idx is not None and td.index(day) >= exit_idx:
                 exit_premium = _premium_on(conn, t, td[exit_idx]) or premium
-                # The sale is charged on what it sold for; rows from before
-                # 2026-09-24 paid the whole round trip at entry.
-                exit_cost = (_exit_costs(exit_premium, t.get("lots") or 1)
-                             if t.get("cost_model") == SPLIT else 0.0)
+                # The sale is charged on what it sold for, under the row's
+                # own convention; the oldest paid the whole round trip at entry.
+                exit_cost = _exit_costs(t, exit_premium, td[exit_idx])
                 paper_db.close_position(t["id"], td[exit_idx], exit_premium, exit_cost_rs=round(exit_cost, 2))
                 closed.append(t["label"])
             else:
@@ -410,7 +439,7 @@ def _fit(conn, spec: dict, menu: list[dict], entry_date: str, planned: str | Non
     book = cash_and_equity()
     return choose(conn, menu, option_type=spec["option_type"], dte=spec["min_days_to_expiry"],
                   entry_date=entry_date, spot=spec["spot"], planned_exit=planned,
-                  lots_for=lambda premium: _lots_for(premium, book["cash_rs"], book["equity_rs"]))
+                  lots_for=lambda premium: _lots_for(premium, book["cash_rs"], book["equity_rs"], entry_date))
 
 
 def _compact(compared: list[dict]) -> list[dict]:
@@ -599,16 +628,11 @@ def _pnl(t: dict, mark: float | None = None) -> dict | None:
         return None
     lots = t.get("lots") or 1
     gross_rs = (premium - t["entry_premium"]) * lots * LOT_SIZE
-    # Costs are always applied (I3). A row that never recorded one gets it
-    # computed rather than waived — a free trade is not a thing.
-    if t.get("cost_model") == SPLIT:
-        entry_cost = t["entry_cost_rs"] if t.get("entry_cost_rs") else _entry_costs(t["entry_premium"], lots)
-        settled = t["status"] == "CLOSED" and mark is None and t.get("exit_cost_rs") is not None
-        # Open: the sale it would take to realise this mark, charged on the mark.
-        costs = entry_cost + (t["exit_cost_rs"] if settled else _exit_costs(premium, lots))
-    else:
-        costs = (t["entry_cost_rs"] if t.get("entry_cost_rs") else _costs(t["entry_premium"], lots)) \
-            + (t.get("exit_cost_rs") or 0)
+    # Costs are always applied (I3), each row under its own convention.
+    settled = t["status"] == "CLOSED" and mark is None and t.get("exit_cost_rs") is not None
+    # Open: the sale it would take to realise this mark, charged on the mark.
+    sale_day = t["exit_date"] if t["status"] == "CLOSED" and t.get("exit_date") else date.today().isoformat()
+    costs = _entry_costs(t) + (t["exit_cost_rs"] if settled else _exit_costs(t, premium, sale_day))
     net_rs = gross_rs - costs
     invested = t["entry_premium"] * lots * LOT_SIZE
     return {"gross_pct": round((premium - t["entry_premium"]) / t["entry_premium"] * 100, 2),
@@ -752,8 +776,8 @@ def report(marks: dict[int, float] | None = None) -> dict:
             "sessions_needed_before_this_means_anything": 15,
         },
         "note": ("Hypothetical positions at real NSE closing premiums. Nothing is ordered and no money moves. "
-                 f"Costs are charged on every position, open or closed: {BUY_FRACTION:.1%} of the premium paid "
-                 f"and {SELL_FRACTION:.1%} of the premium it sells for (on an open one, of its mark). A "
+                 f"Costs are charged on every position, open or closed: {_COSTS.summary(date.today())}, each "
+                 "leg on its own premium at its own day's rates (an open one's sale on its mark). A "
                  "position is only ever opened for the session that has just closed, so none of this could be "
                  "chosen knowing the outcome. The book takes one position a session, in one direction: when "
                  "several patterns form, the one with the strongest holdout evidence takes it. The control — "

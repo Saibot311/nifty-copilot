@@ -26,6 +26,16 @@ paid, more on a winner, only the buy leg on a worthless expiry. Before, the whol
 on the entry premium, which flattered winners. Every study was re-scored; paper rows opened before the
 change keep the convention they were opened under (`paper_trades.cost_model` is NULL for them).
 
+**Costs, since 2026-09-27:** the rate card is Zerodha's and the exchange's, not an approximation of
+them. Brokerage is a flat ₹20 an order (plus GST), so a cheap option pays far more of its premium than a
+dear one: about 10.5% a round trip at ₹10 a unit against 4% at ₹100, slippage included. STT on the sale
+and NSE's charge are the rates in force on each leg's own date (`STT_ON_OPTION_SALE`,
+`EXCHANGE_CHARGE_ON_OPTIONS` in `backtest/options_engine.py`, each with the NSE circular behind it), so
+a 2019 trade pays 0.05% STT and one sold after 2026-04-01 pays 0.15%. Paper rows opened before this keep
+their convention (`cost_model` 'split' or NULL); new ones are 'rate_card'. The nightly job re-scores the
+pattern, IV, structural, replication and news research; the course and breakout studies are not in it and
+have to be re-run by hand.
+
 **Every verdict label faces the family bar**, not just the recommendation: pattern verdicts, the
 index-level validation and the similar-days card use Bonferroni over all hypotheses judged (53 →
 t ≥ 3.11 and more on few trades). Registered studies keep the bar frozen in their registration.

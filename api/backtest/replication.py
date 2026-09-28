@@ -68,7 +68,7 @@ from storage.options_db import db_path_for
 
 from . import structural_research as sr
 from .hypothesis_log import log_run
-from .options_engine import run_options_backtest
+from .options_engine import LOT_SIZES, run_options_backtest
 from .pattern_options import OPTIONS_START, SPLIT_DATE, load_research
 from .strategies import STRATEGY_REGISTRY, load_daily_data
 from .walkforward import holdout_verdict, welch_t_stat
@@ -116,7 +116,8 @@ def _trades(sigs, ctx, underlying, m_pct, dte, hold) -> list:
             continue
         off = m_pct if kind == "CE" else -m_pct  # positive = OTM, direction-aware, as in pattern_options
         out += run_options_backtest(dates, spot, td, option_type=kind, min_days_to_expiry=dte, hold_days=hold,
-                                    strike_offset_pct=off, db_path=db_path_for(underlying))
+                                    strike_offset_pct=off, db_path=db_path_for(underlying),
+                                    quantity=LOT_SIZES[underlying])
     return out
 
 

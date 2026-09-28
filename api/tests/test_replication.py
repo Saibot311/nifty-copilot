@@ -29,6 +29,18 @@ def test_each_index_reads_its_own_archive():
     assert len({db_path_for(u) for u in rep.INDICES}) == len(rep.INDICES)
 
 
+def test_each_index_is_charged_brokerage_on_its_own_lot(monkeypatch):
+    """Brokerage is rupees an order, so what it costs as a share of premium
+    depends on how many units the order is for — SENSEX's 20, not NIFTY's 65."""
+    import pandas as pd
+    seen = []
+    monkeypatch.setattr(rep, "run_options_backtest", lambda *a, **kw: seen.append(kw) or [])
+    ctx = (None, pd.Series(dtype=float), ["2024-02-01"])
+    for u in rep.INDICES:
+        rep._trades([("2024-02-01", "CE")], ctx, u, 0.0, 7, 5)
+    assert [kw["quantity"] for kw in seen] == [65, 30, 120, 20]  # NIFTY, BANKNIFTY, MIDCPNIFTY, SENSEX
+
+
 def test_the_bar_counts_replication_as_another_look():
     # 26 earlier holdout tests plus one per replicated hypothesis.
     assert rep.BASE_TESTS == 26
