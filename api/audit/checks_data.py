@@ -243,3 +243,42 @@ def iv_tracks_vix():
     return Result(status, f"{v['compared_days']} days compared: correlation {corr}, VIX a median "
                           f"{v.get('median_gap_points')} points higher (it prices the skew); "
                           f"{fallback:.1%} of days needed an assumed forward", v)
+
+
+# A week of sessions missing in a row is not NSE lacking a file; it is a run
+# that lost them. On 22 Sep 2026 a minute without network cost 117.
+INDEX_RUN_LIMIT = 5
+
+
+def judge_index_coverage(sessions: list[str], missing: list[str], today: date) -> Result:
+    """The verdict for check 0.9, apart from the reading, so a test can hand it a hole."""
+    miss, runs, run = set(missing), [], []
+    for d in sessions:
+        if d in miss:
+            run.append(d)
+        elif run:
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    longest = max(runs, key=len, default=[])
+    recent = [d for d in missing if (today - date.fromisoformat(d)).days <= 7]
+    status = FAIL if recent or len(longest) >= INDEX_RUN_LIMIT else (WARN if missing else PASS)
+    return Result(status, f"{len(sessions)} trading days since {sessions[0] if sessions else '-'}; "
+                          f"{len(missing)} have no NSE index report"
+                          + (f", {len(longest)} in a row from {longest[0]} to {longest[-1]}" if longest else ""),
+                  {"missing": missing[:20], "recent": recent,
+                   "longest_run": {"first": longest[0], "last": longest[-1], "sessions": len(longest)}
+                   if longest else None,
+                   "note": "Missing sessions are retried nightly by backfill_nse_indices.py --fill-gaps."})
+
+
+@check("0", "0.9", "NSE index report covers every trading day")
+def index_report_coverage():
+    """The replication reads BANKNIFTY and Midcap Select from this archive
+    alone. A hole raises no error: those months just have no signals, no
+    trades, and indicators that span the jump."""
+    from storage.nse_index_db import START, sessions_missing
+    since = START.isoformat()
+    sessions = sorted({r["ts"][:10] for r in _bars("1d") if r["ts"][:10] >= since})
+    return judge_index_coverage(sessions, sessions_missing(set(sessions), since), date.today())
