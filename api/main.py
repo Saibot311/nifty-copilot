@@ -34,6 +34,7 @@ from storage.copilot_log_db import summary as copilot_record_summary
 from briefing import build_briefing, build_recommendation
 from briefing.forward_log import forward_report, record_if_final
 from options.chain_analytics import live_chain_analytics
+from options.chain_table import UnknownExpiry, live_chain_table
 from storage import archive_stats, record_strategy_evaluation, strategy_history, strategy_playbook
 from market_data import Candle, CSVProvider, YFinanceProvider, ZerodhaProvider
 from market_data import kite_session
@@ -331,6 +332,27 @@ def options_chain(
         return cached(f"option_chain:{symbol}:{expiry or 'near'}", ttl_seconds=120,
                       producer=lambda: live_chain_analytics(symbol=symbol, expiry=expiry),
                       stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Live option chain unavailable: {e}")
+
+
+@app.get("/api/options/chain/contracts")
+def options_chain_contracts(
+    expiry: str | None = Query(None, pattern=r"^\d{2}-[A-Za-z]{3}-\d{4}$",
+                               description="e.g. 06-Oct-2026; defaults to the nearest"),
+) -> dict:
+    """Every strike NSE lists for one NIFTY expiry, each call and put with its
+    prices, and a buyer's view of one lot: the ask, the charges both ways at
+    the backtests' rate card, the spread and the breakeven at expiry. Every
+    listed expiry is named, so any contract can be reached.
+
+    Cached like the chain above, per expiry: one NSE request per expiry every
+    two minutes at most, however many tabs are open."""
+    try:
+        return cached(f"option_chain_contracts:{expiry or 'near'}", ttl_seconds=120,
+                      producer=lambda: live_chain_table(expiry), stale_ok=True)
+    except UnknownExpiry as e:
+        raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(503, f"Live option chain unavailable: {e}")
 

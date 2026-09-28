@@ -6,6 +6,7 @@ import { IVCard } from "@/components/IVCard";
 import { MarketTab } from "@/components/MarketCards";
 import { NewsResearchCard } from "@/components/NewsResearchCard";
 import { OpenInterestCard } from "@/components/OpenInterestCard";
+import { OptionChainCard } from "@/components/OptionChainCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
 import { CourseResearchCard } from "@/components/CourseResearchCard";
@@ -44,6 +45,7 @@ import {
   fetchNews,
   fetchNewsResearch,
   fetchOptionsChain,
+  fetchOptionChainTable,
   fetchPatternOptions,
   fetchPatternsToday,
   fetchPlaybook,
@@ -79,6 +81,7 @@ export default async function Home() {
     paper,
     news,
     optionChain,
+    chainTable,
     newsResearch,
     strategyFit,
     courseResearch,
@@ -106,6 +109,7 @@ export default async function Home() {
     fetchPaper(),
     fetchNews(),
     fetchOptionsChain(),
+    fetchOptionChainTable(),
     fetchNewsResearch(),
     fetchStrategyFit(),
     fetchCourseResearch(),
@@ -191,6 +195,13 @@ export default async function Home() {
                   Open interest
                 </SectionLabel>
                 <OpenInterestCard initial={optionChain.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="every strike and expiry NSE lists — pick one for what a lot costs to buy">
+                  Option chain
+                </SectionLabel>
+                <OptionChainCard initial={chainTable.data} />
               </section>
 
               <section>

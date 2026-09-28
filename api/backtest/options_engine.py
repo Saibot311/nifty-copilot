@@ -132,9 +132,10 @@ class OptionsCostModel:
     def summary(self, on: date | str) -> str:
         """The rate card in force on `on`, in words, for a page to state."""
         pct = lambda f: f"{f * 100:.3g}%"  # noqa: E731
-        return (f"₹{self.brokerage_per_order_rs:g} an order plus {pct(self.gst_pct)} GST, "
-                f"{pct(self.stt_sell_rate(on))} STT on the sale, {pct(self.exchange_rate(on))} exchange charges "
-                f"and {pct(self.premium_slippage_pct)} slippage each way")
+        card = (f"₹{self.brokerage_per_order_rs:g} an order plus {pct(self.gst_pct)} GST, "
+                f"{pct(self.stt_sell_rate(on))} STT on the sale, {pct(self.exchange_rate(on))} exchange charges")
+        # A model given the real spread charges no slippage, and says none.
+        return f"{card} and {pct(self.premium_slippage_pct)} slippage each way" if self.premium_slippage_pct else card
 
     def cost_pct(self, entry_premium: float, exit_premium: float, entry_date: date | str, exit_date: date | str,
                  quantity: int = LOT_SIZE) -> float:

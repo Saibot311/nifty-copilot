@@ -835,6 +835,54 @@ export type OptionChain = {
 
 export const fetchOptionsChain = () => get<OptionChain>("/api/options/chain");
 
+/** One lot bought now, as the API priced it (options/chain_table.py). */
+export type ChainBuyer = {
+  price: number;
+  price_source: "ask" | "last";
+  lot_rs: number;
+  buy_charges_rs: number;
+  sell_charges_rs: number;
+  charges_rs: number;
+  spread_rs: number | null;
+  breakeven: number;
+  needs_move_pts: number;
+  needs_move_pct: number;
+};
+
+export type ChainContract = {
+  identifier: string;
+  ltp: number | null;
+  change: number | null;
+  bid: number | null;
+  ask: number | null;
+  bid_qty: number;
+  ask_qty: number;
+  iv: number | null;
+  oi: number;
+  oi_change: number;
+  volume: number;
+  /** Positive is out of the money, negative in it. */
+  moneyness_pct: number;
+  itm: boolean;
+  buyer: ChainBuyer | null;
+};
+
+export type OptionChainTable = {
+  as_of: string;
+  underlying_value: number;
+  expiry: string;
+  expiries: string[];
+  days_to_expiry: number;
+  atm_strike: number;
+  lot_size: number;
+  strikes: number;
+  rate_card: string;
+  rows: { strike: number; is_atm: boolean; call: ChainContract | null; put: ChainContract | null }[];
+};
+
+export const fetchOptionChainTable = (expiry?: string) =>
+  get<OptionChainTable>(`/api/options/chain/contracts${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`);
+
 export type NewsRow = {
   id: string;
   title: string;
