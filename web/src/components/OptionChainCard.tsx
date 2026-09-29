@@ -61,6 +61,9 @@ function Side({ c, kind, strike, selected, onPick, mirror }: {
           mirror ? "text-left" : ""}`}
       >
         {price(c.ltp)}
+        {/* Below lg the Chg column is hidden, so the day's change rides under
+            the price: a phone should not show a chain with no change on it. */}
+        <span className="block text-[10px] font-normal text-zinc-500 lg:hidden">{fmtSigned(c.change)}</span>
       </button>
     </td>,
     <td key="chg" {...click} className={`${td} hidden cursor-pointer text-zinc-500 lg:table-cell`}>{fmtSigned(c.change)}</td>,
