@@ -68,3 +68,61 @@ def test_a_gift_nifty_that_has_stopped_trading_is_not_called_trading():
                      now=datetime.fromisoformat("2026-09-26T10:00+05:30"))["commentary"]
     g = next(x for x in lines if x.startswith("GIFT"))
     assert "last traded at 02:39 IST on 26 Sep" in g and "is trading" not in g
+
+
+
+# --- Sensex: Kite first -------------------------------------------------------
+
+def _kite_quote(monkeypatch, ts):
+    from market_data import kite_quotes as kq
+
+    class Client:
+        def quote(self, keys):
+            assert keys == ["BSE:SENSEX"]
+            return {"BSE:SENSEX": {"last_price": 72771.72, "timestamp": ts, "net_change": -1124.02,
+                                   "ohlc": {"open": 73734.83, "high": 73740.85, "low": 72716.23, "close": 73895.74}}}
+    monkeypatch.setattr(kq, "authenticated_client", Client)
+    monkeypatch.setattr(kq, "_quote_slot", lambda: None)
+    return kq
+
+
+def test_sensex_comes_from_kite_with_bses_own_open(monkeypatch):
+    """Yahoo's one-minute bars gave the day's high (73,740.85) as the open on
+    28 Sep 2026; Kite's quote has BSE's figures."""
+    _kite_quote(monkeypatch, datetime(2026, 9, 28, 11, 2, 7))
+    s = ib._sensex()
+    assert s == {"last": 72771.72, "previous_close": 73895.74, "open": 73734.83, "high": 73740.85,
+                 "low": 72716.23, "as_of": "2026-09-28T11:02+05:30", "source": "Kite"}
+    row = ib.board(None, s, None, market_open=True)["rows"][0]
+    assert row["source"] == "Kite" and row["change_pct"] == round((72771.72 / 73895.74 - 1) * 100, 2)
+
+
+def test_after_the_close_kites_later_stamps_are_shown_as_the_close_they_repeat(monkeypatch):
+    _kite_quote(monkeypatch, datetime(2026, 9, 28, 17, 30, 2))
+    assert ib._sensex()["as_of"] == "2026-09-28T15:30+05:30"
+
+
+def test_without_a_kite_login_sensex_falls_back_to_yahoo(monkeypatch):
+    from market_data import kite_quotes as kq
+
+    def lapsed():
+        raise RuntimeError("Kite login has lapsed")
+    monkeypatch.setattr(kq, "authenticated_client", lapsed)
+    monkeypatch.setattr(kq, "_quote_slot", lambda: None)
+    monkeypatch.setattr(ib, "_sensex_yahoo", lambda: {"last": 1.0, "previous_close": 1.0, "source": "Yahoo, 1-min bars"})
+    assert ib._sensex()["source"] == "Yahoo, 1-min bars"
+
+
+def test_kite_quote_calls_are_spaced_a_second_apart(monkeypatch):
+    """The tick and the board call Kite's quote APIs from their own threads;
+    Kite refuses more than one call a second."""
+    from market_data import kite_quotes as kq
+    clock = {"t": 1000.0}
+    slept = []
+    monkeypatch.setattr(kq.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(kq.time, "sleep", lambda s: slept.append(round(s, 2)))
+    monkeypatch.setitem(kq._LAST_CALL, "at", 0.0)
+    kq._quote_slot()
+    clock["t"] += 0.3
+    kq._quote_slot()
+    assert slept == [0.7]

@@ -297,6 +297,14 @@ of identical cards before 2026-09-23 — don't let it drift back.
 
 ## Traps that already cost real time
 
+- **Yahoo's `end` date is exclusive.** Asked for 15-minute bars up to today, it returns none from today:
+  the Today chart drew today's 4-hour and 15-minute candles as one flat price (28 Sep 2026). Display data
+  now reads Kite first (chart, grid, Sensex, VIX fallback) with Yahoo only as the lapsed-login fallback.
+  Yahoo also answers a throttled request with no bars ("possibly delisted"): on 28 Sep four studies
+  lost the night that way, so `daily_job.RETRY_AT_END` now re-runs the network-dependent steps at the end.
+  The research inputs (`load_daily_data`, VIX history, Sensex replication) still read Yahoo; moving them
+  would change registered results, so that is the owner's call.
+
 - **pandas 3:** `bool_series.shift(1).fillna(False)` is object dtype, and `~` on it is
   integer bit-flip (`~True == -2`, truthy). Use `shift(1, fill_value=False)`. This made
   EMA Pullback fire every day of a trend for six phases.

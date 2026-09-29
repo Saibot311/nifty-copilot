@@ -149,7 +149,7 @@ def get_snapshot() -> Snapshot:
         price=analysis["price"],
         change=analysis["change"],
         change_pct=analysis["change_pct"],
-        as_of=f"{analysis['as_of'][:10]} daily close (free feed — not live intraday)",
+        as_of=f"{analysis['as_of'][:10]} daily close, {analysis.get('source', 'Yahoo daily')} — not live intraday",
         provisional=False,
         regime=analysis["regime"],
     )

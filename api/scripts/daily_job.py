@@ -54,8 +54,16 @@ def run_script(*args: str) -> bool:
 # Steps worth a second try once the rest is done. The forward log is the one
 # record that cannot be made up later: on 25 Sep 2026 the Mac slept four
 # seconds after its Yahoo request left, the request died, and the step failed
-# while every later step, run in Power Nap's brief wakes, went through.
-RETRY_AT_END = ("forward log",)
+# while every later step, run in Power Nap's brief wakes, went through. On
+# 28 Sep 2026 the network dropped for a moment at 19:42: Yahoo returned no
+# bars and every news feed failed, and four studies, the news archive and the
+# tone series lost the night though the network was back long before the end.
+# The options archive is not here: it retries the exchange's files itself and
+# takes ten minutes. Retries run in the job's order, so a study still follows
+# what it reads.
+RETRY_AT_END = ("forward log", "participant positioning", "pattern -> option research", "implied volatility",
+                "structural hypotheses", "replication on other indices", "news archive and judging",
+                "news tone series", "news hypotheses", "market context studies")
 
 
 def retry(failed: list[str], steps: dict, names: tuple[str, ...]) -> list[str]:
@@ -194,7 +202,9 @@ def step_news() -> bool:
         log(f"    sources that failed: {', '.join(out['failed'])}")
     if out.get("judge_error"):
         log(f"    judging: {out['judge_error']}")
-    return True
+    # Nothing fetched and feeds failing is the network, not a quiet evening:
+    # a failure, so it is tried again at the end.
+    return not (out["fetched"] == 0 and out.get("failed"))
 
 
 def step_kite_bars() -> bool:

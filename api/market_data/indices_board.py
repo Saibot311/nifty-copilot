@@ -68,7 +68,7 @@ def board(nse: dict | None, sensex: dict | None, gift: dict | None, *, market_op
         else:
             missing.append(NAMES[key])
     if sensex and sensex.get("last") and sensex.get("previous_close"):
-        rows.append(_row("sensex", sensex, sensex.get("as_of"), "Yahoo, 1-min bars"))
+        rows.append(_row("sensex", sensex, sensex.get("as_of"), sensex.get("source") or "Yahoo, 1-min bars"))
     else:
         missing.append("Sensex")
     if gift and gift.get("last") and gift.get("previous_close"):
@@ -152,6 +152,17 @@ def commentary(rows: list[dict], missing: list[str], *, market_open: bool, now: 
 
 
 def _sensex() -> dict | None:
+    """Kite first: BSE's own figures through the logged-in session. On 28 Sep
+    2026 Yahoo's one-minute bars gave the day's high as its open. Yahoo only
+    when the Kite login has lapsed."""
+    try:
+        from .kite_quotes import index_quote
+        return index_quote("BSE:SENSEX")
+    except Exception:
+        return _sensex_yahoo()
+
+
+def _sensex_yahoo() -> dict | None:
     import yfinance as yf
 
     from .yfinance_provider import _session
@@ -168,7 +179,8 @@ def _sensex() -> dict | None:
     return {"last": float(bars["Close"].iloc[-1]), "previous_close": float(prev_rows["Close"].iloc[-1]),
             "open": float(bars["Open"].iloc[0]), "high": float(bars["High"].max()), "low": float(bars["Low"].min()),
             # A one-minute bar stamped 15:29 closed at 15:30.
-            "as_of": (last_bar.replace(second=0) + timedelta(minutes=1)).isoformat(timespec="minutes")}
+            "as_of": (last_bar.replace(second=0) + timedelta(minutes=1)).isoformat(timespec="minutes"),
+            "source": "Yahoo, 1-min bars"}
 
 
 def fetch_board() -> dict:

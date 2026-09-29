@@ -88,6 +88,32 @@ def test_india_vix_comes_from_nse_and_says_so(monkeypatch):
     assert lq._nse_time("24-Sep-2026 15:30") == "2026-09-24T15:30+05:30" and lq._nse_time(None) is None
 
 
+class _NoKite:
+    def get_ohlc(self, *a, **k):
+        raise RuntimeError("Kite login has lapsed")
+
+
+def test_kite_is_the_vix_fallback_before_yahoo(monkeypatch):
+    import market_data.live_quote as lq
+    from market_data.base import Candle
+    from quant import pipeline
+
+    def down(index="NIFTY 50"):
+        raise RuntimeError("NSE unreachable")
+    monkeypatch.setattr(lq, "live_index_quote", down)
+
+    class Kite:
+        def get_ohlc(self, symbol, timeframe, start, end):
+            assert (symbol, timeframe) == ("^INDIAVIX", "1d")
+            return [Candle(timestamp="2026-09-28", open=1, high=1, low=1, close=13.71, provisional=True)]
+
+    class Yahoo:
+        def get_ohlc(self, *a, **k):
+            raise AssertionError("Yahoo is only the last resort")
+    monkeypatch.setattr(pipeline, "ZerodhaProvider", Kite)
+    assert pipeline._india_vix(Yahoo()) == {"value": 13.71, "source": "Kite", "as_of": "2026-09-28"}
+
+
 def test_yahoo_is_the_fallback_and_carries_its_date(monkeypatch):
     import market_data.live_quote as lq
     from market_data.base import Candle
@@ -96,6 +122,7 @@ def test_yahoo_is_the_fallback_and_carries_its_date(monkeypatch):
     def down(index="NIFTY 50"):
         raise RuntimeError("NSE unreachable")
     monkeypatch.setattr(lq, "live_index_quote", down)
+    monkeypatch.setattr(pipeline, "ZerodhaProvider", _NoKite)
 
     class Yahoo:
         def get_ohlc(self, *a, **k):
@@ -108,10 +135,65 @@ def test_no_vix_is_shown_as_missing(monkeypatch):
     from quant import pipeline
     monkeypatch.setattr(lq, "live_index_quote", lambda index="NIFTY 50": {"india_vix": None})
 
-    class Yahoo:
+    class Empty:
         def get_ohlc(self, *a, **k):
             return []
-    assert pipeline._india_vix(Yahoo())["value"] is None
+    monkeypatch.setattr(pipeline, "ZerodhaProvider", Empty)
+    assert pipeline._india_vix(Empty())["value"] is None
+
+
+# --- the grid's daily series: Kite first ------------------------------------------
+
+def _days(n, provisional_today=False):
+    import pandas as pd
+
+    from market_data.base import Candle
+    out = [Candle(timestamp=str(d.date()), open=100.0 + i, high=101.0 + i, low=99.0 + i, close=100.5 + i, volume=0)
+           for i, d in enumerate(pd.bdate_range(end="2026-09-25", periods=n))]
+    if provisional_today:
+        out.append(Candle(timestamp="2026-09-28", open=1, high=1, low=1, close=1, provisional=True))
+    return out
+
+
+def test_the_grid_reads_kites_completed_sessions_not_the_one_in_progress(monkeypatch):
+    """Yahoo was a day late with closes and dropped whole sessions (22 Sep
+    2026); Kite's daily closes are NSE's. A session in progress is not a
+    daily bar yet."""
+    from quant import pipeline
+
+    class Kite:
+        def get_ohlc(self, symbol, timeframe, start, end):
+            return _days(80, provisional_today=True)
+
+    class Yahoo:
+        def get_ohlc(self, *a, **k):
+            raise AssertionError("Yahoo is only the fallback")
+    monkeypatch.setattr(pipeline, "ZerodhaProvider", Kite)
+    monkeypatch.setattr(pipeline, "YFinanceProvider", Yahoo)
+    df = pipeline.daily_frame()
+    assert len(df) == 80 and str(df.index[-1].date()) == "2026-09-25"
+    assert not df["provisional"].any()
+    assert df.attrs["source"] == pipeline.KITE_SOURCE
+    assert pipeline.chart_series(sessions=20)["source"] == pipeline.KITE_SOURCE
+
+
+def test_without_a_kite_login_the_grid_falls_back_to_yahoo_topped_up_from_nse(monkeypatch):
+    from quant import pipeline
+    topped = []
+
+    class Yahoo:
+        def get_ohlc(self, *a, **k):
+            return _days(80)
+
+    def top_up(df, symbol):
+        topped.append(symbol)
+        return df
+    monkeypatch.setattr(pipeline, "ZerodhaProvider", _NoKite)
+    monkeypatch.setattr(pipeline, "YFinanceProvider", Yahoo)
+    monkeypatch.setattr(pipeline, "nse_top_up", top_up)
+    df = pipeline.daily_frame()
+    assert len(df) == 80 and topped == ["^NSEI"]
+    assert df.attrs["source"] == pipeline.YAHOO_SOURCE
 
 
 # --- the Today chart ------------------------------------------------------------
