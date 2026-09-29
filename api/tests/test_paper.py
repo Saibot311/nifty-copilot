@@ -306,13 +306,17 @@ def test_a_broke_book_cannot_trade():
 
 
 def test_the_curve_adds_a_win_and_subtracts_a_loss():
+    # The deposit is stamped today, so the trades close after today: with
+    # fixed dates this test began failing the day the calendar passed them.
+    from datetime import date, timedelta
+    day = lambda n: (date.today() + timedelta(days=n)).isoformat()  # noqa: E731
     paper_db.add_funds(100_000, "start")
     paper_db.open_position(_row(lots=1, entry_cost_rs=214.0))
     tid = paper_db.all_trades()[0]["id"]
-    paper_db.close_position(tid, "2026-09-28", 150.0)          # +Rs 3,250 gross
-    paper_db.open_position(_row(signal_date="2026-09-29", entry_date="2026-09-30", lots=1, entry_cost_rs=214.0))
+    paper_db.close_position(tid, day(1), 150.0)                # +Rs 3,250 gross
+    paper_db.open_position(_row(signal_date=day(1), entry_date=day(2), lots=1, entry_cost_rs=214.0))
     tid2 = [t for t in paper_db.all_trades() if t["status"] == "OPEN"][0]["id"]
-    paper_db.close_position(tid2, "2026-10-05", 60.0)          # -Rs 2,600 gross
+    paper_db.close_position(tid2, day(7), 60.0)                # -Rs 2,600 gross
     curve = paper.equity_curve()
     assert [p["what"] for p in curve][0] == "funded"
     assert curve[1]["change_rs"] > 0 and curve[2]["change_rs"] < 0
