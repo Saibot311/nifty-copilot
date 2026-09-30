@@ -453,6 +453,12 @@ of identical cards before 2026-09-23 — don't let it drift back.
   log now falls back to the calendar before accepting a row.
 - **Taking money out of the paper book is not a loss.** Its high-water mark once showed −₹50,000 after
   two withdrawals. Drawdown is measured on what trades made.
+- **A backfill that logs FAILED and moves on can race through months.** On 22 Sep 2026 the NSE index
+  archive's first build lost its network for about a minute; name lookups failed instantly, so it
+  skipped 2025-09-22 to 2026-03-11 (117 sessions, every index) and still ended "done: 2191 days saved".
+  The nightly run only looked back ten days. BANKNIFTY and Midcap Select in the replication read that
+  archive alone. Filled on 27 Sep; `--fill-gaps` now runs nightly, the last line counts failed
+  sessions, and audit 0.9 fails on a run of five missing sessions or any recent one.
 - Every bug found gets a regression test. That rule is why the suite is worth having.
 
 ## Next steps

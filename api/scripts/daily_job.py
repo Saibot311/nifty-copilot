@@ -176,6 +176,15 @@ def step_options() -> bool:
     return recent and gaps
 
 
+def step_nse_indices() -> bool:
+    # Both passes always run, as for the options archive: the recent pass
+    # only looks back ten days, and a failed full backfill (22 Sep 2026: 117
+    # sessions, 2025-09-22 to 2026-03-11) is only ever retried by the second.
+    recent = run_script("scripts/backfill_nse_indices.py", "--recent")
+    gaps = run_script("scripts/backfill_nse_indices.py", "--fill-gaps")
+    return recent and gaps
+
+
 def step_login_record() -> bool:
     """Record whether today had a Zerodha session. Never prompts at 19:30 —
     the market is shut and a login then is worth nothing."""
@@ -225,7 +234,7 @@ def main() -> int:
         ("forward log, journal and paper backup", step_backup),
         # Before the forward log: NSE's index report carries today's close
         # when Yahoo does not have it yet.
-        ("NSE index report", lambda: run_script("scripts/backfill_nse_indices.py", "--recent")),
+        ("NSE index report", step_nse_indices),
         ("forward log", step_forward_log),
         ("Zerodha session record", step_login_record),
         ("kite bars", step_kite_bars),
