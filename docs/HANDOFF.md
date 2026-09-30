@@ -319,6 +319,7 @@ read -s "k?Paste key: " && echo "NAME=$k" >> ~/Documents/NIFTY-Trading-App/api/.
 | **`api/data/paper.db`** | **Paper positions, opened forward** | **Cannot be rebuilt** — backed up nightly |
 | `api/data/login_log.db` | Which days had a Zerodha session, and when it started | Accrues daily; deletable |
 | **`api/data/gift_nifty.db`** | **Nightly GIFT Nifty snapshots, from 2026-09-22** | **Cannot be rebuilt** (no free history exists) — backed up nightly since the audit |
+| **`api/data/option_snapshots.db`** | **NIFTY's option chain every five minutes of the session, from 2026-10-01** (two nearest expiries and the nearest monthly, strikes within 5%: price, bid/ask and sizes, IV, OI, volume) | **Cannot be rebuilt** (no intraday history is served for expired contracts) — append-only, backed up nightly, 7 copies kept. Written by the `com.niftycopilot.snapshots` LaunchAgent (`install_app_services.sh --snapshots`) |
 | **`api/data/news.db`** | **Every headline, stamped when this system first saw it, and Jev's one judgment of it** | **Cannot be rebuilt** — backed up nightly |
 | `api/data/news_tone.db` | GDELT daily tone, 2018→ | `scripts/backfill_news_tone.py` (3-month windows) |
 | **`api/backtest/hypothesis_log.jsonl`** | **Every strategy and parameter set ever run** | **Cannot be rebuilt** — backed up nightly (gzipped) since the audit |

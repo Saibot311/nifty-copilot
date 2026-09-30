@@ -70,6 +70,19 @@ def backup_gift_nifty(source: Path | None = None, dest_dir: Path | None = None, 
     return _backup(source or GIFT_PATH, "gift_nifty", "snapshots", dest_dir, keep, today)
 
 
+# Intraday option snapshots grow by about 14,000 rows a session. A week of
+# daily copies is enough to recover from; thirty would be gigabytes in iCloud.
+SNAPSHOTS_KEEP = 7
+
+
+def backup_option_snapshots(source: Path | None = None, dest_dir: Path | None = None, keep: int = SNAPSHOTS_KEEP,
+                            today: date | None = None) -> dict:
+    """Neither NSE nor Kite serves intraday prices for an expired contract, so
+    the five-minute option snapshots are the only copy that will ever exist."""
+    from .option_snapshots_db import DB_PATH as SNAP_PATH
+    return _backup(source or SNAP_PATH, "option_snapshots", "snapshots", dest_dir, keep, today)
+
+
 def backup_hypothesis_log(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
                           today: date | None = None) -> dict:
     """The audit trail of every strategy and parameter set ever run — the

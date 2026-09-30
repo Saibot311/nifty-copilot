@@ -141,7 +141,8 @@ def test_an_old_journal_gains_the_plan_columns_with_every_row_kept(tmp_path):
     """journal.db cannot be rebuilt: the new columns are added, never a new table."""
     import sqlite3
     path = tmp_path / "old.db"
-    old_schema = journal_db.SCHEMA
+    old_schema = journal_db.SCHEMA.replace(",\n    stop_premium    REAL,\n    target_premium  REAL,\n    exit_kind       TEXT", "")
+    assert "stop_premium" not in old_schema
     conn = sqlite3.connect(path)
     conn.executescript(old_schema)
     conn.execute("INSERT INTO journal (created_at, trade_date, decision) VALUES ('x', '2026-09-22', 'SKIPPED')")
@@ -296,3 +297,30 @@ def test_without_the_index_close_the_level_comes_from_the_same_sessions_option_p
     monkeypatch.setattr(journal, "_DATA", tmp_path)
     e = {**TRADE, "option_type": "PE", "strike": 22700.0}
     assert journal.archive_forward(e, "2026-09-29") == 22678.5          # 22700 + 90 - 111.5, the closest pair
+
+
+def test_a_new_journal_is_created_with_every_column_and_a_racing_migration_is_harmless(tmp_path):
+    """Four threads opening a brand-new journal at once used to race to add
+    the plan columns; one lost with "duplicate column name"."""
+    import sqlite3
+    path = tmp_path / "new.db"
+    with journal_db.connect(path) as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(journal)")}
+    assert {"stop_premium", "target_premium", "exit_kind"} <= cols
+    old = tmp_path / "old.db"
+    raw = sqlite3.connect(old)
+    raw.execute("CREATE TABLE journal (id INTEGER PRIMARY KEY, created_at TEXT, trade_date TEXT, decision TEXT)")
+    raw.execute("ALTER TABLE journal ADD COLUMN stop_premium REAL")   # another connection got there first
+    raw.commit()
+
+    class Stale:
+        """A connection whose look at the columns was taken before that ALTER."""
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, *a):
+            if sql.startswith("PRAGMA"):
+                return [(0, "id"), (1, "created_at")]
+            return self.conn.execute(sql, *a)
+    journal_db._migrate(Stale(raw))
+    assert {"stop_premium", "target_premium", "exit_kind"} <= {r[1] for r in raw.execute("PRAGMA table_info(journal)")}
