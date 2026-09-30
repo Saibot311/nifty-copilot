@@ -1,5 +1,5 @@
 import type { Recommendation } from "@/lib/api";
-import { Offline, Panel, Pill, minus } from "./ui";
+import { Offline, Panel, Pill, fmtPct, minus } from "./ui";
 
 const ACTION_META: Record<
   string,
@@ -60,7 +60,7 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
                   <span className="flex items-center gap-2 text-xs text-zinc-300">
                     <span
                       className={`font-mono text-[10px] font-bold ${
-                        c.option_type === "CE" ? "text-emerald-400" : "text-rose-400"
+                        c.option_type === "CE" ? "text-emerald-400" : c.option_type === "PE" ? "text-rose-400" : "text-sky-300"
                       }`}
                     >
                       {c.option_type}
@@ -76,7 +76,9 @@ export function RecommendationCard({ rec }: { rec: Recommendation | null }) {
                     {c.suggested_option} · 2024–26: {c.holdout_trades} trades,{" "}
                     {c.holdout_avg_profit_per_lot_rs != null
                       ? `${c.holdout_avg_profit_per_lot_rs >= 0 ? "+" : "−"}₹${Math.abs(c.holdout_avg_profit_per_lot_rs).toLocaleString("en-IN")}/lot`
-                      : "–"}
+                      : c.holdout_mean_pct != null
+                        ? `${fmtPct(c.holdout_mean_pct, 1)} a trade`
+                        : "–"}
                     , t {minus(c.holdout_t_stat)}
                   </p>
                 )}

@@ -657,11 +657,20 @@ def live_marks() -> dict:
     contracts += [{"id": f"j{e['id']}", "underlying": e["underlying"], "expiry": e["expiry"],
                    "strike": e["strike"], "option_type": e["option_type"]} for e in journal]
     spot_keys = tuple(sorted({SPOT_KEYS[e["underlying"]] for e in journal if e["underlying"] in SPOT_KEYS}))
+    # And the contracts today's intraday rules bought, from the state in hand
+    # (refreshed on a thread of its own, so the tick never waits on bars).
+    try:
+        from briefing.intraday_live import build_intraday, tick_contracts
+        from cache import cached_background
+        contracts += tick_contracts(cached_background("intraday", 30, build_intraday))
+    except Exception:
+        pass
     tokens = option_tokens(contracts)
     quotes = last_prices(list(tokens.values()), extra=spot_keys)
     priced_all = {tid: quotes["by_token"].get(token) for tid, token in tokens.items()}
     journal_marks = {int(str(tid)[1:]): p for tid, p in priced_all.items() if str(tid).startswith("j") and p is not None}
-    marks = {tid: p for tid, p in priced_all.items() if not str(tid).startswith("j") and p is not None}
+    intraday_marks = {str(tid)[1:]: p for tid, p in priced_all.items() if str(tid).startswith("i") and p is not None}
+    marks = {tid: p for tid, p in priced_all.items() if str(tid)[0] not in "ji" and p is not None}
     priced = {t["id"]: marks.get(t["id"]) for t in trades}
     book = cash_and_equity(marks)
     # Every open row is priced — the yardstick needs a live mark to be worth
@@ -671,6 +680,7 @@ def live_marks() -> dict:
     return {
         "index": quotes.get("index"), "source": quotes.get("source"), "quote_at": quotes.get("quote_at"),
         "marks": {str(tid): p for tid, p in marks.items()},
+        "intraday_live": {"marks": intraday_marks, "at": quotes.get("quote_at")},
         "journal_live": {"marks": journal_marks, "source": quotes.get("source"), "at": quotes.get("quote_at"),
                          "spots": {name: by_key.get(key) for name, key in SPOT_KEYS.items()
                                    if by_key.get(key) is not None}},

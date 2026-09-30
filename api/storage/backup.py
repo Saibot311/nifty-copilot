@@ -83,6 +83,14 @@ def backup_option_snapshots(source: Path | None = None, dest_dir: Path | None = 
     return _backup(source or SNAP_PATH, "option_snapshots", "snapshots", dest_dir, keep, today)
 
 
+def backup_intraday_forward(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                            today: date | None = None) -> dict:
+    """The intraday rules' forward record at real option prices: written as
+    each trigger happens, never rebuilt from anything else."""
+    from .intraday_forward_db import DB_PATH as INTRADAY_PATH
+    return _backup(source or INTRADAY_PATH, "intraday_forward", "events", dest_dir, keep, today)
+
+
 def backup_hypothesis_log(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
                           today: date | None = None) -> dict:
     """The audit trail of every strategy and parameter set ever run — the

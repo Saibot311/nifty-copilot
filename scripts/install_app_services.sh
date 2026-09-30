@@ -117,7 +117,10 @@ install_snapshots() {
     <key>WorkingDirectory</key><string>$API_DIR</string>
     <key>EnvironmentVariables</key>
     <dict><key>PATH</key><string>$PATH_LINE</string></dict>
-    <key>StartInterval</key><integer>300</integer>
+    <key>StartCalendarInterval</key>
+    <array>
+$(for m in 0 5 10 15 20 25 30 35 40 45 50 55; do echo "        <dict><key>Minute</key><integer>$m</integer></dict>"; done)
+    </array>
     <key>RunAtLoad</key><false/>
     <!-- A log launchd creates and owns (see the watchdog's note). -->
     <key>StandardOutPath</key><string>$API_DIR/data/snapshots.launchd.log</string>

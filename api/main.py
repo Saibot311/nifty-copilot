@@ -584,6 +584,9 @@ def live_tick() -> dict:
     except Exception as e:
         marks = {"error": str(e)[:120], "index": None, "marks": {}, "source": None}
     out.update({k: marks.get(k) for k in ("index", "marks", "source", "paper", "quote_at")})
+    # The contracts the intraday rules bought today, priced on the same answer.
+    if marks.get("intraday_live", {}).get("marks"):
+        out["intraday"] = marks["intraday_live"]
     # The journal's open trades, priced on the same Kite answer. Only when
     # Kite priced something: the closing-price fallback is /api/journal's.
     if marks.get("journal_live", {}).get("marks"):
@@ -893,6 +896,52 @@ def course_research() -> dict:
     return {"computed_at": course["computed_at"], "prereg": {"course": course["prereg_hash"],
             "breakout": breakout["prereg_hash"] if breakout else None},
             "tests_in_family": (breakout or course)["tests_in_family"], "rows": rows}
+
+
+@app.get("/api/nifty_pipeline")
+def nifty_pipeline() -> dict:
+    """The strategy pipeline: which option a buyer should hold (Phase 1, on
+    2019-23 only) and five pre-registered hypotheses judged once on 2024-26
+    against the same option bought with no signal (Phase 2). Saved by
+    scripts/instrument_study.py and scripts/nifty_pipeline.py."""
+    from backtest.instrument_study import load_instrument_study
+    from backtest.nifty_pipeline import load_nifty_pipeline
+    study = load_nifty_pipeline()
+    if study is None:
+        raise HTTPException(503, "The pipeline's hypotheses have not been run — python scripts/nifty_pipeline.py")
+    spec = study["preregistered"]["hypotheses"]
+    rows = [{"name": h["name"], "label": h["label"], "verdict": h["verdict"], "reason": h["reason"],
+             "required_t": h["required_t"], "timeframe": spec[h["name"]]["timeframe"], "rule": spec[h["name"]]["rule"],
+             "judged": "2024–26", "periods": {"2018–23": _period(h["development"]), "2024–26": _period(h["holdout"])}}
+            for h in study["hypotheses"]]
+    instrument = None
+    inst = load_instrument_study()
+    if inst:
+        def carry(cells: list, expiry: str, hold: int) -> float | None:
+            hit = [c for c in cells if c["expiry"] == expiry and c["moneyness"] == "ATM" and c["hold"] == hold]
+            return hit[0].get("carry_pts_per_session") if hit else None
+        instrument = {
+            "period": inst["period"], "rule": inst["rule"],
+            "chosen": inst["choices"]["directional"],
+            "chosen_without_slippage": inst["without_assumed_slippage"]["choices"]["directional"],
+            "rows": [{"expiry": e, "hold": h, "carry_pts": carry(inst["cells"], e, h),
+                      "carry_pts_without_slippage": carry(inst["without_assumed_slippage"]["cells"], e, h)}
+                     for e in ("nearest", "monthly") for h in (1, 3, 5)]}
+    return {"computed_at": study["computed_at"], "prereg": study["prereg_hash"],
+            "tests_in_family": study["tests_in_family"], "rows": rows, "instrument": instrument}
+
+
+@app.get("/api/intraday")
+def intraday() -> dict:
+    """The three intraday rules followed through the session in progress on
+    completed 5-minute bars, each with its study verdict and its forward
+    record at real option prices. Kept for 30 seconds; the tick carries the
+    live price of any contract a rule bought today."""
+    from briefing.intraday_live import build_intraday
+    try:
+        return cached("intraday", ttl_seconds=30, producer=build_intraday, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Intraday rules unavailable: {str(e)[:160]}") from e
 
 
 @app.get("/api/structural")

@@ -2,9 +2,15 @@
 
     cd api && .venv/bin/python scripts/snapshot_options.py
 
-The LaunchAgent com.niftycopilot.snapshots runs this every 300 seconds (see
+The LaunchAgent com.niftycopilot.snapshots runs this as each 5-minute bar
+closes (:00, :05, ... and SETTLE_S seconds for the bar to be served; see
 scripts/install_app_services.sh). Outside 09:15-15:35 IST on a weekday it
 exits at once, asking nothing.
+
+After saving, the same run follows the three intraday rules on the bar that
+just closed and writes any entry or exit to the intraday forward record,
+priced from the chain it has just saved (briefing/intraday_live.record). A
+failure there is printed and never costs the snapshot.
 
 Each run reads NSE's public chain (the one the Today tab's option chain
 shows) for the two nearest expiries and the nearest monthly, and keeps the
@@ -15,6 +21,7 @@ those would record the close again as if it were new.
 """
 
 import sys
+import time as _time
 from datetime import datetime, time
 from pathlib import Path
 
@@ -26,6 +33,7 @@ from storage import option_snapshots_db as db  # noqa: E402
 
 OPEN, LAST_RUN, CLOSE = time(9, 15), time(15, 35), time(15, 30, 59)
 WINDOW_PCT = 5.0
+SETTLE_S = 20
 NSE_DATE = "%d-%b-%Y"
 
 
@@ -89,6 +97,7 @@ def main(now: datetime | None = None, nse=None) -> int:
         new = db.save(rows)
         db.log_run("saved", new, f"{len(rows)} rows seen")
         print(f"{now:%H:%M} {new} new of {len(rows)}")
+        record_intraday(now, rows)
         return 0
     except Exception as e:  # noqa: BLE001 — a failed run is logged and retried in five minutes
         db.log_run("failed", 0, f"{type(e).__name__}: {e}")
@@ -96,5 +105,19 @@ def main(now: datetime | None = None, nse=None) -> int:
         return 1
 
 
+def record_intraday(now: datetime, rows: list[dict]) -> None:
+    try:
+        from briefing.intraday_live import record
+        written = record(now, rows)
+        if written:
+            print(f"{now:%H:%M} intraday record: {', '.join(written)}")
+    except Exception as e:  # noqa: BLE001 — the snapshot is saved either way
+        print(f"{now:%H:%M} intraday record FAILED — {type(e).__name__}: {e}")
+
+
 if __name__ == "__main__":
+    # launchd starts this on the minute a bar closes; give the bar a moment to be served.
+    wait = SETTLE_S - datetime.now(IST).second
+    if 0 < wait <= SETTLE_S:
+        _time.sleep(wait)
     sys.exit(main())

@@ -529,7 +529,7 @@ function ChartView({ data }: { data: ChartData }) {
         </details>
       )}
       <p className="mt-2 px-1 text-[11px] leading-relaxed text-zinc-500">
-        {data.note} The strip under the candles marks the days each of these patterns formed.
+        {data.note}{inPlay.length > 0 && " The strip under the candles marks the days each of these patterns formed."}
       </p>
     </Panel>
   );

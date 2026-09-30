@@ -196,13 +196,16 @@ export interface LiveQuote {
 export interface RecommendationCandidate {
   strategy: string;
   label: string;
-  direction: "long" | "short";
-  option_type: "CE" | "PE";
+  /** "straddle" for the strategy pipeline's two daily straddles, listed beside the patterns. */
+  direction: "long" | "short" | "straddle";
+  option_type: "CE" | "PE" | "CE+PE";
   status: Verdict;
   verdict_reason: string | null;
   suggested_option: string | null;
   holdout_trades: number;
   holdout_avg_profit_per_lot_rs: number | null;
+  /** The straddles are measured per trade in % of the premium paid, not in rupees a lot. */
+  holdout_mean_pct?: number | null;
   holdout_t_stat: number | null;
   qualifies: boolean;
   why_not: string | null;
@@ -1040,6 +1043,49 @@ export type CourseResearch = {
 };
 export const fetchCourseResearch = () => get<CourseResearch>("/api/course_research");
 
+export type PipelineRow = CourseRow & { rule: string };
+export type NiftyPipeline = {
+  computed_at: string; prereg: string; tests_in_family: number; rows: PipelineRow[];
+  /** Phase 1: the cost of one point of NIFTY exposure a session, at the money, 2019–23 only. */
+  instrument: {
+    period: { from: string; to: string; sessions: number; note: string };
+    rule: string;
+    chosen: { expiry: string; moneyness: string };
+    chosen_without_slippage: { expiry: string; moneyness: string };
+    rows: { expiry: "nearest" | "monthly"; hold: number; carry_pts: number | null; carry_pts_without_slippage: number | null }[];
+  } | null;
+};
+export const fetchNiftyPipeline = () => get<NiftyPipeline>("/api/nifty_pipeline");
+
+export type IntradayContract = { expiry: string; strike: number; option_type: "CE" | "PE" };
+export type IntradayRule = {
+  name: string;
+  label: string;
+  status: "waiting" | "in_trade" | "closed" | "no_trade" | "no_history";
+  side?: 1 | -1 | null;
+  entry_time?: string; exit_time?: string; exit_reason?: string;
+  entry_index?: number; exit_index?: number;
+  /** When the rule next acts, and (noise band) the levels it acts on. */
+  next?: { at: string; upper?: number; lower?: number } | null;
+  entry_levels?: { at: string; upper: number; lower: number };
+  first_half_hour_pct?: number;
+  first_candle?: { open: number; high: number; low: number; close: number };
+  stop?: number;
+  contract?: IntradayContract | null;
+  evidence: { verdict: Verdict; required_t: number | null; holdout_t: number | null; holdout_mean_pct: number | null;
+              holdout_baseline_pct: number | null; holdout_trades: number | null } | null;
+  /** The sentence to show, written by the API; "Consider" only for an APPROVED rule. */
+  line: string;
+  /** The rule's record at real option prices from 1 Oct 2026. */
+  forward: { trades: number; recorded: number; mean_pct: number | null; first_day: string } | null;
+  recorded_today: { kind: "entry" | "exit"; bar_close_at: string; price_at: string | null; bid: number | null;
+                    ask: number | null; ltp: number | null }[];
+};
+export type Intraday = {
+  session: string | null; bars_through: string; as_of: string; source: string; note: string; rules: IntradayRule[];
+};
+export const fetchIntraday = () => get<Intraday>("/api/intraday");
+
 export type LoginDay = {
   trade_date: string;
   status: "LOGGED_IN" | "PROMPTED" | "MISSING";
@@ -1166,6 +1212,8 @@ export type LiveTick = {
   indices?: IndicesBoard | null;
   /** The journal's open trades, priced on the same Kite answer, by entry id. */
   journal?: Record<string, JournalPosition> | null;
+  /** Today's intraday-rule contracts, priced on the same answer, by rule name. */
+  intraday?: { marks: Record<string, number>; at: string | null } | null;
 };
 
 export const fetchTick = () => get<LiveTick>("/api/live/tick");
