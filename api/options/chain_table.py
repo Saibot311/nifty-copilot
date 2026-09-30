@@ -107,7 +107,33 @@ def build_chain_table(data: dict, expiry: str, expiries: list[str], today: date,
         "lot_size": lot,
         "strikes": len(rows),
         "rate_card": costs.summary(today),
+        "open_interest": _open_interest(rows),
         "rows": rows,
+    }
+
+
+def _open_interest(rows: list[dict]) -> dict:
+    """Where open interest sits in this expiry: what the open-interest card
+    showed for the nearest one, now for whichever is picked. Measurements,
+    not signals — none of it has been tested as a predictor."""
+    def side(key: str) -> list[tuple[float, dict]]:
+        return [(r["strike"], r[key]) for r in rows if r[key]]
+
+    calls, puts = side("call"), side("put")
+    total_call, total_put = sum(c["oi"] for _, c in calls), sum(p["oi"] for _, p in puts)
+
+    def heaviest(contracts):
+        held = [(s, c) for s, c in contracts if c["oi"] > 0]
+        return max(held, key=lambda sc: sc[1]["oi"])[0] if held else None
+
+    return {
+        "total_call": total_call, "total_put": total_put,
+        "pcr": round(total_put / total_call, 3) if total_call else None,
+        "max_call_oi_strike": heaviest(calls), "max_put_oi_strike": heaviest(puts),
+        # Contracts opened minus closed today: where positions were put on,
+        # which is the part of open interest that is news.
+        "call_oi_added": sum(c["oi_change"] for _, c in calls),
+        "put_oi_added": sum(p["oi_change"] for _, p in puts),
     }
 
 

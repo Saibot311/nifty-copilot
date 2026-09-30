@@ -5,7 +5,6 @@ import { ForwardLogCard } from "@/components/ForwardLogCard";
 import { IVCard } from "@/components/IVCard";
 import { MarketTab } from "@/components/MarketCards";
 import { NewsResearchCard } from "@/components/NewsResearchCard";
-import { OpenInterestCard } from "@/components/OpenInterestCard";
 import { OptionChainCard } from "@/components/OptionChainCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
@@ -44,7 +43,6 @@ import {
   fetchLiveQuote,
   fetchNews,
   fetchNewsResearch,
-  fetchOptionsChain,
   fetchOptionChainTable,
   fetchPatternOptions,
   fetchPatternsToday,
@@ -80,7 +78,6 @@ export default async function Home() {
     zerodha,
     paper,
     news,
-    optionChain,
     chainTable,
     newsResearch,
     strategyFit,
@@ -108,7 +105,6 @@ export default async function Home() {
     fetchZerodhaStatus(),
     fetchPaper(),
     fetchNews(),
-    fetchOptionsChain(),
     fetchOptionChainTable(),
     fetchNewsResearch(),
     fetchStrategyFit(),
@@ -191,14 +187,7 @@ export default async function Home() {
               </section>
 
               <section>
-                <SectionLabel hint="from NSE's live chain — measurements, not validated signals">
-                  Open interest
-                </SectionLabel>
-                <OpenInterestCard initial={optionChain.data} />
-              </section>
-
-              <section>
-                <SectionLabel hint="every strike and expiry NSE lists — pick one for what a lot costs to buy">
+                <SectionLabel hint="NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs">
                   Option chain
                 </SectionLabel>
                 <OptionChainCard initial={chainTable.data} />

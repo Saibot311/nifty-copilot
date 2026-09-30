@@ -193,3 +193,34 @@ def test_the_endpoint_says_404_for_an_unknown_expiry_and_503_when_nse_fails(monk
     with pytest.raises(HTTPException) as e:
         main.options_chain_contracts(expiry="02-Jan-2031")
     assert e.value.status_code == 503
+
+
+# --- open interest, folded in from the old card (2026-09-29) --------------------
+
+OI_ROWS = [(22700.0, _side(22700.0, oi=4000, oi_chg=100), _side(22700.0, kind="PE", oi=9000, oi_chg=-300)),
+           (22800.0, _side(22800.0, oi=7000, oi_chg=500), _side(22800.0, kind="PE", oi=6000, oi_chg=200)),
+           (22900.0, _side(22900.0, oi=12000, oi_chg=900), ABSENT)]
+
+
+def test_the_chain_carries_the_open_interest_summary_for_its_own_expiry():
+    oi = _table(OI_ROWS)["open_interest"]
+    assert (oi["total_call"], oi["total_put"]) == (23000, 15000)
+    assert oi["pcr"] == round(15000 / 23000, 3)
+    assert (oi["max_call_oi_strike"], oi["max_put_oi_strike"]) == (22900.0, 22700.0)
+    assert (oi["call_oi_added"], oi["put_oi_added"]) == (1500, -100)
+
+
+def test_the_summary_matches_what_the_open_interest_card_showed():
+    """The chain replaces the open-interest card on the Today tab, so on the
+    same NSE payload it must say what that card said."""
+    from options.chain_analytics import analyse_chain
+    old = analyse_chain(_payload(OI_ROWS), EXPIRY)
+    oi = _table(OI_ROWS)["open_interest"]
+    assert (oi["total_call"], oi["total_put"], oi["pcr"]) == (old.total_call_oi, old.total_put_oi, old.pcr_oi)
+    assert (oi["max_call_oi_strike"], oi["max_put_oi_strike"]) == (old.max_call_oi_strike, old.max_put_oi_strike)
+    assert (oi["call_oi_added"], oi["put_oi_added"]) == (old.call_oi_added, old.put_oi_added)
+
+
+def test_a_chain_with_no_call_open_interest_has_no_ratio():
+    oi = _table([(22800.0, _side(22800.0, oi=0), _side(22800.0, kind="PE", oi=500))])["open_interest"]
+    assert oi["pcr"] is None and oi["max_call_oi_strike"] is None and oi["max_put_oi_strike"] == 22800.0

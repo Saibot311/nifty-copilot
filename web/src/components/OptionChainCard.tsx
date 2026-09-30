@@ -5,10 +5,12 @@ import type { ChainContract, OptionChainTable } from "@/lib/api";
 import { fetchOptionChainTable } from "@/lib/api";
 import { Offline, Panel, Pill, Stat, fmtNum, fmtPct, fmtSigned } from "./ui";
 
-/** The option chain itself: every strike NSE lists for any expiry it lists,
- *  each call and put with its prices, and — for the one you pick — what a lot
- *  costs to buy now and where it breaks even. The open-interest card above
- *  summarises the chain; this is for looking up a contract.
+/** The option chain: every strike NSE lists for any expiry it lists, each
+ *  call and put with its prices, and — for the one you pick — what a lot costs
+ *  to buy now and where it breaks even. It replaced the separate open-interest
+ *  card (2026-09-29): that card's summary is the stat row at the top, for
+ *  whichever expiry is picked, and its bars sit behind the OI figures, growing
+ *  outward from the strike column with the two heaviest strikes brightest.
  *
  *  Calls sit left and puts right, as on NSE and Kite. In-the-money cells are
  *  shaded in zinc, not coloured: DESIGN.md §2 keeps emerald and rose for money
@@ -32,8 +34,9 @@ const sideName = (k: Kind) => (k === "CE" ? "call" : "put");
 
 /** One side of a strike's row, in the column order NSE uses: open interest
  *  on the outside, the price next to the strike. `mirror` flips it for puts. */
-function Side({ c, kind, strike, selected, onPick, mirror }: {
+function Side({ c, kind, strike, selected, onPick, mirror, maxOi, peak }: {
   c: ChainContract | null; kind: Kind; strike: number; selected: boolean; onPick: () => void; mirror: boolean;
+  maxOi: number; peak: boolean;
 }) {
   const shade = selected ? "bg-indigo-500/10" : c?.itm ? "bg-zinc-800/40" : "";
   const td = `px-2 py-1.5 text-right ${shade}`;
@@ -49,7 +52,13 @@ function Side({ c, kind, strike, selected, onPick, mirror }: {
   }
   const click = { onClick: onPick };
   const cells = [
-    <td key="oi" {...click} className={`${td} cursor-pointer text-zinc-400`}>{compact(c.oi)}</td>,
+    <td key="oi" {...click} className={`${td} relative cursor-pointer text-zinc-400`}
+        title={`${c.oi.toLocaleString("en-IN")} ${sideName(kind)} OI at ${strike.toLocaleString("en-IN")}`}>
+      {/* The open-interest bar: one scale for both sides, growing away from the strike. */}
+      <span aria-hidden className={`absolute inset-y-1 ${mirror ? "left-0" : "right-0"} rounded-[2px] ${
+        peak ? "bg-zinc-300/35" : "bg-zinc-500/20"}`} style={{ width: `${(c.oi / maxOi) * 100}%` }} />
+      <span className="relative">{compact(c.oi)}</span>
+    </td>,
     <td key="oic" {...click} className={`${td} hidden cursor-pointer text-zinc-500 lg:table-cell`}>{compactSigned(c.oi_change)}</td>,
     <td key="vol" {...click} className={`${td} hidden cursor-pointer text-zinc-500 lg:table-cell`}>{compact(c.volume)}</td>,
     <td key="iv" {...click} className={`${td} hidden cursor-pointer text-zinc-500 sm:table-cell`}>{c.iv == null ? "–" : c.iv.toFixed(1)}</td>,
@@ -161,6 +170,9 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
   }
   const expiries = (data ?? initial ?? other)?.expiries ?? [];
   const spotAt = data ? data.rows.findIndex((r) => r.strike > data.underlying_value) : -1;
+  // Bar length only: a scale for drawing, not a figure anyone reads.
+  const maxOi = data ? Math.max(...data.rows.flatMap((r) => [r.call?.oi ?? 0, r.put?.oi ?? 0]), 1) : 1;
+  const oi = data?.open_interest;
 
   return (
     <Panel className="p-4">
@@ -185,6 +197,19 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
           {data ? `${data.strikes} strikes · NIFTY ${fmtNum(data.underlying_value)} · NSE ${data.as_of || "—"}` : ""}
         </span>
       </div>
+
+      {oi && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Put/call OI" value={oi.pcr ?? "–"}
+                sub={`${compact(oi.total_put)} puts / ${compact(oi.total_call)} calls`} />
+          <Stat label="Most puts" value={oi.max_put_oi_strike?.toLocaleString("en-IN") ?? "–"}
+                sub="read as support — untested here" />
+          <Stat label="Most calls" value={oi.max_call_oi_strike?.toLocaleString("en-IN") ?? "–"}
+                sub="read as resistance — untested here" />
+          <Stat label="Opened today" value={`${compactSigned(oi.put_oi_added)} puts`}
+                sub={`${compactSigned(oi.call_oi_added)} calls`} />
+        </div>
+      )}
 
       {data && (
         <div className="mt-4 border-t border-zinc-800 pt-3">
@@ -229,13 +254,15 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
                     // The first strike above spot carries a bright rule: NIFTY sits on that line.
                     <tr key={r.strike} ref={r.is_atm ? atm : undefined}
                         className={`border-b border-zinc-900 ${i === spotAt ? "border-t-2 border-t-zinc-400" : ""}`}>
-                      <Side c={r.call} kind="CE" strike={r.strike} mirror={false}
+                      <Side c={r.call} kind="CE" strike={r.strike} mirror={false} maxOi={maxOi}
+                            peak={r.strike === oi?.max_call_oi_strike}
                             selected={pick?.strike === r.strike && pick.kind === "CE"}
                             onPick={() => setPick({ strike: r.strike, kind: "CE" })} />
                       <td className={`bg-zinc-900/60 px-2 py-1.5 text-center ${r.is_atm ? "font-semibold text-zinc-100" : "text-zinc-300"}`}>
                         {r.strike.toLocaleString("en-IN")}
                       </td>
-                      <Side c={r.put} kind="PE" strike={r.strike} mirror
+                      <Side c={r.put} kind="PE" strike={r.strike} mirror maxOi={maxOi}
+                            peak={r.strike === oi?.max_put_oi_strike}
                             selected={pick?.strike === r.strike && pick.kind === "PE"}
                             onPick={() => setPick({ strike: r.strike, kind: "PE" })} />
                     </tr>
@@ -253,7 +280,10 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
           {data.lot_size} bought at the ask. Charges are {data.rate_card}, on the way in and on a sale at the same
           price; the spread is the real one on the book rather than the backtests&apos; assumed 1.5%. The breakeven
           counts the premium and both legs&apos; charges. This is what a contract costs, not whether it is worth
-          buying.
+          buying. The bar behind each OI figure is open interest on one scale for both sides; the brightest two
+          are the heaviest strikes named above. Those are commonly read as support (puts) and resistance (calls),
+          and the put/call ratio as sentiment, but this project has not tested whether either predicts anything on
+          NIFTY: they are measurements, not signals.
         </p>
       )}
     </Panel>
