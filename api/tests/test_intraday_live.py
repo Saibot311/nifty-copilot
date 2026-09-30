@@ -205,3 +205,74 @@ def test_evaluate_reports_the_last_session_with_every_rule(monkeypatch):
     assert out["session"] == last.isoformat() and out["bars_through"] == "15:30"
     assert [r["name"] for r in out["rules"]] == list(live.RULES)
     assert all(r["line"] and "Consider" not in r["line"] for r in out["rules"])
+
+
+# --- a session missing from the 5-minute bars ------------------------------------------
+
+def closes_of(df: pd.DataFrame) -> dict:
+    return {d: float(g["close"].iloc[-1]) for d, g in df.groupby(df.index.date)}
+
+
+def test_the_previous_close_comes_from_the_daily_archive_when_a_days_bars_are_missing():
+    """At midnight on 1 Oct 2026 Kite stopped serving 30 Sep's 5-minute bars:
+    the session before in the bars was 29 Sep, a day too far back."""
+    df = walk(20, seed=5)
+    closes = closes_of(df)
+    days = sorted(closes)
+    gone, day = days[-2], days[-1]
+    s = Series(df[df.index.date != gone])
+    st = live.last_half_hour_now(s, closes, day)
+    i45 = df.index.get_loc(df[(df.index.date == day)].between_time("09:40", "09:40").index[0])
+    assert st["previous_close"] == round(closes[gone], 2)
+    assert st["first_half_hour_pts"] == round(float(df["close"].iloc[i45] - closes[gone]), 2)
+
+
+def test_the_noise_band_will_not_set_levels_over_a_missing_session():
+    df = walk(20, seed=5)
+    closes = closes_of(df)
+    days = sorted(closes)
+    st = live.noise_band_now(Series(df[df.index.date != days[-3]]), closes, days[-1])
+    assert st == {"status": "no_history", "missing": [days[-3].isoformat()]}
+    assert "5-minute bars for" in live.line("Noise-band momentum", st, REJECTED)
+
+
+def test_a_last_session_missing_from_the_bars_is_named(monkeypatch):
+    monkeypatch.setattr(live, "verdicts", lambda: {})
+    df = walk(20, seed=5)
+    closes = closes_of(df)
+    last = sorted(closes)[-1]
+    out = live.evaluate(df[df.index.date != last], closes, [last + timedelta(days=7)])
+    assert out["missing_after"] == [last.isoformat()] and out["session"] < last.isoformat()
+
+
+def test_sessions_kite_did_not_serve_are_filled_from_yahoo(monkeypatch):
+    import market_data.bar_archive as ba
+    import market_data.yfinance_provider as yp
+    import market_data.zerodha_provider as zp
+    df = walk(6, seed=8)
+    days = sorted(set(df.index.date))
+
+    def candles(frame):
+        return [Candle(timestamp=ts.isoformat(), open=r.open, high=r.high, low=r.low, close=r.close)
+                for ts, r in frame.iterrows()]
+
+    class Archive:
+        def get_ohlc(self, *a):
+            return candles(df[df.index.date <= days[1]])
+
+    class Kite:
+        def get_ohlc(self, *a, **k):
+            return candles(df[(df.index.date > days[1]) & (df.index.date != days[3])])   # skips days[3]
+
+    class Yahoo:
+        def get_ohlc(self, sym, tf, start, end):
+            return candles(df[(df.index.date >= start) & (df.index.date < end)])
+
+    monkeypatch.setattr(ba, "ArchiveProvider", Archive)
+    monkeypatch.setattr(zp, "ZerodhaProvider", Kite)
+    monkeypatch.setattr(yp, "YFinanceProvider", Yahoo)
+    now = datetime.combine(days[-1] + timedelta(days=1), datetime.min.time(), tzinfo=live.IST)
+    bars, source = live.five_minute_bars(now, closes_of(df))
+    assert sorted(set(bars.index.date)) == days
+    assert source == f"Kite, and Yahoo for {days[3].day} {days[3]:%b}"
+    assert len(bars) == len(df)

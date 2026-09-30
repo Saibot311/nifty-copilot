@@ -40,11 +40,23 @@ def _is_check(end: int) -> bool:
     return NOISE_FIRST <= end <= NOISE_LAST and (end - NOISE_FIRST) % NOISE_STEP == 0
 
 
-def _prev_close(s: Series, daily_close: dict, k: int) -> float | None:
+def _prev_close(s: Series, daily_close: dict, k: int, day: date) -> float | None:
+    """The previous session's official close. From the daily archive, which
+    has every session even when a day's 5-minute bars are missing: taking
+    "the session before in the bars" then would reach back a day (Kite stopped
+    serving 30 Sep's 5-minute bars at midnight, 1 Oct 2026). Without daily
+    closes, the last bar of the session before."""
+    earlier = [d for d in daily_close if d < day]
+    if earlier:
+        return daily_close[max(earlier)]
     if k == 0:
         return None
-    prev = s.sessions[k - 1]
-    return daily_close.get(prev) or float(s.c[s.bounds[prev][1]])
+    return float(s.c[s.bounds[s.sessions[k - 1]][1]])
+
+
+def missing_sessions(s: Series, daily_close: dict, day: date, n: int) -> list[date]:
+    """The last `n` sessions before `day` that the daily archive has and the bars do not."""
+    return [d for d in sorted(d for d in daily_close if d < day)[-n:] if d not in s.bounds]
 
 
 def _at_ts(s: Series, i: int) -> str:
@@ -55,6 +67,9 @@ def _at_ts(s: Series, i: int) -> str:
 
 def noise_band_now(s: Series, daily_close: dict, day: date) -> dict:
     k = s.sessions.index(day)
+    gaps = missing_sessions(s, daily_close, day, NOISE_LOOKBACK)
+    if gaps:
+        return {"status": "no_history", "missing": [d.isoformat() for d in gaps]}
     if k < NOISE_LOOKBACK:
         return {"status": "no_history"}
     prior = s.sessions[k - NOISE_LOOKBACK:k]
@@ -68,7 +83,7 @@ def noise_band_now(s: Series, daily_close: dict, day: date) -> dict:
         return sum(vals) / len(vals) if len(vals) >= NOISE_MIN_SESSIONS else None
 
     b0, b1 = s.bounds[day]
-    pc = _prev_close(s, daily_close, k)
+    pc = _prev_close(s, daily_close, k, day)
     hi_ref, lo_ref = max(s.o[b0], pc), min(s.o[b0], pc)
 
     def levels(end: int) -> dict | None:
@@ -111,7 +126,7 @@ def noise_band_now(s: Series, daily_close: dict, day: date) -> dict:
 
 def last_half_hour_now(s: Series, daily_close: dict, day: date) -> dict:
     k = s.sessions.index(day)
-    pc = _prev_close(s, daily_close, k)
+    pc = _prev_close(s, daily_close, k, day)
     b0, b1 = s.bounds[day]
     at = {int(s.hm[i]): i for i in range(b0, b1 + 1)}
     i45, i_in, i_out = at.get(9 * 60 + 40), at.get(14 * 60 + 55), at.get(15 * 60 + 20)
@@ -120,10 +135,12 @@ def last_half_hour_now(s: Series, daily_close: dict, day: date) -> dict:
     if i45 is None:
         return {"status": "waiting", "next": {"at": "09:45"}}
     r = s.c[i45] / pc - 1
+    first = {"first_half_hour_pts": round(float(s.c[i45] - pc), 2), "first_half_hour_pct": round(r * 100, 3),
+             "previous_close": round(float(pc), 2)}
     if r == 0:
-        return {"status": "no_trade", "first_half_hour_pct": 0.0}
+        return {"status": "no_trade", **first}
     side = 1 if r > 0 else -1
-    base = {"side": side, "first_half_hour_pct": round(r * 100, 2)}
+    base = {"side": side, **first}
     if i_in is None:
         return {**base, "status": "waiting", "next": {"at": "15:00"}}
     entry = {"entry_at": _at_ts(s, i_in), "entry_index": round(float(s.c[i_in]), 2)}
@@ -200,6 +217,9 @@ def line(label: str, st: dict, verdict: dict | None) -> str:
         held_back = (f" Its evidence did not clear the bar (holdout t {verdict.get('holdout_t')} against "
                      f"{verdict.get('required_t')}), so this is not a trade.")
     if status == "no_history":
+        if st.get("missing"):
+            days = ", ".join(f"{date.fromisoformat(d).day} {date.fromisoformat(d):%b}" for d in st["missing"])
+            return f"{label}: the 5-minute bars for {days} are missing, so its levels cannot be set."
         return f"{label}: not enough sessions in the archive to set its levels."
     if status == "in_trade" and approved and st.get("contract"):
         return f"Consider buying {_describe(st['contract'])} — {label}, holdout t {verdict.get('holdout_t')}."
@@ -238,9 +258,11 @@ def _frame(candles, now: datetime) -> pd.DataFrame:
     return df[done]
 
 
-def five_minute_bars(now: datetime) -> tuple[pd.DataFrame, str | None]:
+def five_minute_bars(now: datetime, closes: dict | None = None) -> tuple[pd.DataFrame, str | None]:
     """The archive's 5-minute bars (Kite, topped up nightly), then Kite's own
-    for any day after it — Yahoo's only when the Kite login has lapsed."""
+    for any day after it — Yahoo's when the Kite login has lapsed, and for any
+    session in `closes` (the daily archive) Kite did not serve: it stops
+    serving the day just gone at midnight until its end-of-day run."""
     from market_data.bar_archive import ArchiveProvider
     today = now.date()
     archived = _frame(ArchiveProvider().get_ohlc("^NSEI", "5m", today - timedelta(days=HISTORY_DAYS), today), now)
@@ -258,6 +280,18 @@ def five_minute_bars(now: datetime) -> tuple[pd.DataFrame, str | None]:
             recent = archived.iloc[:0]
     if not archived.empty:
         recent = recent[recent.index.normalize() > archived.index[-1].normalize()]
+    have = set(recent.index.date) | set(archived.index.date)
+    gaps = sorted(d for d in (closes or {}) if since <= d < today and d not in have)
+    if gaps and source == "Kite":
+        try:
+            from market_data.yfinance_provider import YFinanceProvider
+            filled = _frame(YFinanceProvider().get_ohlc("^NSEI", "5m", gaps[0], gaps[-1] + timedelta(days=1)), now)
+            filled = filled[np.isin(filled.index.date, gaps)]
+            if not filled.empty:
+                recent = pd.concat([recent, filled])
+                source = "Kite, and Yahoo for " + ", ".join(f"{d.day} {d:%b}" for d in sorted(set(filled.index.date)))
+        except Exception:
+            pass
     out = pd.concat([archived, recent]).sort_index()
     return out[~out.index.duplicated()], (source if not recent.empty else None)
 
@@ -310,14 +344,19 @@ def evaluate(bars: pd.DataFrame, closes: dict, listed: list[date], day: date | N
         rules.append({"name": name, "label": label, **st, "evidence": found.get(name),
                       "line": line(label, st, found.get(name))})
     b1 = s.bounds[day][1]
-    return {"session": day.isoformat(), "bars_through": _hhmm(_end(s, b1)), "rules": rules}
+    # A session the daily archive has after the last one in the bars: that
+    # day's 5-minute bars are missing, and what is shown is the day before.
+    later = sorted(d for d in closes if d > day)
+    return {"session": day.isoformat(), "bars_through": _hhmm(_end(s, b1)), "rules": rules,
+            "missing_after": [d.isoformat() for d in later]}
 
 
 def build_intraday(now: datetime | None = None) -> dict:
     from storage import intraday_forward_db as fwd
     now = now or datetime.now(IST)
-    bars, source = five_minute_bars(now)
-    out = evaluate(bars, daily_closes(now.date()), expiries(now.date()))
+    closes = daily_closes(now.date())
+    bars, source = five_minute_bars(now, closes)
+    out = evaluate(bars, closes, expiries(now.date()))
     try:
         record = fwd.summary()
         today = fwd.events(out["session"]) if out.get("session") else []
@@ -329,8 +368,9 @@ def build_intraday(now: datetime | None = None) -> dict:
                                for e in today if e["rule"] == r["name"]]
     return {**out, "as_of": now.isoformat(timespec="seconds"), "source": source or "the archive",
             "note": ("The three intraday rules from the strategy pipeline, followed on completed 5-minute bars. "
-                     "Their verdicts come from a modelled option on 2018-26; the record below each is the rule "
-                     "against real option prices from 1 Oct 2026, entered at the ask and exited at the bid.")}
+                     "Their verdicts come from a modelled option on 2018-26. \"At real prices\" is each rule against "
+                     "real option prices from 1 Oct 2026, bought at the ask and sold at the bid, counted when both "
+                     "were taken within six minutes of the rule's bar.")}
 
 
 def tick_contracts(state: dict | None) -> list[dict]:
@@ -352,8 +392,9 @@ def record(now: datetime, chain_rows: list[dict], state: dict | None = None, db_
     rule's bar closed is kept but not counted (intraday_forward_db.ON_TIME_S)."""
     from storage import intraday_forward_db as fwd
     if state is None:
-        bars, source = five_minute_bars(now)
-        state = {**evaluate(bars, daily_closes(now.date()), expiries(now.date())), "source": source}
+        closes = daily_closes(now.date())
+        bars, source = five_minute_bars(now, closes)
+        state = {**evaluate(bars, closes, expiries(now.date())), "source": source}
     if state.get("session") != now.date().isoformat():
         return []
     prices = {(r["expiry"], float(r["strike"]), r["option_type"]): r for r in chain_rows}
