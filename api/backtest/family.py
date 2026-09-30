@@ -6,7 +6,8 @@ actually stored rather than from a number typed into a file: the patterns
 with holdout trades, the pre-registered IV filter, the six structural
 tests, the replications on other indices, the news-tone tests, and the
 five intraday strategies from the user's course and the two afternoon-breakout
-hypotheses that one of them suggested (2026-09-27). Each was
+hypotheses that one of them suggested (2026-09-27), and the strategy
+pipeline's five (2026-09-30). Each was
 another chance for luck to clear a bar, so each raises it for all of them.
 
 This used to be `structural_research.holdout_tests_judged`, which stopped at
@@ -27,6 +28,7 @@ def holdout_family(pattern_research: dict | None) -> dict:
     from .course_strategies import load_course_research
     from .iv_research import load_iv_research
     from .news_research import load_news_research
+    from .nifty_pipeline import load_nifty_pipeline
     from .replication import load_replication
     from .structural_research import load_structural_research
 
@@ -49,5 +51,6 @@ def holdout_family(pattern_research: dict | None) -> dict:
         "news_tone": _count(load_news_research),
         "course": _count(load_course_research),
         "breakout": _count(load_breakout_research),
+        "pipeline": _count(load_nifty_pipeline),
     }
     return {**family, "total": sum(family.values())}
