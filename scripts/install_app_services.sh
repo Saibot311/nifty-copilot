@@ -10,6 +10,7 @@
 #   ./scripts/install_app_services.sh --lan      # also reachable from your phone, token required
 #   ./scripts/install_app_services.sh --remove   # uninstall
 #   ./scripts/install_app_services.sh --status   # what is running
+#   ./scripts/install_app_services.sh --snapshots  # (re)install only the option-snapshot recorder
 #
 # --lan binds both services to every interface, so anything on the same
 # network can *reach* them. What stops it getting in is the token in
@@ -29,10 +30,11 @@ DOMAIN="gui/$(id -u)"
 API_LABEL="com.niftycopilot.api"
 WEB_LABEL="com.niftycopilot.web"
 WATCH_LABEL="com.niftycopilot.watchdog"
+SNAP_LABEL="com.niftycopilot.snapshots"
 PATH_LINE="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 status() {
-    for label in "$API_LABEL" "$WEB_LABEL" "$WATCH_LABEL"; do
+    for label in "$API_LABEL" "$WEB_LABEL" "$WATCH_LABEL" "$SNAP_LABEL"; do
         if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
             info=$(launchctl print "$DOMAIN/$label")
             state=$(awk -F'= ' '/state = /{print $2; exit}' <<<"$info")
@@ -95,8 +97,45 @@ status() {
     fi
 }
 
+# The option-snapshot recorder (api/scripts/snapshot_options.py): NSE's chain
+# every five minutes of the session, the only intraday option prices there
+# will ever be. It exits at once outside 09:15-15:35 on a weekday.
+install_snapshots() {
+    launchctl bootout "$DOMAIN/$SNAP_LABEL" 2>/dev/null || true
+    mkdir -p "$HOME/Library/LaunchAgents" "$API_DIR/data"
+    cat > "$HOME/Library/LaunchAgents/$SNAP_LABEL.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$SNAP_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$API_DIR/.venv/bin/python</string>
+        <string>$API_DIR/scripts/snapshot_options.py</string>
+    </array>
+    <key>WorkingDirectory</key><string>$API_DIR</string>
+    <key>EnvironmentVariables</key>
+    <dict><key>PATH</key><string>$PATH_LINE</string></dict>
+    <key>StartInterval</key><integer>300</integer>
+    <key>RunAtLoad</key><false/>
+    <!-- A log launchd creates and owns (see the watchdog's note). -->
+    <key>StandardOutPath</key><string>$API_DIR/data/snapshots.launchd.log</string>
+    <key>StandardErrorPath</key><string>$API_DIR/data/snapshots.launchd.log</string>
+</dict>
+</plist>
+PLIST
+    launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$SNAP_LABEL.plist"
+}
+
 if [[ "${1:-}" == "--status" ]]; then
     status
+    exit 0
+fi
+
+if [[ "${1:-}" == "--snapshots" ]]; then
+    install_snapshots
+    echo "Installed $SNAP_LABEL: NSE's option chain every 5 minutes of the session -> api/data/option_snapshots.db"
     exit 0
 fi
 
@@ -125,10 +164,11 @@ fi
 launchctl bootout "$DOMAIN/$API_LABEL" 2>/dev/null || true
 launchctl bootout "$DOMAIN/$WEB_LABEL" 2>/dev/null || true
 launchctl bootout "$DOMAIN/$WATCH_LABEL" 2>/dev/null || true
+launchctl bootout "$DOMAIN/$SNAP_LABEL" 2>/dev/null || true
 
 if [[ "${1:-}" == "--remove" ]]; then
     rm -f "$HOME/Library/LaunchAgents/$API_LABEL.plist" "$HOME/Library/LaunchAgents/$WEB_LABEL.plist" \
-          "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist"
+          "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist" "$HOME/Library/LaunchAgents/$SNAP_LABEL.plist"
     echo "Removed $API_LABEL and $WEB_LABEL. The ports are free for dev servers again."
     exit 0
 fi
@@ -208,6 +248,7 @@ PLIST
 launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$API_LABEL.plist"
 launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$WEB_LABEL.plist"
 launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist"
+install_snapshots
 
 echo "Installed. Give them a few seconds, then:"
 if [[ -n "$LAN_IP" ]]; then

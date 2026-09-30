@@ -184,10 +184,11 @@ def step_backup() -> bool:
     are written minutes after 19:30, and a backup taken only at the start left
     each evening's rows in no backup until the next weekday."""
     from storage.backup import backup_forward_log, backup_news
-    from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_paper
+    from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_option_snapshots
+    from storage.backup import backup_paper
     ok = True
     for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(),
-              backup_gift_nifty(), backup_hypothesis_log()):
+              backup_gift_nifty(), backup_hypothesis_log(), backup_option_snapshots()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
