@@ -44,12 +44,27 @@ def _now() -> datetime:
     return datetime.now(IST)
 
 
+def _recent15(since: date, today: date) -> tuple[list, str]:
+    """15-minute bars from `since` through the session in progress. Kite
+    first: NSE's own prices, to the minute, from the same source as the
+    archive. On 28 Sep 2026 its day high and low matched NSE's exactly while
+    Yahoo's were off by up to 0.5, and it answered in half the time. Yahoo
+    only when the Kite login has lapsed; its end date is exclusive, so it is
+    asked for a day beyond today."""
+    try:
+        from market_data.zerodha_provider import ZerodhaProvider
+        return ZerodhaProvider().get_ohlc("^NSEI", "15m", since, today), "Kite"
+    except Exception:
+        from market_data.yfinance_provider import YFinanceProvider
+        return YFinanceProvider().get_ohlc("^NSEI", "15m", since, today + timedelta(days=1)), "Yahoo"
+
+
 def _bars15() -> pd.DataFrame:
     """NIFTY's 15-minute bars: the local archive (Kite, topped up nightly),
-    then Yahoo's for any day after the archive's last — the evening before
-    the nightly job, and the session in progress."""
+    then Kite's own for any day after the archive's last — the evening
+    before the nightly job, and the session in progress. `attrs["recent"]`
+    names where those recent bars came from."""
     from market_data.bar_archive import ArchiveProvider
-    from market_data.yfinance_provider import YFinanceProvider
 
     def frame(candles):
         if not candles:
@@ -62,12 +77,15 @@ def _bars15() -> pd.DataFrame:
     today = date.today()
     archived = frame(ArchiveProvider().get_ohlc("^NSEI", "15m", today - timedelta(days=HISTORY_DAYS), today))
     try:
-        recent = frame(YFinanceProvider().get_ohlc("^NSEI", "15m", today - timedelta(days=7), today))
+        candles, source = _recent15(today - timedelta(days=7), today)
+        recent = frame(candles)
     except Exception:
-        recent = archived.iloc[:0]
+        recent, source = archived.iloc[:0], None
     if not archived.empty:
         recent = recent[recent.index.normalize() > archived.index[-1].normalize()]
-    return pd.concat([archived, recent]).sort_index()
+    out = pd.concat([archived, recent]).sort_index()
+    out.attrs["recent"] = source if not recent.empty else None
+    return out
 
 
 def four_hour(bars15: pd.DataFrame) -> pd.DataFrame:
@@ -157,6 +175,21 @@ def _live_candle_today(grid) -> dict | None:
     return day
 
 
+def _to_the_minute(day: dict | None, bars15: pd.DataFrame, now: datetime) -> dict | None:
+    """Today's candle carried to the price now. The live candle is built
+    from closed 15-minute bars (a signal may only use those), so its close
+    can be 15 minutes old; Kite's bar still open has the price now. For the
+    forming candles only: they are drawn provisional, never a signal."""
+    if not day or bars15.empty or not BLOCK_STARTS[0] <= now.time() < SESSION_END:
+        return day
+    ts = bars15.index[-1]
+    if ts.date() != now.date() or not ts <= pd.Timestamp(now) < ts + M15:
+        return day
+    b = bars15.iloc[-1]
+    return {**day, "close": float(b["close"]), "high": max(float(day["high"]), float(b["high"])),
+            "low": min(float(day["low"]), float(b["low"])), "basis": f"price at {now:%H:%M}"}
+
+
 def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tuple[list[dict], dict | None]:
     """The 15-minute view: the last M15_SESSIONS sessions of closed bars, with
     EMAs of 15-minute closes over the whole history, and in a session the bar
@@ -221,7 +254,8 @@ def today_chart(sessions: int = 60) -> dict:
                 "change_pct": None if pd.isna(chg.loc[ts]) else round(float(chg.loc[ts]), 2)}
                for ts, r in tail.iterrows()]
 
-    m15, live_m15 = _fifteen_minute(bars15, _live_candle_today(grid), now)
+    day_live = _to_the_minute(_live_candle_today(grid), bars15, now)
+    m15, live_m15 = _fifteen_minute(bars15, day_live, now)
 
     # The 1D view: the indicator grid's own daily series and EMAs.
     d20, d50 = ema(grid["close"], 20), ema(grid["close"], 50)
@@ -234,9 +268,6 @@ def today_chart(sessions: int = 60) -> dict:
              for ts, r in grid.tail(sessions).iterrows()]
 
     last = grid.iloc[-1]
-    day_live = _live_candle()
-    if day_live and (day_live.get("as_of") or "")[:10] <= str(grid.index[-1].date()):
-        day_live = None  # that session is already a candle of its own
     live = _forming_block(h4[~done], day_live, now) if day_live else None
     if live and candles:
         live["change_pct"] = round((live["close"] / candles[-1]["close"] - 1) * 100, 2)
@@ -310,7 +341,8 @@ def today_chart(sessions: int = 60) -> dict:
         "live_day": live_day,
         "m15": m15,
         "live_m15": live_m15,
-        "source": "4-hour blocks from NIFTY's 15-minute bars: the local archive, and Yahoo's for days after it",
+        "source": ("4-hour blocks from NIFTY's 15-minute bars: the local archive (Kite)"
+                   + (f", and {bars15.attrs['recent']}'s for days after it" if bars15.attrs.get("recent") else "")),
         "note": ("Shaded bands: where the day's close (15:30) would have to land for a pattern to form; the patterns "
                  "are decided on the daily close, not on a 4-hour one. Every pattern shown "
                  "was rejected on 2024-26 option data — a band is where a setup appears, not a reason to trade, and "

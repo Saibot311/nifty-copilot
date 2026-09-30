@@ -21,6 +21,38 @@ _LOCK = threading.Lock()
 _INSTRUMENTS: dict = {"day": None, "by_key": {}}
 _QUOTE_CACHE: dict = {"at": 0.0, "data": {}}
 QUOTE_TTL = 1.0  # Kite allows one quote call a second; one process, one cache
+_SLOT_LOCK = threading.Lock()
+_LAST_CALL = {"at": 0.0}
+
+
+def _quote_slot() -> None:
+    """Wait for this process's turn at Kite's quote APIs (ltp, quote): one
+    call a second between them. The tick and the indices board both call
+    from background threads and would otherwise collide into a refusal."""
+    with _SLOT_LOCK:
+        wait = QUOTE_TTL - (time.monotonic() - _LAST_CALL["at"])
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_CALL["at"] = time.monotonic()
+
+
+def index_quote(key: str) -> dict:
+    """An index's last price, open, high, low and previous close from Kite,
+    e.g. key "BSE:SENSEX". `as_of` is the exchange's time for the figure; the
+    exchange keeps sending the closing value after 15:30, so later stamps
+    are shown as the close they repeat."""
+    _quote_slot()
+    q = authenticated_client().quote([key])[key]
+    o = q["ohlc"]
+    ts = q.get("timestamp")
+    if isinstance(ts, datetime):
+        ts = ts.replace(tzinfo=IST) if ts.tzinfo is None else ts.astimezone(IST)
+        close = ts.replace(hour=15, minute=30, second=0, microsecond=0)
+        as_of = min(ts, close).isoformat(timespec="minutes")
+    else:
+        as_of = None
+    return {"last": float(q["last_price"]), "previous_close": float(o["close"]), "open": float(o["open"]),
+            "high": float(o["high"]), "low": float(o["low"]), "as_of": as_of, "source": "Kite"}
 
 
 def _instrument_map() -> dict[tuple, int]:
@@ -65,6 +97,7 @@ def last_prices(tokens: list[int], index: str = "NSE:NIFTY 50") -> dict:
             return _QUOTE_CACHE["data"]
     kite = authenticated_client()
     wanted = [index, *[str(t) for t in tokens]]
+    _quote_slot()
     raw = kite.ltp(wanted)
     data = {
         "index": (raw.get(index) or {}).get("last_price"),

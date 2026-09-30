@@ -217,3 +217,75 @@ def test_in_a_session_the_15_minute_bar_still_forming_follows_the_price(world, m
     bar = out["live_m15"]
     assert bar["t"] == "2026-09-25T11:00" and bar["provisional"] is True
     assert bar["open"] == bar["high"] == bar["low"] == bar["close"] == 23080.0   # no 11:00 bar yet
+
+
+
+def _recent_bar_world(monkeypatch, kite_works: bool):
+    """An archive that ends two days ago; Kite's end date is inclusive,
+    Yahoo's exclusive — as the real services behave."""
+    from datetime import date, timedelta
+    from market_data import bar_archive, yfinance_provider, zerodha_provider
+    from market_data.base import Candle
+
+    today = date.today()
+
+    def bar(d):
+        return Candle(timestamp=f"{d}T09:15:00+05:30", open=1.0, high=2.0, low=0.5, close=1.5)
+
+    class Archive:
+        def get_ohlc(self, symbol, timeframe, start, end):
+            return [bar(today - timedelta(days=2))]
+
+    class Kite:
+        def get_ohlc(self, symbol, timeframe, start, end):
+            if not kite_works:
+                raise RuntimeError("Kite login has lapsed")
+            return [bar(start + timedelta(days=i)) for i in range((end - start).days + 1)]
+
+    class Yahoo:
+        def get_ohlc(self, symbol, timeframe, start, end):
+            return [bar(start + timedelta(days=i)) for i in range((end - start).days)]
+
+    monkeypatch.setattr(bar_archive, "ArchiveProvider", Archive)
+    monkeypatch.setattr(zerodha_provider, "ZerodhaProvider", Kite)
+    monkeypatch.setattr(yfinance_provider, "YFinanceProvider", Yahoo)
+    return today
+
+
+def test_the_15_minute_bars_after_the_archive_come_from_kite_through_the_session_in_progress(monkeypatch):
+    from datetime import timedelta
+    today = _recent_bar_world(monkeypatch, kite_works=True)
+    bars = tc._bars15()
+    assert {today, today - timedelta(days=1)} <= {ts.date() for ts in bars.index}
+    assert bars.attrs["recent"] == "Kite"
+
+
+def test_without_a_kite_login_yahoo_is_asked_past_today_since_its_end_date_is_exclusive(monkeypatch):
+    """Asked for bars up to today, Yahoo returns none from today: the chart
+    then drew today's candles as a single price (28 Sep 2026)."""
+    today = _recent_bar_world(monkeypatch, kite_works=False)
+    bars = tc._bars15()
+    assert today in {ts.date() for ts in bars.index}
+    assert bars.attrs["recent"] == "Yahoo"
+
+
+def test_in_a_session_the_forming_candles_follow_the_bar_still_open_not_the_last_closed_one(world, monkeypatch):
+    """The live candle is built from closed 15-minute bars, so its close can
+    be 15 minutes old; Kite's bar still open carries the price now. The
+    forming candles and the distances follow it (provisional, never a signal)."""
+    today = pd.Timestamp("2026-09-25")
+    bars = fifteen_minute_bars(list(IDX[-130:]) + [today])
+    so_far = bars[bars.index <= pd.Timestamp("2026-09-25 11:00", tz=IST)].copy()
+    now_bar = pd.Timestamp("2026-09-25 11:00", tz=IST)
+    so_far.loc[now_bar, ["high", "low", "close"]] = [23190.0, 22990.0, 23185.0]
+    monkeypatch.setattr(tc, "_bars15", lambda: so_far)
+    monkeypatch.setattr(tc, "_now", lambda: datetime.fromisoformat("2026-09-25T11:07+05:30"))
+    monkeypatch.setattr(tc, "_live_candle", lambda: {"open": 23100.0, "high": 23150.0, "low": 23020.0,
+                                                     "close": 23080.0, "as_of": "2026-09-25T11:07:00+05:30",
+                                                     "basis": "15-min close at 11:00"})
+    out = tc.today_chart(sessions=60)
+    for bar in (out["live"], out["live_m15"], out["live_day"]):
+        assert bar["close"] == 23185.0
+    assert out["live_day"]["high"] == 23190.0 and out["live_day"]["low"] == 22990.0
+    assert out["live_m15"]["t"] == "2026-09-25T11:00" and out["live_m15"]["high"] == 23190.0
+    assert out["levels"]["reference"] == 23185.0

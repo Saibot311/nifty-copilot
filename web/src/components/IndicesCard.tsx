@@ -76,8 +76,8 @@ export function IndicesCard({ initial }: { initial: IndicesBoard | null }) {
         ))}
       </ul>
       <p className="border-t border-zinc-800/70 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-600">
-        NIFTY and Bank Nifty from NSE, Sensex from Yahoo&apos;s one-minute bars (BSE refuses outside requests),
-        GIFT Nifty from NSE IX. GIFT Nifty is a USD-settled future trading about 21 hours a day at a premium to
+        NIFTY and Bank Nifty from NSE, Sensex from Zerodha (Yahoo&apos;s one-minute bars if the Kite login has
+        lapsed), GIFT Nifty from NSE IX. GIFT Nifty is a USD-settled future trading about 21 hours a day at a premium to
         the index, so compare its change, not its level.
       </p>
     </Panel>
