@@ -470,6 +470,12 @@ class JournalClose(BaseModel):
     exit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
+class JournalPlan(BaseModel):
+    """The user's own exit plan for an open trade, in premium; null clears one."""
+    stop_premium: float | None = Field(default=None, ge=0)
+    target_premium: float | None = Field(default=None, gt=0)
+
+
 def _previous_close() -> float | None:
     """The close before the session the displayed price belongs to — which
     is what "change on the day" is measured from. NSE says which session that
@@ -578,6 +584,14 @@ def live_tick() -> dict:
     except Exception as e:
         marks = {"error": str(e)[:120], "index": None, "marks": {}, "source": None}
     out.update({k: marks.get(k) for k in ("index", "marks", "source", "paper", "quote_at")})
+    # The journal's open trades, priced on the same Kite answer. Only when
+    # Kite priced something: the closing-price fallback is /api/journal's.
+    if marks.get("journal_live", {}).get("marks"):
+        try:
+            from briefing.journal import positions as journal_positions
+            out["journal"] = journal_positions(marks["journal_live"], now)
+        except Exception:
+            out["journal"] = None
 
     # The change is computed here, not in the browser: every number on the
     # page comes from Python (I2).
@@ -636,10 +650,21 @@ def paper() -> dict:
     return paper_report()
 
 
+def _journal_live() -> dict | None:
+    """Kite's prices for the journal's open trades, from the same cached call
+    as the tick; None when Kite is not logged in."""
+    from briefing.paper import live_marks
+    try:
+        return cached("live_marks", ttl_seconds=2, producer=live_marks, stale_ok=True).get("journal_live")
+    except Exception:
+        return None
+
+
 @app.get("/api/journal")
 def journal() -> dict:
-    """Phase 13: what you did, next to what the system said that session."""
-    return journal_report()
+    """Phase 13: what you did, next to what the system said that session, and
+    each open trade priced now (Kite), or at its last close when Kite is out."""
+    return journal_report(live=_journal_live())
 
 
 class PaperFunds(BaseModel):
@@ -664,16 +689,62 @@ def journal_add(entry: JournalEntry) -> dict:
     if entry.decision == "TOOK" and not all([entry.underlying, entry.option_type, entry.strike, entry.expiry,
                                              entry.quantity, entry.entry_premium]):
         raise HTTPException(422, "A trade you took needs the index, CE/PE, strike, expiry, quantity and entry premium.")
+    if entry.decision == "TOOK" and entry.expiry < entry.trade_date:
+        raise HTTPException(422, f"The expiry ({entry.expiry}) is before the session you bought on ({entry.trade_date}).")
     # The system's verdict is looked up, never typed: the comparison is only
     # honest if the user cannot restate what the system said.
     entry_id = journal_db.add({**entry.model_dump(), "system_action": system_action_for(entry.trade_date)})
     return {"id": entry_id}
 
 
+def _open_trade(entry_id: int) -> dict:
+    e = journal_db.get(entry_id)
+    if not e or e["decision"] != "TOOK" or e.get("exit_premium") is not None:
+        raise HTTPException(404, "No open trade with that id.")
+    return e
+
+
 @app.post("/api/journal/{entry_id}/close")
 def journal_close(entry_id: int, body: JournalClose) -> dict:
+    """A sale. Its date has to fall between the session it was bought on and
+    its expiry: on 28 Sep 2026 a contract expiring on the 29th was recorded as
+    sold on the 30th, a day it no longer existed. One held to expiry is closed
+    with /settle, at the value the exchange settles it at."""
+    e = _open_trade(entry_id)
+    if body.exit_date < e["trade_date"]:
+        raise HTTPException(422, f"The sale ({body.exit_date}) is before the session it was bought on ({e['trade_date']}).")
+    if e.get("expiry") and body.exit_date > e["expiry"]:
+        raise HTTPException(422, f"It expired on {e['expiry']}, so it cannot have been sold after that. "
+                                 "If you held it to expiry, close it as held to expiry: it settles at the index's close.")
     if not journal_db.close(entry_id, body.exit_premium, body.exit_date):
         raise HTTPException(404, "No open trade with that id.")
+    return {"ok": True}
+
+
+@app.post("/api/journal/{entry_id}/settle")
+def journal_settle(entry_id: int) -> dict:
+    """Close a trade held to expiry at its settlement value: intrinsic value
+    at the index's official close on expiry day. Computed here, never typed."""
+    from briefing.journal import settlement
+    e = _open_trade(entry_id)
+    try:
+        value = settlement(e, datetime.now(kite_session.IST))
+    except ValueError as err:
+        raise HTTPException(422, str(err))
+    except LookupError as err:
+        raise HTTPException(503, str(err))
+    journal_db.close(entry_id, value, e["expiry"], exit_kind="settled")
+    return {"ok": True, "exit_premium": value, "exit_date": e["expiry"]}
+
+
+@app.post("/api/journal/{entry_id}/plan")
+def journal_plan(entry_id: int, body: JournalPlan) -> dict:
+    """The user's own stop and target for an open trade. The page reports
+    when the price reaches one; nothing is ever sold."""
+    _open_trade(entry_id)
+    if body.stop_premium is not None and body.target_premium is not None and body.stop_premium >= body.target_premium:
+        raise HTTPException(422, "The stop has to be below the target.")
+    journal_db.set_plan(entry_id, body.stop_premium, body.target_premium)
     return {"ok": True}
 
 

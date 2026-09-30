@@ -16,6 +16,20 @@ dashboard's **Journal** tab — log every session's decision there, including "s
 deployment, runs the app on this Mac as two LaunchAgents (see Running it). The phases are finished;
 what the system needs now is calendar time, not more code.
 
+**The journal reads open positions (since 2026-09-30).** An open trade shows what it is worth now, what
+selling nets after costs, days to expiry, time decay a day, the result at expiry if the index holds, and the
+breakeven, all from `briefing/journal.py`. The user sets a stop and a target; the page says "consider
+exiting" when the price reaches one, and never otherwise: no advice, per the ground rules. A trade held to
+expiry is settled at the index close, not typed. Two fixes came with it: a sale dated after expiry is refused
+(28 Sep 2026: a contract expiring on the 29th was logged as sold on the 30th, and that row stays as the user
+entered it), and the followed/overrode tiles count decisions.
+
+**A network drop at 19:30 no longer loses a session silently.** On 29 Sep 2026 the network was down when
+the job ran: the index report, Kite bars and options archive failed and were not retried, and the forward
+log's retry "passed" on the 28th's verdict, so the 29th was never recorded. Now every network step gets a
+second try at the end, the index report before the forward log, and the forward-log step fails unless the
+day it recorded is the day NSE last traded.
+
 **The dashboard is live while the market is open** — the header and the paper book poll
 `/api/live/tick` every 2s (Kite when logged in, NSE's feed otherwise). Everything else on the page is
 still end-of-day by design: option premiums come from NSE's nightly file.

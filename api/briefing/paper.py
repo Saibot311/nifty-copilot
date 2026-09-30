@@ -645,23 +645,35 @@ def _pnl(t: dict, mark: float | None = None) -> dict | None:
 def live_marks() -> dict:
     """Open positions priced now, not at last night's close, when a Kite
     session exists. Falls back to the closing mark, and says which it is."""
+    from briefing.journal import SPOT_KEYS, open_trades as journal_open
     from market_data.kite_quotes import last_prices, option_tokens
 
     trades = paper_db.open_trades()
     contracts = [{"id": t["id"], "underlying": t["underlying"], "expiry": t["expiry"],
                   "strike": t["strike"], "option_type": t["option_type"]} for t in trades]
+    # The journal's open trades ride on the same call: one Kite request a tick,
+    # whatever is open. Their ids are prefixed so they cannot meet the book's.
+    journal = journal_open()
+    contracts += [{"id": f"j{e['id']}", "underlying": e["underlying"], "expiry": e["expiry"],
+                   "strike": e["strike"], "option_type": e["option_type"]} for e in journal]
+    spot_keys = tuple(sorted({SPOT_KEYS[e["underlying"]] for e in journal if e["underlying"] in SPOT_KEYS}))
     tokens = option_tokens(contracts)
-    quotes = last_prices(list(tokens.values()))
-    marks = {tid: quotes["by_token"].get(token) for tid, token in tokens.items()}
-    marks = {tid: p for tid, p in marks.items() if p is not None}
+    quotes = last_prices(list(tokens.values()), extra=spot_keys)
+    priced_all = {tid: quotes["by_token"].get(token) for tid, token in tokens.items()}
+    journal_marks = {int(str(tid)[1:]): p for tid, p in priced_all.items() if str(tid).startswith("j") and p is not None}
+    marks = {tid: p for tid, p in priced_all.items() if not str(tid).startswith("j") and p is not None}
     priced = {t["id"]: marks.get(t["id"]) for t in trades}
     book = cash_and_equity(marks)
     # Every open row is priced — the yardstick needs a live mark to be worth
     # reading — but the book's own figures count only what the book holds.
     held = [t for t in trades if t.get("funded", 1)]
+    by_key = {**quotes.get("by_key", {}), "NSE:NIFTY 50": quotes.get("index")}
     return {
         "index": quotes.get("index"), "source": quotes.get("source"), "quote_at": quotes.get("quote_at"),
         "marks": {str(tid): p for tid, p in marks.items()},
+        "journal_live": {"marks": journal_marks, "source": quotes.get("source"), "at": quotes.get("quote_at"),
+                         "spots": {name: by_key.get(key) for name, key in SPOT_KEYS.items()
+                                   if by_key.get(key) is not None}},
         "paper": {**book, "open_positions": len(held),
                   "live_priced": sum(1 for t in held if priced.get(t["id"]) is not None),
                   "unrealised_rs": round(sum((_pnl(t, marks.get(t["id"])) or {}).get("profit_rs", 0) for t in held))},

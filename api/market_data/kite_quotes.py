@@ -88,19 +88,24 @@ def option_tokens(contracts: list[dict]) -> dict[int, int]:
     return out
 
 
-def last_prices(tokens: list[int], index: str = "NSE:NIFTY 50") -> dict:
-    """One call: the index plus every requested contract. Cached for a second
-    so several dashboard tabs cannot multiply into a rate-limit breach."""
+def last_prices(tokens: list[int], index: str = "NSE:NIFTY 50", extra: tuple[str, ...] = ()) -> dict:
+    """One call: the index, any `extra` quote keys (other indices' levels) and
+    every requested contract. Cached for a second so several dashboard tabs
+    cannot multiply into a rate-limit breach."""
     now = time.monotonic()
     with _LOCK:
-        if now - _QUOTE_CACHE["at"] < QUOTE_TTL and set(tokens) <= set(_QUOTE_CACHE["data"].get("tokens", [])):
-            return _QUOTE_CACHE["data"]
+        cached = _QUOTE_CACHE["data"]
+        if (now - _QUOTE_CACHE["at"] < QUOTE_TTL and set(tokens) <= set(cached.get("tokens", []))
+                and set(extra) <= set(cached.get("by_key", {}))):
+            return cached
     kite = authenticated_client()
-    wanted = [index, *[str(t) for t in tokens]]
+    keys = [index, *[k for k in extra if k != index]]
+    wanted = [*keys, *[str(t) for t in tokens]]
     _quote_slot()
     raw = kite.ltp(wanted)
     data = {
         "index": (raw.get(index) or {}).get("last_price"),
+        "by_key": {k: (raw.get(k) or {}).get("last_price") for k in keys if raw.get(k)},
         "by_token": {int(k): v.get("last_price") for k, v in raw.items() if k.isdigit() and v},
         "tokens": list(tokens),
         # Just the source: whether it is live is the market status's to say.
