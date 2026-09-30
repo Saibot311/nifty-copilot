@@ -39,7 +39,10 @@ CREATE TABLE IF NOT EXISTS journal (
     exit_premium    REAL,
     exit_date       TEXT,
     reason          TEXT,
-    notes           TEXT
+    notes           TEXT,
+    stop_premium    REAL,
+    target_premium  REAL,
+    exit_kind       TEXT
 );
 """
 
@@ -54,10 +57,17 @@ ADDED_COLUMNS = (("stop_premium", "REAL"), ("target_premium", "REAL"), ("exit_ki
 
 
 def _migrate(conn) -> None:
+    """A journal made before a column existed gains it. A new one is created
+    with every column, and two connections migrating the same old file at
+    once cannot both add one: the second finds it there and carries on."""
     have = {r[1] for r in conn.execute("PRAGMA table_info(journal)")}
     for name, kind in ADDED_COLUMNS:
         if name not in have:
-            conn.execute(f"ALTER TABLE journal ADD COLUMN {name} {kind}")
+            try:
+                conn.execute(f"ALTER TABLE journal ADD COLUMN {name} {kind}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e):
+                    raise
 
 
 @contextmanager
