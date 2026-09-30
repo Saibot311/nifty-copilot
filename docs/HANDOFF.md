@@ -204,6 +204,16 @@ changing any question, criterion or threshold:
 cd api && .venv/bin/python scripts/check_guards.py   # forecast | claims | routes | grades
 ```
 
+**Working in parallel.** Several sessions work here at once, each in its own git worktree, and
+the live checkout (`main`) is what the dashboard and the 19:30 nightly job run. A new worktree gets the
+same setup as main with `./scripts/worktree_env.sh` (a link to the venv; copy-on-write clones of
+`api/data`, the hypothesis log and `node_modules`; Next's route types), so every check runs there
+without touching live data. Finished work goes live only through `./scripts/land.sh <branch>`: it
+merges in a scratch worktree, runs every check, the secret scan and the log guard, then fast-forwards
+main and restarts only what changed (`--dry-run` first, `--push` to publish). Copying uncommitted work
+into the live checkout — as on 27–29 Sep 2026 — is what stopped main fast-forwarding. The rules are in
+`CLAUDE.md`.
+
 **The app is deployed on this Mac** (Phase 15): two LaunchAgents run the built dashboard and the API,
 start at login and restart on crash — bound to `127.0.0.1`, or to every interface with `--lan` (always
 pass `--lan` if the phone is used; without it the phone cannot connect).
