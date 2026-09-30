@@ -4,8 +4,10 @@ one observation; and each index's own option archive is the one read."""
 
 import hashlib
 import json
+from pathlib import Path
 from types import SimpleNamespace as T
 
+import backtest.hypothesis_log as hl
 import backtest.replication as rep
 from storage.options_db import DB_PATH, db_path_for
 
@@ -60,3 +62,26 @@ def test_the_edge_over_no_signal_is_computed_here_not_in_the_browser():
     assert out["per_index"]["NIFTY"]["holdout_edge_pct"] == 20.0     # 20 mean vs 0 mean
     assert out["pooled"]["holdout_edge_pct"] == 20.0
     assert out["indices_beating_baseline_in_holdout"] == 1
+
+
+def test_judging_in_a_test_never_reaches_the_real_hypothesis_log():
+    """judge() logs what it judged to the hypothesis log, the append-only
+    record of everything ever tested. Called from a test, that row went into
+    the real file: 35 rows of a hypothesis named "t", one per pytest run. The
+    check counts this test's own rows, not the file's bytes, because the API
+    server may append real rows while the suite runs."""
+    real = Path(hl.__file__).parent / "hypothesis_log.jsonl"
+
+    def rows_named_t(path):
+        if not path.exists():
+            return 0
+        with open(path) as f:
+            return sum(json.loads(line).get("strategy") == "replication_t" for line in f if line.strip())
+
+    before = rows_named_t(real)
+    rep.judge("t", "T", {"NIFTY": [T(entry_date="2024-02-01", exit_date="2024-02-08", net_return_pct=30.0),
+                                   T(entry_date="2024-03-01", exit_date="2024-03-08", net_return_pct=10.0)]},
+              {"NIFTY": [T(entry_date="2024-02-01", exit_date="2024-02-08", net_return_pct=-5.0),
+                         T(entry_date="2024-03-01", exit_date="2024-03-08", net_return_pct=5.0)]}, tests=26)
+    assert rows_named_t(real) == before
+    assert rows_named_t(hl.LOG_PATH) == 1  # logged all the same, to this test's own file
