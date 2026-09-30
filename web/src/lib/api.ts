@@ -1069,6 +1069,10 @@ export type IntradayRule = {
   next?: { at: string; upper?: number; lower?: number } | null;
   entry_levels?: { at: string; upper: number; lower: number };
   first_half_hour_pct?: number;
+  first_half_hour_pts?: number;
+  previous_close?: number;
+  /** Sessions the noise band needs whose 5-minute bars are missing. */
+  missing?: string[];
   first_candle?: { open: number; high: number; low: number; close: number };
   stop?: number;
   contract?: IntradayContract | null;
@@ -1083,6 +1087,8 @@ export type IntradayRule = {
 };
 export type Intraday = {
   session: string | null; bars_through: string; as_of: string; source: string; note: string; rules: IntradayRule[];
+  /** Sessions after `session` that the daily archive has but the 5-minute bars do not. */
+  missing_after?: string[];
 };
 export const fetchIntraday = () => get<Intraday>("/api/intraday");
 

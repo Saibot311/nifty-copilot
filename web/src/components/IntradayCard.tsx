@@ -32,8 +32,8 @@ function Levels({ r }: { r: IntradayRule }) {
     if (r.status === "in_trade" && r.next)
       return <>The rule holds while the {r.next.at} close stays {r.side === 1 ? <>above <b>{num(r.next.upper)}</b></> : <>below <b>{num(r.next.lower)}</b></>}; flat at 15:25.</>;
   }
-  if (r.name === "last_half_hour" && r.first_half_hour_pct != null && side)
-    return <>First half hour {fmtPct(r.first_half_hour_pct)}: the rule&apos;s side is the {side}, held 15:00 to 15:25.</>;
+  if (r.name === "last_half_hour" && r.first_half_hour_pts != null && side)
+    return <>09:45 against the previous close ({num(r.previous_close)}): <b>{r.first_half_hour_pts > 0 ? "+" : "−"}{num(Math.abs(r.first_half_hour_pts))}</b> pts, so the rule&apos;s side is the {side}, held 15:00 to 15:25.</>;
   if (r.name === "opening_range_5m" && r.first_candle && side)
     return <>First candle {num(r.first_candle.open)} → {num(r.first_candle.close)}: the rule&apos;s side is the {side} from 09:20, stop at <b>{num(r.stop)}</b>, flat at 15:25.</>;
   if (r.entry_index != null)
@@ -59,6 +59,11 @@ export function IntradayCard({ initial }: { initial: Intraday | null }) {
         </p>
         <span className="text-[11px] text-zinc-500">5-minute bars: {initial.source}</span>
       </div>
+      {initial.missing_after && initial.missing_after.length > 0 && (
+        <p className="mt-1 text-[11px] text-amber-300/80">
+          The 5-minute bars for {initial.missing_after.map(day).join(", ")} are not available yet, so this is the session before.
+        </p>
+      )}
 
       <div className="mt-3 flex flex-col gap-2">
         {initial.rules.map((r) => {

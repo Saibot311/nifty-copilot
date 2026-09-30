@@ -238,6 +238,15 @@ export default async function Home() {
             // Prototype of docs/DESIGN_DIRECTION.md, scoped to this tab so it
             // can be compared with the others before anything is rolled out.
             <div data-skin="instrument" className="flex flex-col gap-5">
+              {niftyPipeline.data && (
+                <section>
+                  <SectionLabel hint="fixed before they were run, judged once on 2024–26">
+                    Strategies searched for NIFTY
+                  </SectionLabel>
+                  <NiftyPipelineCard data={niftyPipeline.data} />
+                </section>
+              )}
+
               <section>
                 <SectionLabel hint="2024–26, data the choice never saw">
                   What each pattern&apos;s option actually made
@@ -258,15 +267,6 @@ export default async function Home() {
                     Does the news pay a buyer?
                   </SectionLabel>
                   <NewsResearchCard data={newsResearch.data} />
-                </section>
-              )}
-
-              {niftyPipeline.data && (
-                <section>
-                  <SectionLabel hint="fixed before they were run, judged once on 2024–26">
-                    Strategies searched for NIFTY
-                  </SectionLabel>
-                  <NiftyPipelineCard data={niftyPipeline.data} />
                 </section>
               )}
 
