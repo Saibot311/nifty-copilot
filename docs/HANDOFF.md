@@ -36,6 +36,16 @@ their convention (`cost_model` 'split' or NULL); new ones are 'rate_card'. The n
 pattern, IV, structural, replication and news research; the course and breakout studies are not in it and
 have to be re-run by hand.
 
+**Index costs, since 2026-09-27:** the index engine (Phase 7 compare, Phase 8 validation) charges each
+trade on one NIFTY lot at its own prices and dates: Zerodha's "0.03% or ₹20 an order, whichever is lower"
+(always ₹20 on a lot), and the STT on the sale and NSE's charge in force that day (`STT_ON_FUTURES_SALE`,
+`EXCHANGE_CHARGE_ON_FUTURES` in `backtest/costs.py`, each with its circular). A short's sale is its entry.
+It used to be a flat 0.197% on every trade; now 0.11–0.17% (median 0.127%): the brokerage overstatement
+was larger than the STT rise to 0.05%. Re-run on identical data, every strategy's expectancy rose
+0.063–0.074 pp, its edge over the same-direction baseline moved by at most 0.006 pp, and all 26 stay
+REJECTED. The stored playbook (`strategy_status.db`) was not re-run; its figures predate the change.
+Slippage, 0.05% a side, is now most of the cost and is an assumption, not a rate card.
+
 **Every verdict label faces the family bar**, not just the recommendation: pattern verdicts, the
 index-level validation and the similar-days card use Bonferroni over all hypotheses judged (53 →
 t ≥ 3.11 and more on few trades). Registered studies keep the bar frozen in their registration.

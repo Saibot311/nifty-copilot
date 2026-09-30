@@ -6,7 +6,7 @@ TODAY = "2026-09-25"  # a session under the current rate card
 
 
 def test_index_round_trip_cost_is_positive_and_small():
-    cost = CostModel().round_trip_cost_pct()
+    cost = CostModel().round_trip_cost_pct(25_000, "2026-09-25")  # one NIFTY lot, today's rates
     assert cost > 0
     # A sanity band, not a precise assertion -- catches a decimal-point
     # or unit error (e.g. accidentally returning a fraction instead of a
@@ -19,7 +19,7 @@ def test_options_round_trip_cost_exceeds_index_cost():
     small fraction of the underlying -- so proportionally, option costs
     must come out higher than index costs. If this ever inverts, the cost
     model has a unit bug."""
-    index_cost = CostModel().round_trip_cost_pct()
+    index_cost = CostModel().round_trip_cost_pct(25_000, TODAY)
     options_cost = OptionsCostModel().round_trip_cost_fraction(100, TODAY) * 100
     assert options_cost > index_cost
 

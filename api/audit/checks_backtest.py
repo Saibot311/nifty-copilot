@@ -14,7 +14,8 @@ from statistics import NormalDist
 
 import pandas as pd
 
-from backtest.costs import CostModel
+from backtest.costs import EXCHANGE_CHARGE_ON_FUTURES, STT_ON_FUTURES_SALE, CostModel
+from backtest.costs import LOT_SIZE as FUTURES_LOT
 from backtest.engine import run_backtest
 from backtest.options_engine import (EXCHANGE_CHARGE_ON_OPTIONS, LOT_SIZE, STT_ON_OPTION_SALE,
                                      OptionsCostModel)
@@ -104,16 +105,44 @@ def truncated_trades():
 @check("6", "6.3", "Costs: every trade is charged, and the rate matches an independent calculation")
 def costs_applied():
     fut, opt = CostModel(), OptionsCostModel()
-    # Recomputed from the rate-card fields, by hand, in basis points.
-    fut_ref = (2 * fut.brokerage_pct + 2 * fut.exchange_txn_pct + fut.stamp_duty_pct + fut.stt_pct
-               + 2 * fut.slippage_pct + fut.gst_pct * 2 * (fut.brokerage_pct + fut.exchange_txn_pct)) * 100
+
+    # Futures: rupees on one lot, each leg at its own price and at the rates in
+    # force on its own date (since 2026-09-27), recomputed by hand from the rate
+    # card's fields and the dated schedules rather than the model's methods.
+    def in_force(schedule, day):
+        return [rate for start, rate in schedule if start <= day][-1]
+
+    def fut_by_hand(entry_price, exit_price, entry_date, exit_date, direction):
+        def fees(value, day):
+            return (min(value * fut.brokerage_pct, fut.brokerage_cap_rs)
+                    + value * (in_force(EXCHANGE_CHARGE_ON_FUTURES, day) + fut.sebi_fee_pct)) * (1 + fut.gst_pct)
+
+        def buy(price, day):
+            return fees(price * FUTURES_LOT, day) + price * FUTURES_LOT * (fut.stamp_duty_pct + fut.slippage_pct)
+
+        def sell(price, day):
+            return (fees(price * FUTURES_LOT, day)
+                    + price * FUTURES_LOT * (in_force(STT_ON_FUTURES_SALE, day) + fut.slippage_pct))
+        legs = (buy(entry_price, entry_date) + sell(exit_price, exit_date) if direction == "long"
+                else sell(entry_price, entry_date) + buy(exit_price, exit_date))  # a short sells first
+        return legs / (entry_price * FUTURES_LOT) * 100
+
+    df, regime, _ = _data()
+    price, today = float(df["close"].iloc[-1]), str(pd.Timestamp.today().date())
+    fut_ref = fut_by_hand(price, price, today, today, "long")
+    index_trades, index_uncharged = 0, []
+    for name, spec in STRATEGY_REGISTRY.items():
+        sig = spec["fn"](df, regime, **spec["params"]).astype(bool)
+        for t in run_backtest(df, sig, regime, spec.get("direction", "long"), 10):
+            index_trades += 1
+            expected = fut_by_hand(t.entry_price, t.exit_price, t.entry_date, t.exit_date, t.direction)
+            if (abs((t.gross_return_pct - t.cost_pct) - t.net_return_pct) > 0.002 or t.cost_pct <= 0
+                    or abs(t.cost_pct - expected) > 0.001):
+                index_uncharged.append((name, t.entry_date))
 
     # Options: rupees on one lot, each leg on its own premium at the rates in
     # force on its own day (since 2026-09-27), recomputed by hand from the
     # rate card's fields and the dated schedules rather than the model's methods.
-    def in_force(schedule, day):
-        return [rate for start, rate in schedule if start <= day][-1]
-
     def by_hand(entry_premium, exit_premium, entry_date, exit_date):
         paid, got = entry_premium * LOT_SIZE, exit_premium * LOT_SIZE
         buy = ((opt.brokerage_per_order_rs + paid * (in_force(EXCHANGE_CHARGE_ON_OPTIONS, entry_date) + opt.sebi_fee_pct))
@@ -122,7 +151,6 @@ def costs_applied():
                 * (1 + opt.gst_pct) + got * (in_force(STT_ON_OPTION_SALE, exit_date) + opt.premium_slippage_pct))
         return (buy + min(sell, got)) / paid * 100  # a sale costing more than it fetches is not made
 
-    today = str(pd.Timestamp.today().date())
     opt_ref = by_hand(100.0, 100.0, today, today)
     uncharged = []
     for name, d in _chosen_trades().items():
@@ -131,14 +159,15 @@ def costs_applied():
             if (abs((t.gross_return_pct - t.cost_pct) - t.net_return_pct) > 0.02 or t.cost_pct <= 0
                     or abs(t.cost_pct - expected) > 0.01):
                 uncharged.append((name, t.entry_date))
-    ok = (abs(fut.round_trip_cost_pct() - fut_ref) < 1e-9
+    ok = (abs(fut.round_trip_cost_pct(price, today) - fut_ref) < 1e-9
           and abs(opt.cost_pct(100.0, 100.0, today, today) - opt_ref) < 1e-9)
-    return Result(FAIL if uncharged or not ok else PASS,
-                  f"futures round trip {fut.round_trip_cost_pct():.4f}% of notional, options "
-                  f"{opt_ref:.3f}% of a Rs 100 premium on one lot at today's rates; "
+    return Result(FAIL if uncharged or index_uncharged or not ok else PASS,
+                  f"futures round trip {fut_ref:.4f}% of one lot at {price:,.0f} at today's rates, "
+                  f"{index_trades} index trades recomputed, {len(index_uncharged)} not charged as the rate card says; "
+                  f"options {opt_ref:.3f}% of a Rs 100 premium on one lot at today's rates, "
                   f"{len(uncharged)} trade(s) not charged",
                   {"independent_futures_pct": round(fut_ref, 4), "independent_options_pct": round(opt_ref, 3),
-                   "uncharged": uncharged[:10]})
+                   "index_uncharged": index_uncharged[:10], "uncharged": uncharged[:10]})
 
 
 @check("6", "6.4", "One definition of an N-day hold across every engine")
