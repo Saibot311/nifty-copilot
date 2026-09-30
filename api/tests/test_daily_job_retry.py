@@ -32,8 +32,8 @@ def test_a_retry_that_fails_again_stays_failed():
 def test_steps_not_named_are_not_rerun():
     job = _job()
     ran = []
-    steps = {"options archive": lambda: ran.append(1) or True}
-    assert job.retry(["options archive"], steps, job.RETRY_AT_END) == ["options archive"] and ran == []
+    steps = {"audit": lambda: ran.append(1) or True}
+    assert job.retry(["audit"], steps, job.RETRY_AT_END) == ["audit"] and ran == []
 
 
 def test_a_network_drop_mid_job_is_made_up_at_the_end():
@@ -59,3 +59,25 @@ def test_the_news_step_fails_when_every_feed_failed(monkeypatch):
     assert job.step_news() is False
     monkeypatch.setattr(feed, "refresh", lambda judge: {"new": 3, "fetched": 40, "judged": 3, "failed": ["rbi"]})
     assert job.step_news() is True
+
+
+def test_the_index_report_is_retried_before_the_forward_log_that_needs_its_close():
+    """29 Sep 2026: with the network down at 19:30, the index report failed and
+    was not retried, so the forward log's second try still had no close for
+    the 29th. Everything that reaches the network now gets a second try."""
+    job = _job()
+    order = job.RETRY_AT_END
+    assert order.index("NSE index report") < order.index("forward log")
+    assert {"kite bars", "options archive", "other index options"} <= set(order)
+
+
+def test_the_forward_log_step_fails_when_the_last_session_is_not_the_one_recorded(monkeypatch):
+    import briefing.forward_log as fl
+    import briefing.recommendation as rec
+    job = _job()
+    monkeypatch.setattr(rec, "build_recommendation", lambda: {"as_of": "2026-09-28", "action": "NO_TRADE"})
+    monkeypatch.setattr(fl, "record_if_final", lambda r: False)
+    monkeypatch.setattr(job, "last_session", lambda: "2026-09-29")
+    assert job.step_forward_log() is False
+    monkeypatch.setattr(job, "last_session", lambda: "2026-09-28")
+    assert job.step_forward_log() is True

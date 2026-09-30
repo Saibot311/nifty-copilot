@@ -58,10 +58,14 @@ def run_script(*args: str) -> bool:
 # 28 Sep 2026 the network dropped for a moment at 19:42: Yahoo returned no
 # bars and every news feed failed, and four studies, the news archive and the
 # tone series lost the night though the network was back long before the end.
-# The options archive is not here: it retries the exchange's files itself and
-# takes ten minutes. Retries run in the job's order, so a study still follows
-# what it reads.
-RETRY_AT_END = ("forward log", "participant positioning", "pattern -> option research", "implied volatility",
+# On 29 Sep 2026 the network was down at 19:30: the index report, the Kite
+# bars and the options archive, which were not retried, left the forward log
+# without that day's close and the paper book without its prices. Everything
+# that reaches out to the network gets its second try. Retries run in the
+# job's order, so the index report comes back before the forward log, and a
+# study still follows what it reads.
+RETRY_AT_END = ("NSE index report", "forward log", "kite bars", "options archive", "other index options",
+                "participant positioning", "pattern -> option research", "implied volatility",
                 "structural hypotheses", "replication on other indices", "news archive and judging",
                 "news tone series", "news hypotheses", "market context studies")
 
@@ -83,6 +87,15 @@ def retry(failed: list[str], steps: dict, names: tuple[str, ...]) -> list[str]:
     return still
 
 
+def last_session() -> str | None:
+    """The session NSE last traded, as 'YYYY-MM-DD', or None if NSE cannot be asked."""
+    from market_data.live_quote import market_status
+    try:
+        return datetime.strptime(market_status()["trade_date"], "%d-%b-%Y %H:%M").date().isoformat()
+    except Exception:
+        return None
+
+
 def step_forward_log() -> bool:
     from briefing.forward_log import record_if_final
     from briefing.recommendation import build_recommendation
@@ -90,6 +103,18 @@ def step_forward_log() -> bool:
     rec = build_recommendation()
     written = record_if_final(rec)
     log(f"    {rec['as_of']}: {rec['action']} — {'recorded' if written else 'already recorded or bar not final'}")
+    # The recommendation is built on the latest close in the data. If that is
+    # not the session NSE last traded, today's close is missing and today's
+    # verdict was not written: a failure, so it is tried again at the end,
+    # after the index report. On 29 Sep 2026 this step "passed" on the 28th's
+    # verdict and the 29th was never recorded. With NSE unreachable, a weekday
+    # whose close is missing counts the same.
+    expected = last_session()
+    if expected is None and date.today().weekday() < 5:
+        expected = date.today().isoformat()
+    if expected and rec["as_of"] < expected:
+        log(f"    {expected}'s close is not in the data yet — tried again at the end")
+        return False
     return True
 
 

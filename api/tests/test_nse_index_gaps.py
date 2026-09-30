@@ -125,3 +125,26 @@ def test_the_nightly_job_fills_gaps_even_when_the_recent_pass_fails():
     job.run_script = lambda *args: ran.append(args) or "--recent" not in args
     assert job.step_nse_indices() is False
     assert ran == [("scripts/backfill_nse_indices.py", "--recent"), ("scripts/backfill_nse_indices.py", "--fill-gaps")]
+
+
+def test_a_weekday_that_could_not_reach_nse_fails_even_before_the_bar_archive_knows_it(tmp_path, monkeypatch):
+    """29 Sep 2026: the network was down at 19:30. Today is not in the bar
+    archive until the later "kite bars" step, so the failed download did not
+    count, the step passed, and the forward log missed the session."""
+    import datetime as dt
+
+    class Tuesday(dt.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 29)
+    monkeypatch.setattr(ndb, "DB_PATH", tmp_path / "nse_indices.db")
+    monkeypatch.setattr(bf, "date", Tuesday)
+    known = {d for d in SESSIONS if d <= "2026-09-28"}
+    monkeypatch.setattr(bf, "index_trading_days", lambda: (known, "2026-09-28"))
+    monkeypatch.setattr(bf, "fetched", lambda: {f"2026-09-{d:02d}" for d in range(1, 29)})
+
+    def offline(day):
+        raise ConnectionError("Failed to resolve 'archives.nseindia.com'")
+    monkeypatch.setattr(bf, "fetch_day", offline)
+    monkeypatch.setattr("sys.argv", ["backfill_nse_indices.py", "--recent", "--delay", "0"])
+    assert bf.main() == 1

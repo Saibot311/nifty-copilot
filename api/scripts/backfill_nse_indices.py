@@ -46,15 +46,20 @@ def main() -> int:
                 and (a.recent or d.weekday() < 5 or d.isoformat() in sessions)]
     saved, failed = 0, []
     for d in days:
+        error = False
         try:
             rows = fetch_day(d)
         except Exception as e:
             print(f"{d}: FAILED — {type(e).__name__}: {e}", flush=True)
-            rows = None
+            rows, error = None, True
         if rows:
             save_day(d.isoformat(), rows)
             saved += 1
-        elif d.isoformat() in sessions:
+        # Today is not in the bar archive until the "kite bars" step, which
+        # runs after this one. So a weekday the request could not even reach
+        # NSE for counts as failed: on 29 Sep 2026 the network was down, this
+        # step reported success, and the forward log missed the session.
+        elif d.isoformat() in sessions or (error and d.weekday() < 5):
             failed.append(d)
         time.sleep(a.delay)
         if d.day == 1:

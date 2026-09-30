@@ -689,9 +689,39 @@ export type JournalRow = {
   notes: string | null;
   pnl: { gross_rs: number; costs_rs: number; net_rs: number; return_pct: number } | null;
   followed_system: boolean | null;
+  /** 'settled' when held to expiry; a sale otherwise. */
+  exit_kind?: string | null;
+  stop_premium?: number | null;
+  target_premium?: number | null;
+  lot_size?: number | null;
+  lots?: number | null;
+  /** An open trade, priced now. */
+  position?: JournalPosition;
+  /** Past its expiry: it can be closed at its settlement value. */
+  can_settle?: boolean;
 };
 
-export type JournalGroup = { trades: number; net_rs: number; avg_rs: number | null };
+/** An open trade as it stands, all computed by the API (I2). */
+export type JournalPosition = {
+  mark: number | null;
+  mark_source: string | null;
+  mark_at: string | null;
+  spot: number | null;
+  days_to_expiry: number;
+  expired: boolean;
+  expires_today: boolean;
+  pnl_now?: { gross_rs: number; net_rs: number; return_pct: number };
+  intrinsic?: number;
+  time_value?: number;
+  if_unchanged_at_expiry?: { index: number; value: number; net_rs: number };
+  breakeven_index?: number;
+  implied_vol_pct?: number;
+  decay_per_day_rs?: number;
+  plan: { stop: number | null; target: number | null; state: "stop" | "target" | null };
+  lines: string[];
+};
+
+export type JournalGroup = { decisions?: number; trades: number; net_rs: number; avg_rs: number | null };
 
 export type JournalReport = {
   entries: JournalRow[];
@@ -707,6 +737,7 @@ export type JournalReport = {
     decisions_matching_system: number;
     decisions_with_a_system_verdict: number;
   };
+  lot_sizes?: Record<string, number>;
   note: string;
 };
 
@@ -1133,6 +1164,8 @@ export type LiveTick = {
   } | null;
   /** The Market tab's indices board, from what the API had in hand. */
   indices?: IndicesBoard | null;
+  /** The journal's open trades, priced on the same Kite answer, by entry id. */
+  journal?: Record<string, JournalPosition> | null;
 };
 
 export const fetchTick = () => get<LiveTick>("/api/live/tick");
