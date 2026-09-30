@@ -24,6 +24,8 @@ expiry is settled at the index close, not typed. Two fixes came with it: a sale 
 (28 Sep 2026: a contract expiring on the 29th was logged as sold on the 30th, and that row stays as the user
 entered it), and the followed/overrode tiles count decisions.
 
+**Which option to hold depends on the one cost nobody has measured (2026-09-30).** The pipeline's Phase 1 (`backtest/instrument_study.py`, 2019-23 only) found that with the studies' assumed slippage, 1.5% of premium a side, the nearest expiry at the money is the cheapest way to hold NIFTY exposure (12.5 index points a session at a one-day hold, against 20.4 for the monthly). Without that assumption the answer flips: the monthly is cheaper at every hold (3.9 against 5.7 points; 1.5 against 2.6 at five days). A percent-of-premium spread charges an expensive monthly far more in points than a real bid-ask spread would. The five-minute option snapshots (Phase 4, from 2026-10-01) record real bids and asks; the instrument, and the hypotheses that use it, wait on them.
+
 **A network drop at 19:30 no longer loses a session silently.** On 29 Sep 2026 the network was down when
 the job ran: the index report, Kite bars and options archive failed and were not retried, and the forward
 log's retry "passed" on the 28th's verdict, so the 29th was never recorded. Now every network step gets a
