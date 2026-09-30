@@ -44,6 +44,7 @@ def world(monkeypatch):
     ]})
     fires = {"up_rule": IDX[-3], "down_rule": IDX[-70]}
     monkeypatch.setattr(tc, "IN_PLAY_EXTRA", {"up_rule", "down_rule"}, raising=False)
+    monkeypatch.setattr(tc, "_live_candidates", lambda: {"prev_day_breakout", "hammer_reversal", "ema_pullback"})
     monkeypatch.setattr(tc, "STRATEGY_REGISTRY", {
         "up_rule": {"fn": lambda d, r: pd.Series(d.index == fires["up_rule"], index=d.index), "params": {},
                     "label": "Up Rule", "option_type": "CE"},
@@ -289,3 +290,12 @@ def test_in_a_session_the_forming_candles_follow_the_bar_still_open_not_the_last
     assert out["live_day"]["high"] == 23190.0 and out["live_day"]["low"] == 22990.0
     assert out["live_m15"]["t"] == "2026-09-25T11:00" and out["live_m15"]["high"] == 23190.0
     assert out["levels"]["reference"] == 23185.0
+
+
+def test_a_pattern_that_could_not_become_the_call_gets_no_band(world, monkeypatch):
+    monkeypatch.setattr(tc, "_live_candidates", lambda: {"hammer_reversal"})
+    out = tc.today_chart(sessions=60)
+    assert {z["strategy"] for z in out["zones"]} == {"hammer_reversal"}
+    monkeypatch.setattr(tc, "_live_candidates", lambda: set())
+    out = tc.today_chart(sessions=60)
+    assert out["zones"] == [] and "none of the 26 patterns" in out["note"]

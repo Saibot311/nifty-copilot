@@ -42,6 +42,8 @@ def wire(monkeypatch):
             f = {"patterns": n, "iv_filter": 1, "structural": 6, "replication": 22, "news_tone": 5}
             return {**f, "total": sum(f.values())}
         monkeypatch.setattr(rec_mod, "holdout_family", family)
+        # The pipeline's straddles read the archive; their own tests are in test_pipeline_candidates.
+        monkeypatch.setattr(rec_mod, "_pipeline_candidates", lambda as_of, tests: [])
     return _wire
 
 

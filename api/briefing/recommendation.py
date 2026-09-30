@@ -12,6 +12,11 @@ A pattern earns a recommendation only if all of these hold:
      the bar rises with that count — and with how few trades the verdict
      rests on, since it is Student's t at the pattern's own degrees of freedom.
 
+The strategy pipeline's two daily straddles are listed beside the patterns
+when their condition holds on the last close (briefing/pipeline_candidates.py),
+held to the same gate. A straddle is never the call itself: the forward log
+records a call, a put or no trade.
+
 Expect NO TRADE most days. Manufacturing a call to fill the space is the
 failure this is built to avoid.
 """
@@ -38,6 +43,18 @@ def _next_close_phrase(as_of: str) -> str:
     if now.weekday() < 5 and (now.hour, now.minute) >= (15, 30) and as_of < now.date().isoformat():
         return "today's close (already over, not in the data yet — the evening job records it)"
     return "the next close"
+
+
+def _pipeline_candidates(as_of: str, tests: int) -> list[dict]:
+    """The pipeline's straddles whose condition holds on the `as_of` close.
+    Never a reason for the call to fail: without their inputs, none is listed."""
+    try:
+        from backtest.nifty_pipeline import load_nifty_pipeline
+        from briefing.pipeline_candidates import live_inputs, straddle_candidates
+        closes, iv_30d = live_inputs(as_of)
+        return straddle_candidates(as_of, tests, closes, iv_30d, load_nifty_pipeline())
+    except Exception:
+        return []
 
 
 def build_recommendation(symbol: str = "^NSEI") -> dict:
@@ -99,6 +116,8 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
             "holdout_t_stat": t, "required_t": own_bar, "qualifies": why_not is None, "why_not": why_not,
         })
 
+    candidates += _pipeline_candidates(prox["as_of"], tests)
+
     close_txt = f"the {prox['as_of']} close"
     if not candidates:
         could = [p["label"] for p in prox["patterns"] if (p.get("probability_next") or 0) >= 0.02]
@@ -111,7 +130,8 @@ def build_recommendation(symbol: str = "^NSEI") -> dict:
     qualified = [c for c in candidates if c["qualifies"]]
     if not qualified:
         detail = "; ".join(f"{c['label']} ({c['why_not']})" for c in candidates)
-        return {**base, "action": "NO_TRADE", "headline": "Patterns formed, but none has a proven option edge.",
+        what = "Patterns" if all(c.get("direction") != "straddle" for c in candidates) else "Setups"
+        return {**base, "action": "NO_TRADE", "headline": f"{what} formed, but none has a proven option edge.",
                 "reason": f"Formed on {close_txt}: {detail}.", "candidates": candidates, "warnings": [],
                 "evidence_bar": bar}
 

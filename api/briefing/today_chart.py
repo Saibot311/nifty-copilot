@@ -229,6 +229,15 @@ def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tu
 IN_PLAY_EXTRA: set[str] = set()
 
 
+def _live_candidates() -> set[str]:
+    """The patterns that could still become the call: option verdict APPROVED.
+    The chart draws only these; the rest are on the Research tab (since the
+    strategy pipeline, 2026-09-30 — before, all 26 were drawn, each labelled
+    rejected)."""
+    from backtest.pattern_options import load_research
+    return {p["strategy"] for p in (load_research() or {}).get("patterns", []) if p.get("status") == "APPROVED"}
+
+
 def _side(option_type: str | None) -> str:
     return "call" if option_type == "CE" else "put"
 
@@ -291,7 +300,10 @@ def today_chart(sessions: int = 60) -> dict:
     # range also needs a feature of the candle itself (a long wick): lighter,
     # and it says what else it needs.
     zones = []
+    live_set = _live_candidates()
     for p in _proximity().get("patterns", []):
+        if p["strategy"] not in live_set:
+            continue
         trig = p.get("trigger") or {}
         common = {"strategy": p["strategy"], "label": p["label"], "side": _side(p.get("option_type")),
                   "base_rate": p.get("probability_next")}
@@ -307,7 +319,7 @@ def today_chart(sessions: int = 60) -> dict:
             z.update(condition="at or above" if ref < z["low"] else "at or below", edge=edge,
                      distance_pts=round(edge - ref, 1), distance_pct=round((edge - ref) / ref * 100, 2))
     zones.sort(key=lambda z: (not z["certain"], abs(z["distance_pts"])))
-    prox_formed = {p["strategy"] for p in _proximity().get("patterns", []) if p.get("formed_today")}
+    prox_formed = {p["strategy"] for p in _proximity().get("patterns", []) if p.get("formed_today")} & live_set
     in_play = {z["strategy"] for z in zones} | prox_formed | IN_PLAY_EXTRA
 
     # The candles where a rule was actually met — the "signal candle".
@@ -343,8 +355,10 @@ def today_chart(sessions: int = 60) -> dict:
         "live_m15": live_m15,
         "source": ("4-hour blocks from NIFTY's 15-minute bars: the local archive (Kite)"
                    + (f", and {bars15.attrs['recent']}'s for days after it" if bars15.attrs.get("recent") else "")),
-        "note": ("Shaded bands: where the day's close (15:30) would have to land for a pattern to form; the patterns "
-                 "are decided on the daily close, not on a 4-hour one. Every pattern shown "
-                 "was rejected on 2024-26 option data — a band is where a setup appears, not a reason to trade, and "
-                 "the call above stays NO TRADE unless one clears the evidence bar."),
+        "note": (("Shaded bands: where the day's close (15:30) would have to land for a pattern to form; the "
+                  "patterns are decided on the daily close, not on a 4-hour one. Only patterns whose option verdict "
+                  "is APPROVED are drawn, and a band is still where a setup appears, not a reason to trade: the call "
+                  "above stays NO TRADE unless one clears the evidence bar.") if live_set else
+                 ("No pattern bands: none of the 26 patterns has an APPROVED option verdict, so none could become "
+                  "the call. Each is on the Research tab, with where it would form.")),
     }

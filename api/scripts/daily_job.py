@@ -185,10 +185,10 @@ def step_backup() -> bool:
     each evening's rows in no backup until the next weekday."""
     from storage.backup import backup_forward_log, backup_news
     from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_option_snapshots
-    from storage.backup import backup_paper
+    from storage.backup import backup_intraday_forward, backup_paper
     ok = True
     for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(),
-              backup_gift_nifty(), backup_hypothesis_log(), backup_option_snapshots()):
+              backup_gift_nifty(), backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
@@ -249,9 +249,11 @@ def step_kite_bars() -> bool:
     if not status["logged_in"]:
         log(f"    skipped: {status['reason']}")
         return True
-    return run_script("scripts/backfill_bars.py", "--timeframe", "15m") and run_script(
-        "scripts/backfill_bars.py", "--timeframe", "1d"
-    )
+    # 5-minute bars too: the Today tab's intraday rules read the last 14
+    # sessions of them, and fetch from Kite only what the archive lacks.
+    return all([run_script("scripts/backfill_bars.py", "--timeframe", "15m"),
+                run_script("scripts/backfill_bars.py", "--timeframe", "1d"),
+                run_script("scripts/backfill_bars.py", "--timeframe", "5m")])
 
 
 def main() -> int:

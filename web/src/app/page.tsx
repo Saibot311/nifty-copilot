@@ -9,6 +9,8 @@ import { OptionChainCard } from "@/components/OptionChainCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
 import { CourseResearchCard } from "@/components/CourseResearchCard";
+import { IntradayCard } from "@/components/IntradayCard";
+import { NiftyPipelineCard } from "@/components/NiftyPipelineCard";
 import { PatternTable } from "@/components/PatternTable";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
 import { LivePatternsCard } from "@/components/LivePatternsCard";
@@ -36,6 +38,8 @@ import {
   fetchIndices,
   fetchReplication,
   fetchCourseResearch,
+  fetchIntraday,
+  fetchNiftyPipeline,
   fetchZerodhaStatus,
   fetchPaper,
   fetchIndicators,
@@ -82,6 +86,8 @@ export default async function Home() {
     newsResearch,
     strategyFit,
     courseResearch,
+    niftyPipeline,
+    intraday,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -109,6 +115,8 @@ export default async function Home() {
     fetchNewsResearch(),
     fetchStrategyFit(),
     fetchCourseResearch(),
+    fetchNiftyPipeline(),
+    fetchIntraday(),
   ]);
 
   const snap = snapshot.data;
@@ -160,7 +168,7 @@ export default async function Home() {
                   </div>
                 </section>
                 <section className="min-w-0 lg:col-span-5">
-                  <SectionLabel hint="4-hour candles, and the day’s closes that would form a pattern">Where NIFTY stands</SectionLabel>
+                  <SectionLabel hint="4-hour candles, and the closes that would form a pattern that could become the call">Where NIFTY stands</SectionLabel>
                   <TodayChart data={candles.data} />
                 </section>
               </div>
@@ -171,6 +179,13 @@ export default async function Home() {
                   <LivePatternsCard initial={livePatterns.data} />
                 </section>
               )}
+
+              <section>
+                <SectionLabel hint="the strategy pipeline's three, followed on completed 5-minute bars">
+                  Intraday rules
+                </SectionLabel>
+                <IntradayCard initial={intraday.data} />
+              </section>
 
               <section>
                 <SectionLabel hint={patternsToday.data ? `from the close of ${patternsToday.data.as_of} (${patternsToday.data.last_close.toLocaleString("en-IN")})` : undefined}>
@@ -243,6 +258,15 @@ export default async function Home() {
                     Does the news pay a buyer?
                   </SectionLabel>
                   <NewsResearchCard data={newsResearch.data} />
+                </section>
+              )}
+
+              {niftyPipeline.data && (
+                <section>
+                  <SectionLabel hint="fixed before they were run, judged once on 2024–26">
+                    Strategies searched for NIFTY
+                  </SectionLabel>
+                  <NiftyPipelineCard data={niftyPipeline.data} />
                 </section>
               )}
 
