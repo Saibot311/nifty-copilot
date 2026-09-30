@@ -60,8 +60,13 @@ die() { printf "\033[31mland: %b\033[0m\n" "$*" >&2; cleanup; exit 1; }
 step() { printf "\n\033[1m== %s\033[0m\n" "$*"; }
 log_sum() { [[ -f "$LOG" ]] && shasum -a 256 "$LOG" | cut -c1-16 || echo none; }
 
+job_running() {  # launchd's own record, or a Python process running the script by hand
+    [[ "$(launchctl list 2>/dev/null | awk '$3 == "com.niftycopilot.dailyjob" {print $1}')" =~ ^[0-9]+$ ]] && return 0
+    pgrep -f '^[^ ]*[Pp]ython[^ ]* [^ ]*scripts/daily_job\.py( |$)' >/dev/null
+}
+
 nightly_job_clear() {
-    if pgrep -f "scripts/daily_job.py" >/dev/null; then
+    if job_running; then
         die "the nightly job is running — land after it logs 'daily job done' in api/data/daily_job.log"
     fi
     local now dow
