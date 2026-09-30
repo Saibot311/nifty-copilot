@@ -176,12 +176,14 @@ wait_for() {  # wait_for <url> <what>
     done
     echo "WARNING: $2 did not answer at $1 within a minute — check api/data/*_service.log"
 }
-if grep -E '^api/' <<<"$CHANGED" | grep -qvE '^api/tests/'; then
+# The API loads Python (and its requirements) at start; tests, docs and ignore files do not need it.
+if grep -E '^api/.*\.(py|txt|toml)$' <<<"$CHANGED" | grep -qvE '^api/tests/'; then
     launchctl kickstart -k "$DOMAIN/com.niftycopilot.api" && wait_for http://127.0.0.1:8000/health "API"
 else
     echo "API: no change"
 fi
-if grep -E '^web/' <<<"$CHANGED" | grep -qvE '^web/gate\.test\.mjs$'; then
+# The dashboard serves a build: anything that goes into it needs a rebuild.
+if grep -qE '^web/(src/|public/|server\.mjs|gate\.mjs|next\.config|package(-lock)?\.json|tsconfig|postcss)' <<<"$CHANGED"; then
     (cd "$LIVE/web" && npm run build >/dev/null 2>&1) || echo "WARNING: the live web build failed — the dashboard still serves the old build"
     launchctl kickstart -k "$DOMAIN/com.niftycopilot.web" && wait_for http://127.0.0.1:3000/ "dashboard"
 else
