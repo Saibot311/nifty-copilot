@@ -1154,6 +1154,28 @@ export type OptionMoves = {
 };
 export const fetchOptionMoves = () => get<OptionMoves>("/api/options/moves");
 
+export type DayForecastBody = {
+  target: string; prev: string; prev_close: number; iv30: number; sigma_raw_pct: number; k: number;
+  tag_multiplier: number; sigma_pct: number; sigma_pts: number; band68: [number, number]; band95: [number, number];
+  expected_range_pts: number; tags: string[];
+  lean: { side: "up" | "down"; p_up: number; sessions: number; basis: string };
+};
+export type DayOutcome = {
+  open: number; high: number; low: number; close: number; move_pts: number; move_pct: number; z: number;
+  inside68: boolean; inside95: boolean; range_pts: number; range_vs_expected: number | null; lean_hit: boolean;
+  missed: boolean; why: string[];
+};
+export type DayForecastRecord = { target_day: string; made_at: string; forecast: DayForecastBody;
+                                  scored_at: string | null; outcome: DayOutcome | null };
+export type DayForecast = {
+  next: DayForecastRecord | null; recent: DayForecastRecord[];
+  summary: { forecasts: number; inside68_pct: number; inside95_pct: number; lean_hit_pct: number; first: string } | null;
+  hindcast: { k_dev?: number; holdout_inside68_pct?: number; holdout_inside95_pct?: number; holdout_lean_hit_pct?: number };
+  calibration_now: { k: number; window: number; multipliers: { event: number; expiry: number }; range_ratio: number };
+  note: string;
+};
+export const fetchDayForecast = () => get<DayForecast>("/api/day_forecast");
+
 export type LiveLeg = { price: number; change: number; change_pct: number };
 export type OptionMovesLive = {
   index: number; move: number; prices_as_of: string; expiry: string;

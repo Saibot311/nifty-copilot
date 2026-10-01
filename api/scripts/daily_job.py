@@ -185,10 +185,10 @@ def step_backup() -> bool:
     each evening's rows in no backup until the next weekday."""
     from storage.backup import backup_forward_log, backup_news
     from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_option_snapshots
-    from storage.backup import backup_intraday_forward, backup_paper
+    from storage.backup import backup_day_forecast, backup_intraday_forward, backup_paper
     ok = True
-    for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(),
-              backup_gift_nifty(), backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward()):
+    for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(), backup_gift_nifty(),
+              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
@@ -273,6 +273,9 @@ def main() -> int:
         # each is judged once its minimums are met, and waits until then.
         ("order-flow forward test", lambda: run_script("scripts/orderflow_forward.py")),
         ("implied volatility", lambda: run_script("scripts/iv_research.py")),
+        # After the IV series has today's close: score today's day-ahead
+        # forecast and write tomorrow's, before tomorrow opens.
+        ("day-ahead forecast", lambda: run_script("scripts/day_forecast.py")),
         ("participant positioning", lambda: run_script("scripts/backfill_participant_oi.py")),
         # After positioning: two of the six read today's participant file.
         ("structural hypotheses", lambda: run_script("scripts/structural_research.py")),

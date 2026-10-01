@@ -12,6 +12,7 @@ import { CourseResearchCard } from "@/components/CourseResearchCard";
 import { IntradayCard } from "@/components/IntradayCard";
 import { WeekdayCard } from "@/components/WeekdayCard";
 import { OptionMovesCard } from "@/components/OptionMovesCard";
+import { DayForecastCard } from "@/components/DayForecastCard";
 import { NiftyPipelineCard } from "@/components/NiftyPipelineCard";
 import { PatternTable } from "@/components/PatternTable";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
@@ -43,6 +44,7 @@ import {
   fetchIntraday,
   fetchWeekdayProfile,
   fetchOptionMoves,
+  fetchDayForecast,
   fetchNiftyPipeline,
   fetchZerodhaStatus,
   fetchPaper,
@@ -94,6 +96,7 @@ export default async function Home() {
     intraday,
     weekdayProfile,
     optionMoves,
+    dayForecast,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -125,6 +128,7 @@ export default async function Home() {
     fetchIntraday(),
     fetchWeekdayProfile(),
     fetchOptionMoves(),
+    fetchDayForecast(),
   ]);
 
   const snap = snapshot.data;
@@ -180,6 +184,13 @@ export default async function Home() {
                   <TodayChart data={candles.data} />
                 </section>
               </div>
+
+              <section>
+                <SectionLabel hint="written before the session, scored after — how far, not which way">
+                  The next session
+                </SectionLabel>
+                <DayForecastCard data={dayForecast.data} />
+              </section>
 
               {livePatterns.data?.candle && (
                 <section>

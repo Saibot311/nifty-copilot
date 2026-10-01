@@ -91,6 +91,14 @@ def backup_intraday_forward(source: Path | None = None, dest_dir: Path | None = 
     return _backup(source or INTRADAY_PATH, "intraday_forward", "events", dest_dir, keep, today)
 
 
+def backup_day_forecast(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                        today: date | None = None) -> dict:
+    """The day-ahead forecasts and their outcomes: written before each
+    session, never edited, never rebuilt from anything else."""
+    from .day_forecast_db import DB_PATH as FC_PATH
+    return _backup(source or FC_PATH, "day_forecast", "forecasts", dest_dir, keep, today)
+
+
 def backup_hypothesis_log(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
                           today: date | None = None) -> dict:
     """The audit trail of every strategy and parameter set ever run — the
