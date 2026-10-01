@@ -33,17 +33,19 @@ export function WeekdayCard({ data }: { data: WeekdayProfile | null }) {
     <Panel className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-xs text-zinc-300">
-          {data.weekday}s, the last 12 months · {p.sessions} sessions
+          Every {data.weekday} since {MONTHS[Number(p.since.slice(5, 7)) - 1]} {p.since.slice(0, 4)} · {p.sessions.toLocaleString("en-IN")} sessions
         </p>
         <div className="flex items-center gap-2">
           {data.expiry && <Pill tone="warn">expiry day</Pill>}
-          <span className="text-[11px] text-zinc-500">points from the open</span>
+          <span className="text-[11px] text-zinc-500">
+            points from the open, at {data.reference.is === "today's open" ? "today's open" : "the last close"} ({p.ref.toLocaleString("en-IN")})
+          </span>
         </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Typical range" value={`${pts(p.range).replace("+", "")} pts`}
-          sub={`all days ${pts(data.all_days?.range).replace("+", "")}`} />
+          sub={`${p.range_pct.toFixed(2)}% of the open · all days ${pts(data.all_days?.range).replace("+", "")}`} />
         <Stat label="Went up first" value={`${p.up_first_pct}% of days`} sub={`first swing ends ~${p.first_swing_ends ?? "–"}`} />
         <Stat label="If up first" value={`${pts(p.first_up)} then ${pts(p.back_after_up == null ? null : -p.back_after_up)}`}
           sub="first swing, swing back" />

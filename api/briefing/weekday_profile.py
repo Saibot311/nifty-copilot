@@ -1,8 +1,9 @@
 """How NIFTY moves through a session on this weekday, point by point, and
 how today compares (the Today tab's "This weekday" card).
 
-Descriptive, not a signal. For the weekday of the session shown, over the
-last twelve months: how far it typically went up and down from the open,
+Descriptive, not a signal. For the weekday of the session shown, over every
+session in the 5-minute archive (January 2015 on, more than ten years): how
+far it typically went up and down from the open,
 which way the first swing went and how big it and the swing back were, when
 the first swing ended, and where the index typically stood, in points from
 the open, at each hour. Then today's path so far against that, and the past
@@ -12,6 +13,10 @@ a forecast. The "why" lines are measured here, not asserted.
 
 A swing ends when the index reverses by SWING_PCT from its extreme (0.25%,
 about 55 points at 22,000): a fixed, stated definition, not a fitted one.
+
+NIFTY was near 8,000 in 2015 and 22,000+ in 2026, so points from different
+years cannot be pooled as they are. Every session is measured in % of its
+own open and shown as points at today's level (the reference), with the %.
 """
 
 import math
@@ -24,9 +29,8 @@ import pandas as pd
 from market_data.kite_session import IST
 
 SWING_PCT = 0.25
-LOOKBACK_DAYS = 365
-LONG_FROM = date(2018, 1, 1)
-SIMILAR_YEARS = 3
+LONG_FROM = date(2015, 1, 1)               # the 5-minute archive's start
+WEEKLY_FROM = date(2019, 2, 11)            # NIFTY's weekly expiries began (expiry-day figures)
 SIMILAR_K = 5
 # Where the index stood at each hour, as the close of the 5-minute bar ending then.
 CHECKPOINTS = ("10:15", "11:15", "12:15", "13:15", "14:15", "15:30")
@@ -115,29 +119,38 @@ def _clock(stamps: list[str]) -> str | None:
     return f"{int(m) // 60:02d}:{int(m) % 60:02d}"
 
 
-def profile(rows: list[dict]) -> dict | None:
-    """The typical shape of these sessions, in points."""
+def _at(r: dict, v: float | None, ref: float) -> float | None:
+    """A session's points, as % of its own open, in points at `ref`."""
+    return None if v is None else v / r["open"] * ref
+
+
+def profile(rows: list[dict], ref: float) -> dict | None:
+    """The typical shape of these sessions, each in % of its own open, shown
+    as points at `ref` (today's level)."""
     if not rows:
         return None
     first = [r["swings"][0] for r in rows if r["swings"]]
     up_first = [r for r in rows if r["swings"] and r["swings"][0]["dir"] == 1]
     down_first = [r for r in rows if r["swings"] and r["swings"][0]["dir"] == -1]
-    back = lambda rs: [r["swings"][1]["points"] for r in rs if len(r["swings"]) > 1]  # noqa: E731
+    back = lambda rs: [_at(r, r["swings"][1]["points"], ref) for r in rs if len(r["swings"]) > 1]  # noqa: E731
+    rng = [(r["up"] + r["down"]) / r["open"] * 100 for r in rows]
     return {
-        "sessions": len(rows),
-        "range": _med(r["up"] + r["down"] for r in rows),
-        "up_from_open": _med(r["up"] for r in rows),
-        "down_from_open": _med(r["down"] for r in rows),
-        "open_to_close": _med(r["now"] for r in rows),
+        "sessions": len(rows), "since": min(r["date"] for r in rows).isoformat(), "ref": round(ref, 2),
+        "range": _med(_at(r, r["up"] + r["down"], ref) for r in rows),
+        "range_pct": round(statistics.median(rng), 3),
+        "up_from_open": _med(_at(r, r["up"], ref) for r in rows),
+        "down_from_open": _med(_at(r, r["down"], ref) for r in rows),
+        "open_to_close": _med(_at(r, r["now"], ref) for r in rows),
         "up_first_pct": round(100 * len(up_first) / max(1, len(up_first) + len(down_first))),
-        "first_up": _med(r["swings"][0]["points"] for r in up_first),
+        "first_up": _med(_at(r, r["swings"][0]["points"], ref) for r in up_first),
         "back_after_up": _med(back(up_first)),
-        "first_down": _med(r["swings"][0]["points"] for r in down_first),
+        "first_down": _med(_at(r, r["swings"][0]["points"], ref) for r in down_first),
         "back_after_down": _med(back(down_first)),
         "first_swing_ends": _clock([s["ends"] for s in first if s["done"]]),
         "swings_per_day": _med(len(r["swings"]) for r in rows),
-        "path": [{"at": cp, "median": _med(r["path"].get(cp) for r in rows), "p25": _q([r["path"].get(cp) for r in rows], 25),
-                  "p75": _q([r["path"].get(cp) for r in rows], 75)} for cp in CHECKPOINTS],
+        "path": [{"at": cp, "median": _med(_at(r, r["path"].get(cp), ref) for r in rows),
+                  "p25": _q([_at(r, r["path"].get(cp), ref) for r in rows], 25),
+                  "p75": _q([_at(r, r["path"].get(cp), ref) for r in rows], 75)} for cp in CHECKPOINTS],
     }
 
 
@@ -181,7 +194,7 @@ def _t(xs: list[float]) -> tuple[float, float]:
     return m, m / (statistics.stdev(xs) / math.sqrt(len(xs)))
 
 
-def why(long_rows: list[dict], recent: list[dict]) -> list[str]:
+def why(long_rows: list[dict], ref: float) -> list[str]:
     """Measured explanations, each with its numbers."""
     out = []
     gaps = [r["gap_pct"] for r in long_rows if r["gap_pct"] is not None]
@@ -189,20 +202,24 @@ def why(long_rows: list[dict], recent: list[dict]) -> list[str]:
     if len(gaps) > 30:
         g, gt = _t(gaps)
         m, mt = _t(oc)
-        out.append(f"Since 2018 NIFTY's rise has come overnight: the open has been {_signed(g)}% from the previous close "
+        since = min(r["date"] for r in long_rows).year
+        out.append(f"Since {since} NIFTY's rise has come overnight: the open has been {_signed(g)}% from the previous close "
                    f"on average (t {_signed(gt, 1)}), while open to close has averaged {_signed(m)}% (t {_signed(mt, 1)}). "
                    "A gap up is "
                    "often given back during the day, on every weekday.")
-    firsts = [r["swings"][0]["ends"] for r in recent if r["swings"] and r["swings"][0]["done"]]
+    firsts = [r["swings"][0]["ends"] for r in long_rows if r["swings"] and r["swings"][0]["done"]]
     if firsts:
         early = sum(1 for s in firsts if int(s[:2]) * 60 + int(s[3:]) + 5 <= 10 * 60 + 15) / len(firsts) * 100
         out.append(f"The first swing usually ends early: median {_clock(firsts)}, and {early:.0f}% end by 10:15. The "
                    "opening auction and overnight news (GIFT Nifty, US markets) are absorbed in the first hour.")
-    exp, other = [r for r in recent if r["expiry"]], [r for r in recent if not r["expiry"]]
+    weekly = [r for r in long_rows if r["date"] >= WEEKLY_FROM]
+    exp, other = [r for r in weekly if r["expiry"]], [r for r in weekly if not r["expiry"]]
     if len(exp) > 10 and len(other) > 10:
-        out.append(f"On expiry days in the last 12 months the index went {_med(r['down'] for r in exp):.0f} points "
-                   f"below the open and {_med(r['up'] for r in exp):.0f} above (median), against "
-                   f"{_med(r['down'] for r in other):.0f} and {_med(r['up'] for r in other):.0f} on other days. NIFTY's "
+        dn = lambda rs: _med(_at(r, r["down"], ref) for r in rs)  # noqa: E731
+        up = lambda rs: _med(_at(r, r["up"], ref) for r in rs)  # noqa: E731
+        out.append(f"On the {len(exp)} weekly expiry days since February 2019 the index went {dn(exp):.0f} points "
+                   f"below the open and {up(exp):.0f} above (median, at today's level), against "
+                   f"{dn(other):.0f} and {up(other):.0f} on other days. NIFTY's "
                    "weekly expiry moved from Thursday to Tuesday in September 2025, so weekday and expiry overlap.")
     return out
 
@@ -259,9 +276,9 @@ def build_weekday_profile(now: datetime | None = None) -> dict:
         prev = max((d for d in hist["closes"] if d < today), default=None)
         me = session(todays, hist["closes"].get(prev), is_expiry)
     weekday = WEEKDAYS[day.weekday()]
-    recent = [r for r in rows if r["date"] >= today - timedelta(days=LOOKBACK_DAYS)]
-    same = [r for r in recent if r["weekday"] == weekday]
-    past_same = [r for r in rows if r["weekday"] == weekday and r["date"] >= today - timedelta(days=365 * SIMILAR_YEARS)]
+    same = [r for r in rows if r["weekday"] == weekday]
+    last_close = hist["closes"][max(d for d in hist["closes"] if d <= today)] if hist["closes"] else None
+    ref = me["open"] if me else last_close
 
     today_out = None
     if me:
@@ -274,11 +291,13 @@ def build_weekday_profile(now: datetime | None = None) -> dict:
     return {
         "as_of": now.isoformat(timespec="seconds"), "session": day.isoformat(), "weekday": weekday,
         "expiry": is_expiry, "bars_source": source or "the archive", "swing_pct": SWING_PCT,
-        "profile": profile(same), "all_days": profile(recent),
-        "expiry_profile": profile([r for r in recent if r["expiry"]]) if is_expiry else None,
-        "today": today_out, "similar": similar(me, past_same) if me else None,
-        "why": why(rows, recent), "indicators": indicators_tested(),
-        "note": (f"Medians over the last 12 months of {weekday}s, in index points from the open; a swing ends on a "
+        "reference": {"level": round(ref, 2) if ref else None, "is": "today's open" if me else "the last close"},
+        "profile": profile(same, ref), "all_days": profile(rows, ref),
+        "expiry_profile": profile([r for r in rows if r["expiry"] and r["date"] >= WEEKLY_FROM], ref) if is_expiry else None,
+        "today": today_out, "similar": similar(me, same) if me else None,
+        "why": why(rows, ref), "indicators": indicators_tested(),
+        "note": (f"Medians over every {weekday} since January 2015 ({len(same)} sessions), each measured in % of its "
+                 f"own open and shown as points at today's level; a swing ends on a "
                  f"{SWING_PCT}% reversal. A description of past sessions, not a signal: the intraday rules that "
                  "tried to see these moves coming are listed with their verdicts."),
     }
