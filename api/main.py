@@ -1006,6 +1006,18 @@ def intraday() -> dict:
         raise HTTPException(503, f"Intraday rules unavailable: {str(e)[:160]}") from e
 
 
+@app.get("/api/day_forecast")
+def day_forecast() -> dict:
+    """The next session's forecast (written before it opens, never edited),
+    the record of past forecasts with why each miss happened, and the
+    method's check on 2024-26. Written by the nightly job; this only reads."""
+    from briefing.day_forecast import view
+    try:
+        return cached("day_forecast", ttl_seconds=300, producer=view, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Day-ahead forecast unavailable: {str(e)[:160]}") from e
+
+
 @app.get("/api/weekday_profile")
 def weekday_profile() -> dict:
     """How NIFTY moves through a session on this weekday, point by point, over
