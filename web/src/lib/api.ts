@@ -1059,6 +1059,12 @@ export type NiftyPipeline = {
     measured?: { sessions: string[]; window: string; basis: "close" | "all_day";
                  chosen: { expiry: string; moneyness: string } | null; chosen_atm: string | null; caveat: string } | null;
   } | null;
+  /** The order-flow rules registered for a forward test on the option snapshots. */
+  forward?: {
+    prereg: string; registered_on: string; tests_in_family: number;
+    rows: { name: string; label: string; status: "waiting" | "judged"; sessions: number | null; min_sessions: number | null;
+            counted_trades: number | null; min_trades: number | null; verdict?: Verdict | null; reason: string | null }[];
+  } | null;
 };
 export const fetchNiftyPipeline = () => get<NiftyPipeline>("/api/nifty_pipeline");
 

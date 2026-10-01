@@ -269,6 +269,9 @@ def main() -> int:
         ("options archive", step_options),
         ("other index options", lambda: run_script("scripts/backfill_other_indices.py", "--recent")),
         ("pattern -> option research", lambda: run_script("scripts/pattern_options.py")),
+        # The four registered order-flow rules, run forward on the snapshots;
+        # each is judged once its minimums are met, and waits until then.
+        ("order-flow forward test", lambda: run_script("scripts/orderflow_forward.py")),
         ("implied volatility", lambda: run_script("scripts/iv_research.py")),
         ("participant positioning", lambda: run_script("scripts/backfill_participant_oi.py")),
         # After positioning: two of the six read today's participant file.

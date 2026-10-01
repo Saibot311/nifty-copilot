@@ -7,7 +7,8 @@ with holdout trades, the pre-registered IV filter, the six structural
 tests, the replications on other indices, the news-tone tests, and the
 five intraday strategies from the user's course and the two afternoon-breakout
 hypotheses that one of them suggested (2026-09-27), and the strategy
-pipeline's five (2026-09-30). Each was
+pipeline's five (2026-09-30), and the four order-flow rules registered for a
+forward test on 2026-10-01 (counted when each is judged). Each was
 another chance for luck to clear a bar, so each raises it for all of them.
 
 This used to be `structural_research.holdout_tests_judged`, which stopped at
@@ -29,12 +30,19 @@ def holdout_family(pattern_research: dict | None) -> dict:
     from .iv_research import load_iv_research
     from .news_research import load_news_research
     from .nifty_pipeline import load_nifty_pipeline
+    from .orderflow_registry import judged_count
     from .replication import load_replication
     from .structural_research import load_structural_research
 
     def _count(load) -> int:
         try:
             return len((load() or {}).get("hypotheses", []))
+        except Exception:
+            return 0
+
+    def _judged(fn) -> int:
+        try:
+            return fn()
         except Exception:
             return 0
 
@@ -52,5 +60,6 @@ def holdout_family(pattern_research: dict | None) -> dict:
         "course": _count(load_course_research),
         "breakout": _count(load_breakout_research),
         "pipeline": _count(load_nifty_pipeline),
+        "orderflow": _judged(judged_count),
     }
     return {**family, "total": sum(family.values())}

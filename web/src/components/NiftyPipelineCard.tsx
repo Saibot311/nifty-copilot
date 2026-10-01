@@ -129,6 +129,32 @@ export function NiftyPipelineCard({ data }: { data: NiftyPipeline }) {
           </tbody>
         </table>
       </div>
+      {data.forward && (
+        <div className="mt-3 rounded-lg bg-zinc-950/60 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
+            Registered forward tests on the option snapshots
+          </p>
+          <ul className="mt-2 space-y-1 text-[11px] text-zinc-400">
+            {data.forward.rows.map((r) => (
+              <li key={r.name} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="text-zinc-300">{r.label}</span>
+                {r.status === "judged" && r.verdict ? (
+                  <span title={r.reason ?? undefined}><Pill tone={r.verdict === "APPROVED" ? "good" : "bad"}>{r.verdict}</Pill></span>
+                ) : (
+                  <span className="font-mono tabular-nums text-zinc-500">
+                    {r.sessions} of {r.min_sessions} sessions · {r.counted_trades} of {r.min_trades} trades
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+            Fixed before any session they are judged on; real ask in, bid out; judged once each reaches its sample,
+            from {data.forward.registered_on}, at the bar for {data.forward.tests_in_family}. Plan: {data.forward.prereg}.
+          </p>
+        </div>
+      )}
+
       <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
         The two straddles are priced at NSE&apos;s real closing prices. The three intraday rules use a modelled option
         (Black-Scholes on the real 5-minute path, the previous session&apos;s volatility, real expiries and this

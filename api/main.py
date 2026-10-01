@@ -936,8 +936,20 @@ def nifty_pipeline() -> dict:
                           # The table's own comparison: at the money, held one session.
                           "chosen_atm": real["choices"]["event_straddle"]["expiry"],
                           "caveat": real["caveat"]} if real else None)}
+    forward = None
+    try:
+        from backtest.orderflow_registry import load_orderflow_forward
+        of = load_orderflow_forward()
+        if of:
+            forward = {"prereg": of["prereg_hash"], "registered_on": of["registered_on"],
+                       "tests_in_family": of["tests_in_family"],
+                       "rows": [{k: h.get(k) for k in ("name", "label", "status", "sessions", "min_sessions",
+                                                       "counted_trades", "min_trades", "verdict", "reason")}
+                                for h in of["hypotheses"]]}
+    except Exception:
+        forward = None
     return {"computed_at": study["computed_at"], "prereg": study["prereg_hash"],
-            "tests_in_family": study["tests_in_family"], "rows": rows, "instrument": instrument}
+            "tests_in_family": study["tests_in_family"], "rows": rows, "instrument": instrument, "forward": forward}
 
 
 @app.get("/api/intraday")

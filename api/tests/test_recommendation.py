@@ -106,6 +106,8 @@ def test_the_bar_counts_every_hypothesis_that_has_looked_at_the_holdout(wire, mo
     monkeypatch.setattr(brk, "load_breakout_research", lambda: {"hypotheses": [{}] * 2})
     import backtest.nifty_pipeline as npl
     monkeypatch.setattr(npl, "load_nifty_pipeline", lambda: {"hypotheses": [{}] * 5})
+    import backtest.orderflow_registry as ofr
+    monkeypatch.setattr(ofr, "judged_count", lambda: 0)
     research = {"patterns": [{"strategy": f"p{i}", "status": "REJECTED", "holdout": {"num_trades": 12}} for i in range(19)]
                 + [{"strategy": "never_formed", "status": "REJECTED", "holdout": {"num_trades": 0}}]}
     wire(_prox(), research)
@@ -115,7 +117,7 @@ def test_the_bar_counts_every_hypothesis_that_has_looked_at_the_holdout(wire, mo
     assert bar["tests_judged"] == 19 + 1 + 6 + 22 + 5 + 5 + 2 + 5 == 65
     assert bar["min_t"] == required_t(65)
     assert bar["family"] == {"patterns": 19, "iv_filter": 1, "structural": 6, "replication": 22, "news_tone": 5,
-                             "course": 5, "breakout": 2, "pipeline": 5}
+                             "course": 5, "breakout": 2, "pipeline": 5, "orderflow": 0}
 
 
 def test_after_the_close_the_next_close_is_not_called_the_next_one(wire, monkeypatch):
