@@ -70,3 +70,48 @@ def test_the_table_is_eight_strikes_either_side_of_the_money():
     out = mt.build_move_table(chain, NOW, db_path=__import__("pathlib").Path("/nonexistent.db"))
     assert [r["strike"] for r in out["rows"]] == [22100.0 + 50 * k for k in range(17)]
     assert out["moves"] == [25, 50, 100, 200]
+
+
+# --- time: a market clock, NSE's holidays, decay to each horizon ----------------------
+
+HOL = {date(2026, 10, 2)}          # Gandhi Jayanti, a Friday
+
+
+def test_a_session_counts_one_unit_and_a_closed_gap_its_measured_share():
+    at_close = datetime(2026, 9, 29, 15, 30, tzinfo=IST)               # Tuesday close
+    one_night = mt.years_to(date(2026, 9, 30), at_close, HOL) * mt.UNITS_PER_YEAR
+    assert one_night == pytest.approx(mt.GAP_WEIGHT[1] + 1.0)
+    # Thursday close -> Monday close over the Friday holiday and the weekend: one gap of 4 days, one session
+    long_break = mt.years_to(date(2026, 10, 5), datetime(2026, 10, 1, 15, 30, tzinfo=IST), HOL) * mt.UNITS_PER_YEAR
+    assert long_break == pytest.approx(mt.GAP_WEIGHT[4] + 1.0)
+
+
+def test_inside_a_session_only_the_rest_of_it_counts():
+    noon = datetime(2026, 9, 30, 12, 22, 30, tzinfo=IST)               # half of 09:15-15:30
+    assert mt.years_to(date(2026, 9, 30), noon) * mt.UNITS_PER_YEAR == pytest.approx(0.5)
+    assert mt.years_to(date(2026, 9, 30), datetime(2026, 9, 30, 15, 31, tzinfo=IST)) == 0.0
+
+
+def test_horizons_skip_nse_holidays_and_stop_at_expiry():
+    hz = mt.horizons(datetime(2026, 10, 2, 3, 0, tzinfo=IST), date(2026, 10, 6), HOL)
+    assert [h["key"] for h in hz] == ["now", "2026-10-05", "2026-10-06"]
+    assert hz[-1]["label"] == "By 6 Oct close (expiry)"
+    hz = mt.horizons(datetime(2026, 9, 30, 11, 0, tzinfo=IST), date(2026, 10, 1), HOL)
+    assert [h["key"] for h in hz] == ["now", "today", "2026-10-01"]
+
+
+def test_waiting_costs_a_buyer_and_at_expiry_only_intrinsic_value_is_left():
+    now = datetime(2026, 10, 2, 3, 0, tzinfo=IST)
+    hz = mt.horizons(now, date(2026, 10, 6), HOL)
+    years = mt.years_to(date(2026, 10, 6), now, HOL)
+    c = mt.leg({"bid": 156.0, "ask": 157.0}, "CE", 22400.0, 22452.0, years, hz, date(2026, 10, 6), HOL)
+    assert c["at"]["now"]["flat"] == pytest.approx(0, abs=0.01)
+    assert c["at"]["2026-10-05"]["flat"] < 0
+    assert c["at"]["2026-10-05"]["up"]["50"] < c["up"]["50"]                   # the same move, a day later, is worth less
+    assert c["at"]["2026-10-06"]["flat"] == pytest.approx(52.0 - 156.5)       # intrinsic at expiry minus the price paid
+
+
+def test_options_are_valued_against_the_put_call_parity_forward():
+    row = {"strike": 22400.0, "call": {"bid": 156.0, "ask": 157.0}, "put": {"bid": 103.5, "ask": 104.5}}
+    assert mt.forward_from(row, 22421.95) == (22452.5, "put-call parity at the money")
+    assert mt.forward_from({"strike": 22400.0, "call": None, "put": {"ltp": 9}}, 22421.95)[0] == 22421.95
