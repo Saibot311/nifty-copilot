@@ -59,7 +59,7 @@ export function OptionMovesCard({ data }: { data: OptionMoves | null }) {
               <tr key={r.strike} className={`border-t border-zinc-800/70 ${r.is_atm ? "bg-indigo-500/10" : ""}`}>
                 <td className="hidden py-1.5 pr-2 text-right text-zinc-400 sm:table-cell">
                   {r.call ? r.call.price.toFixed(1) : "–"}
-                  {r.call_measured != null && <span className="text-zinc-600"> · {r.call_measured.toFixed(2)}/pt</span>}
+                  {r.call_measured != null && <span className="text-zinc-600"> · {r.call_measured.toFixed(2).replace("-", "−")}/pt</span>}
                 </td>
                 <td className="py-1.5 pr-2 text-right"><Change leg={r.call} dir="up" move={m} /></td>
                 <td className="py-1.5 pr-2 text-right"><Change leg={r.call} dir="down" move={m} /></td>
@@ -68,7 +68,7 @@ export function OptionMovesCard({ data }: { data: OptionMoves | null }) {
                 <td className="py-1.5 pl-2"><Change leg={r.put} dir="down" move={m} /></td>
                 <td className="hidden py-1.5 pl-2 text-zinc-400 sm:table-cell">
                   {r.put ? r.put.price.toFixed(1) : "–"}
-                  {r.put_measured != null && <span className="text-zinc-600"> · {r.put_measured.toFixed(2)}/pt</span>}
+                  {r.put_measured != null && <span className="text-zinc-600"> · {r.put_measured.toFixed(2).replace("-", "−")}/pt</span>}
                 </td>
               </tr>
             ))}
