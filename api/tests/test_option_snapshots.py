@@ -25,7 +25,7 @@ AT_10 = datetime(2026, 10, 1, 10, 5, tzinfo=IST)
 def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "option_snapshots.db")
     # The intraday record reads bars from the network; its own tests are in test_intraday_live.
-    monkeypatch.setattr(snap, "record_intraday", lambda now, rows: None)
+    monkeypatch.setattr(snap, "record_intraday", lambda now, rows, *a: None)
 
 
 def _side(price):
@@ -122,7 +122,7 @@ def test_the_nightly_backup_keeps_a_week_of_copies(tmp_path):
 
 def test_each_saved_run_hands_its_chain_to_the_intraday_record(monkeypatch):
     seen = []
-    monkeypatch.setattr(snap, "record_intraday", lambda now, rows: seen.append((now, len(rows))))
+    monkeypatch.setattr(snap, "record_intraday", lambda now, rows, *a: seen.append((now, len(rows))))
     snap.main(AT_10, FakeNSE())
     assert seen and seen[0][0] == AT_10 and seen[0][1] > 0
 
@@ -130,9 +130,9 @@ def test_each_saved_run_hands_its_chain_to_the_intraday_record(monkeypatch):
 def test_a_failing_intraday_record_never_costs_the_snapshot(monkeypatch, capsys):
     import briefing.intraday_live as live
 
-    def broken(now, rows):
+    def broken(now):
         raise RuntimeError("bars unavailable")
-    monkeypatch.setattr(live, "record", broken)
+    monkeypatch.setattr(live, "state_now", broken)
     fresh = importlib.util.module_from_spec(spec)      # the real record_intraday, not the fixture's stand-in
     spec.loader.exec_module(fresh)
     fresh.record_intraday(AT_10, [])

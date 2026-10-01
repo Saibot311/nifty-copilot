@@ -385,21 +385,30 @@ def tick_contracts(state: dict | None) -> list[dict]:
 
 # --- the forward record ---------------------------------------------------------------
 
-def record(now: datetime, chain_rows: list[dict], state: dict | None = None, db_path=None) -> list[str]:
+def state_now(now: datetime) -> dict:
+    closes = daily_closes(now.date())
+    bars, source = five_minute_bars(now, closes)
+    return {**evaluate(bars, closes, expiries(now.date())), "source": source}
+
+
+def record(now: datetime, chain_rows: list[dict], state: dict | None = None,
+           db_path=None) -> tuple[list[str], set[str]]:
     """Writes each rule's entry, then its exit, the first time a run sees them
-    today, priced from the option chain saved in the same run. Nothing is
-    written without a price for the contract; a price taken well after the
-    rule's bar closed is kept but not counted (intraday_forward_db.ON_TIME_S)."""
+    today, priced from the option chain saved in the same run. Returns what it
+    wrote and the expiries whose chain was stamped before the rule's bar
+    closed: NSE's chain runs a minute or two behind, and a price from before
+    the signal existed is not one the rule could have paid (the first entry,
+    1 Oct 2026, was priced 75 seconds early). Those wait for a fresher chain.
+    Nothing is written without a price; a price taken well after the bar is
+    kept but not counted (intraday_forward_db.ON_TIME_S)."""
     from storage import intraday_forward_db as fwd
     if state is None:
-        closes = daily_closes(now.date())
-        bars, source = five_minute_bars(now, closes)
-        state = {**evaluate(bars, closes, expiries(now.date())), "source": source}
+        state = state_now(now)
     if state.get("session") != now.date().isoformat():
-        return []
+        return [], set()
     prices = {(r["expiry"], float(r["strike"]), r["option_type"]): r for r in chain_rows}
     have = {(e["rule"], e["kind"]) for e in fwd.events(state["session"], db_path)}
-    written = []
+    written, waiting = [], set()
     for r in state["rules"]:
         c = r.get("contract")
         if r["status"] not in ("in_trade", "closed") or not c:
@@ -413,6 +422,9 @@ def record(now: datetime, chain_rows: list[dict], state: dict | None = None, db_
             if kind == "exit" and (r["name"], "entry") not in have and f"{r['name']} entry" not in written:
                 continue                                # an exit is only worth having against an entry
             stamp = pd.Timestamp(r[f"{kind}_at"]) + timedelta(minutes=BAR_MIN)
+            if (q.get("taken_at") or "")[:19] < stamp.isoformat()[:19]:
+                waiting.add(c["expiry"])
+                break                                   # the exit waits for its entry
             event = {"trade_day": state["session"], "rule": r["name"], "kind": kind, "side": r["side"],
                      "bar_close_at": stamp.isoformat(), "index_level": r[f"{kind}_index"],
                      "reason": r.get("exit_reason") if kind == "exit" else None, **c,
@@ -420,4 +432,4 @@ def record(now: datetime, chain_rows: list[dict], state: dict | None = None, db_
                      "recorded_at": now.isoformat(timespec="seconds"), "bars_source": state.get("source")}
             if fwd.record(event, db_path):
                 written.append(f"{r['name']} {kind}")
-    return written
+    return written, waiting
