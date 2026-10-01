@@ -11,6 +11,7 @@ import { ReplicationCard } from "@/components/ReplicationCard";
 import { CourseResearchCard } from "@/components/CourseResearchCard";
 import { IntradayCard } from "@/components/IntradayCard";
 import { WeekdayCard } from "@/components/WeekdayCard";
+import { OptionMovesCard } from "@/components/OptionMovesCard";
 import { NiftyPipelineCard } from "@/components/NiftyPipelineCard";
 import { PatternTable } from "@/components/PatternTable";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
@@ -41,6 +42,7 @@ import {
   fetchCourseResearch,
   fetchIntraday,
   fetchWeekdayProfile,
+  fetchOptionMoves,
   fetchNiftyPipeline,
   fetchZerodhaStatus,
   fetchPaper,
@@ -91,6 +93,7 @@ export default async function Home() {
     niftyPipeline,
     intraday,
     weekdayProfile,
+    optionMoves,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -121,6 +124,7 @@ export default async function Home() {
     fetchNiftyPipeline(),
     fetchIntraday(),
     fetchWeekdayProfile(),
+    fetchOptionMoves(),
   ]);
 
   const snap = snapshot.data;
@@ -196,6 +200,13 @@ export default async function Home() {
                   How {weekdayProfile.data ? `${weekdayProfile.data.weekday}s` : "this weekday"} move
                 </SectionLabel>
                 <WeekdayCard data={weekdayProfile.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="8 strikes either side of the money — modelled from each price now, and as traded">
+                  What a move does to option prices
+                </SectionLabel>
+                <OptionMovesCard data={optionMoves.data} />
               </section>
 
               <section>

@@ -1132,6 +1132,19 @@ export type WeekdayProfile = {
 };
 export const fetchWeekdayProfile = () => get<WeekdayProfile>("/api/weekday_profile");
 
+export type MoveLeg = {
+  price: number; basis: "mid" | "last" | null; iv: number | null; delta: number | null;
+  up: Record<string, number>; down: Record<string, number>;
+  up_pct?: Record<string, number>; down_pct?: Record<string, number>;
+};
+export type OptionMoves = {
+  as_of: string; spot: number; expiry: string; expiries: string[]; days_to_expiry: number; moves: number[];
+  rows: { strike: number; is_atm: boolean; call: MoveLeg | null; put: MoveLeg | null;
+          call_measured: number | null; put_measured: number | null }[];
+  measured_session: string | null; measured_snapshots: number; note: string;
+};
+export const fetchOptionMoves = () => get<OptionMoves>("/api/options/moves");
+
 export type LoginDay = {
   trade_date: string;
   status: "LOGGED_IN" | "PROMPTED" | "MISSING";

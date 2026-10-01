@@ -357,6 +357,31 @@ def options_chain_contracts(
         raise HTTPException(503, f"Live option chain unavailable: {e}")
 
 
+@app.get("/api/options/moves")
+def options_moves(
+    expiry: str | None = Query(None, pattern=r"^\d{2}-[A-Za-z]{3}-\d{4}$",
+                               description="e.g. 06-Oct-2026; defaults to the nearest that does not expire today"),
+) -> dict:
+    """What a 25/50/100/200-point move does to each option 8 strikes either
+    side of the money: modelled from each contract's own price now, and as
+    measured per index point across the session's snapshots. Uses the same
+    cached chain as /api/options/chain."""
+    from options.move_table import build_move_table, nearest_tradable
+    now = datetime.now(kite_session.IST)
+    try:
+        if expiry is None:
+            first = cached("option_chain_contracts:near", ttl_seconds=120, producer=lambda: live_chain_table(None),
+                           stale_ok=True)
+            expiry = nearest_tradable(first["expiries"], now.date()) or first["expiry"]
+        chain = cached(f"option_chain_contracts:{expiry}", ttl_seconds=120, producer=lambda: live_chain_table(expiry),
+                       stale_ok=True)
+        return build_move_table(chain, now)
+    except UnknownExpiry as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(503, f"Option moves unavailable: {str(e)[:160]}")
+
+
 @app.get("/api/options/archive")
 def options_archive_status() -> dict:
     """How much of the local NSE options archive has been backfilled."""
