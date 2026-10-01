@@ -368,6 +368,7 @@ def options_moves(
     cached chain as /api/options/chain."""
     from options.move_table import build_move_table, nearest_tradable
     now = datetime.now(kite_session.IST)
+    default = expiry is None
     try:
         if expiry is None:
             first = cached("option_chain_contracts:near", ttl_seconds=120, producer=lambda: live_chain_table(None),
@@ -377,7 +378,9 @@ def options_moves(
                        stale_ok=True)
         from market_data.nse_holidays import trading_holidays
         holidays, known = trading_holidays()
-        return build_move_table(chain, now, holidays=holidays, holidays_known=known)
+        key = "option_moves:default" if default else f"option_moves:{expiry}"
+        return cached(key, ttl_seconds=60, stale_ok=True,
+                      producer=lambda: build_move_table(chain, now, holidays=holidays, holidays_known=known))
     except UnknownExpiry as e:
         raise HTTPException(404, str(e))
     except Exception as e:
@@ -663,6 +666,17 @@ def live_tick() -> dict:
         except ValueError:
             pass
     out.setdefault("stale", out.get("age_s") is not None and out["age_s"] >= LIVE_STALE_AFTER_S)
+
+    # The option-move card's live mode: its contracts repriced at the index now,
+    # from the table the page last built (never built here), in a session.
+    if out.get("index") and (status.get("is_open") or (status.get("is_open") is None and open_by_clock(now))):
+        try:
+            from cache import peek
+            from options.move_table import live_estimate
+            out["option_moves_live"] = live_estimate(peek("option_moves:default"), float(out["index"]), now,
+                                                     peek("nse_trading_holidays"))
+        except Exception:
+            out["option_moves_live"] = None
 
     # The Market tab's indices board rides along, but only from what is in
     # hand: Yahoo and NSE IX are refreshed on a thread of their own, so a slow

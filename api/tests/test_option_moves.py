@@ -115,3 +115,18 @@ def test_options_are_valued_against_the_put_call_parity_forward():
     row = {"strike": 22400.0, "call": {"bid": 156.0, "ask": 157.0}, "put": {"bid": 103.5, "ask": 104.5}}
     assert mt.forward_from(row, 22421.95) == (22452.5, "put-call parity at the money")
     assert mt.forward_from({"strike": 22400.0, "call": None, "put": {"ltp": 9}}, 22421.95)[0] == 22421.95
+
+
+def test_live_reprices_each_contract_at_the_index_now_with_the_decay_since():
+    rows = [{"strike": 22400.0, "is_atm": True, "call": {"bid": 156.0, "ask": 157.0}, "put": {"bid": 103.5, "ask": 104.5}}]
+    chain = {"underlying_value": 22421.95, "expiry": "06-Oct-2026", "rows": rows, "as_of": "01-Oct-2026 15:40:00",
+             "expiries": ["06-Oct-2026"], "days_to_expiry": 4}
+    built = datetime(2026, 10, 5, 9, 30, tzinfo=IST)
+    table = mt.build_move_table(chain, built, db_path=__import__("pathlib").Path("/nonexistent.db"), holidays=HOL)
+    same = mt.live_estimate(table, 22421.95, built, HOL)
+    assert same["move"] == 0 and same["rows"][0]["call"]["change"] == pytest.approx(0, abs=0.05)
+    up = mt.live_estimate(table, 22471.95, built, HOL)
+    assert up["rows"][0]["call"]["change"] == pytest.approx(table["rows"][0]["call"]["up"]["50"], abs=0.05)
+    later = mt.live_estimate(table, 22471.95, datetime(2026, 10, 5, 14, 30, tzinfo=IST), HOL)
+    assert later["rows"][0]["call"]["change"] < up["rows"][0]["call"]["change"]          # five hours of decay paid
+    assert mt.live_estimate(None, 22000.0, built) is None

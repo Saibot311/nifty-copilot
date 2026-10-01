@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import type { MoveCell, MoveLeg, OptionMoves } from "@/lib/api";
+import { useEffect, useState } from "react";
+import type { LiveLeg, MoveCell, MoveLeg, OptionMoves, OptionMovesLive } from "@/lib/api";
+import { subscribeToTick } from "@/lib/api";
 import { Offline, Panel } from "./ui";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -29,11 +30,63 @@ function Change({ cell, dir, move }: { cell: MoveCell | null; dir: "up" | "down"
   return <Num v={cell?.[dir]?.[String(move)]} pct={cell?.[dir === "up" ? "up_pct" : "down_pct"]?.[String(move)]} />;
 }
 
+function LiveCell({ leg, align }: { leg: LiveLeg | null; align: "right" | "left" }) {
+  if (!leg) return <td className={`py-1.5 px-2 text-${align} text-zinc-600`}>–</td>;
+  return (
+    <td className={`py-1.5 px-2 text-${align}`}>
+      <span className="text-zinc-100">{leg.price.toFixed(1)}</span>{" "}
+      <Num v={leg.change} pct={leg.change_pct} />
+    </td>
+  );
+}
+
+/** The contracts repriced at the index now, from the shared tick. */
+function LiveTable({ live }: { live: OptionMovesLive }) {
+  return (
+    <>
+      <p className="mt-2 text-[11px] text-zinc-400">
+        NIFTY now <span className="font-mono tabular-nums text-zinc-100">{live.index.toLocaleString("en-IN")}</span>,{" "}
+        <Num v={live.move} /> since the chain&apos;s {live.prices_as_of} prices. Premiums the model expects at this level, now
+        (decay since then included):
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">
+              <th className="py-1.5 px-2 text-right font-medium">Call now ≈</th>
+              <th className="py-1.5 px-2 text-center font-medium">Strike</th>
+              <th className="py-1.5 px-2 text-left font-medium">Put now ≈</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono tabular-nums">
+            {live.rows.map((r) => (
+              <tr key={r.strike} className={`border-t border-zinc-800/70 ${r.is_atm ? "bg-indigo-500/10" : ""}`}>
+                <LiveCell leg={r.call} align="right" />
+                <td className={`py-1.5 px-2 text-center ${r.is_atm ? "text-zinc-100" : "text-zinc-400"}`}>{r.strike.toLocaleString("en-IN")}</td>
+                <LiveCell leg={r.put} align="left" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] text-zinc-500">
+        An estimate of the premiums from NIFTY&apos;s move as it happens, not a forecast of NIFTY: it follows the index, it
+        does not lead it. Volatility is held where the chain had it; the real price will differ when volatility moves.
+      </p>
+    </>
+  );
+}
+
 /** What an index move does to the premiums 8 strikes either side of the money. */
 export function OptionMovesCard({ data }: { data: OptionMoves | null }) {
   const [move, setMove] = useState(50);
   const [when, setWhen] = useState("now");
+  const [mode, setMode] = useState<"moves" | "live">("moves");
+  const [live, setLive] = useState<OptionMovesLive | null>(null);
+  // Repriced on every tick of the shared poller; no timer of its own.
+  useEffect(() => subscribeToTick((t) => setLive(t.option_moves_live ?? null)), []);
   if (!data) return <Offline what="Option price moves" />;
+  const showLive = mode === "live" && live != null && live.expiry === data.expiry;
   const m = data.moves.includes(move) ? move : data.moves[0];
   const hz = data.horizons ?? [{ key: "now", label: "Instantly", at: "", hours_from_now: 0 }];
   const h = hz.some((x) => x.key === when) ? when : "now";
@@ -47,14 +100,21 @@ export function OptionMovesCard({ data }: { data: OptionMoves | null }) {
         </p>
         <div className="flex gap-1" role="group" aria-label="Index move">
           {data.moves.map((x) => (
-            <button key={x} type="button" onClick={() => setMove(x)} aria-pressed={x === m}
-              className={`rounded-md px-2 py-1 font-mono text-[11px] tabular-nums ${x === m ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}>
+            <button key={x} type="button" onClick={() => { setMove(x); setMode("moves"); }} aria-pressed={!showLive && x === m}
+              className={`rounded-md px-2 py-1 font-mono text-[11px] tabular-nums ${!showLive && x === m ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}>
               ±{x}
             </button>
           ))}
+          {live && live.expiry === data.expiry && (
+            <button type="button" onClick={() => setMode("live")} aria-pressed={showLive}
+              className={`rounded-md px-2 py-1 text-[11px] ${showLive ? "bg-indigo-500/30 text-indigo-100" : "text-indigo-300 hover:text-indigo-200"}`}>
+              Live now
+            </button>
+          )}
         </div>
       </div>
 
+      {showLive ? <LiveTable live={live!} /> : <>
       <div className="mt-2 flex flex-wrap items-center gap-1" role="group" aria-label="By when">
         {hz.map((x) => (
           <button key={x.key} type="button" onClick={() => setWhen(x.key)} aria-pressed={x.key === h}
@@ -107,6 +167,7 @@ export function OptionMovesCard({ data }: { data: OptionMoves | null }) {
           </tbody>
         </table>
       </div>
+      </>}
       <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
         Change in premium, ₹ per unit (a lot is 65 units), and as % of the premium. {data.note}
         {data.measured_session ? ` "/pt" is measured on ${day(data.measured_session)} (${data.measured_snapshots} snapshots).` : " No snapshots recorded for this expiry yet."}{" "}

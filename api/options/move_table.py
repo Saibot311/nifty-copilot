@@ -235,3 +235,29 @@ def nearest_tradable(expiries: list[str], today: date) -> str | None:
     later = sorted((datetime.strptime(e, NSE_DATE).date(), e) for e in expiries
                    if datetime.strptime(e, NSE_DATE).date() > today)
     return later[0][1] if later else None
+
+
+# --- live: the prices the model expects at the index now --------------------------------
+
+def live_estimate(table: dict, index_now: float, now: datetime, holidays: set | None = None) -> dict | None:
+    """Each contract repriced at the live index, at this moment: its own
+    volatility (solved when the table was built), the forward moved with the
+    index, and the time left now, so the decay since the table's prices is
+    in it. An estimate of the premiums from NIFTY's move as it happens; it
+    says nothing about where NIFTY goes next."""
+    if not table or not table.get("rows") or not index_now:
+        return None
+    f_now = index_now + (table.get("forward") or table["spot"]) - table["spot"]
+    expiry = date.fromisoformat(table["expiry"])
+    years = years_to(expiry, now, holidays)
+
+    def est(leg: dict | None, kind: str, strike: float) -> dict | None:
+        if not leg or leg.get("iv") is None or not leg.get("price"):
+            return None
+        p = black76(f_now, strike, years, leg["iv"] / 100, kind) if years > 0 else intrinsic(kind, strike, f_now)
+        return {"price": round(p, 2), "change": round(p - leg["price"], 2),
+                "change_pct": round((p / leg["price"] - 1) * 100, 1)}
+    return {"index": round(index_now, 2), "move": round(index_now - table["spot"], 2), "prices_as_of": table["as_of"],
+            "expiry": table["expiry"],
+            "rows": [{"strike": r["strike"], "is_atm": r["is_atm"], "call": est(r["call"], "CE", r["strike"]),
+                      "put": est(r["put"], "PE", r["strike"])} for r in table["rows"]]}
