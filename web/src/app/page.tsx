@@ -10,6 +10,7 @@ import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
 import { CourseResearchCard } from "@/components/CourseResearchCard";
 import { IntradayCard } from "@/components/IntradayCard";
+import { WeekdayCard } from "@/components/WeekdayCard";
 import { NiftyPipelineCard } from "@/components/NiftyPipelineCard";
 import { PatternTable } from "@/components/PatternTable";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
@@ -39,6 +40,7 @@ import {
   fetchReplication,
   fetchCourseResearch,
   fetchIntraday,
+  fetchWeekdayProfile,
   fetchNiftyPipeline,
   fetchZerodhaStatus,
   fetchPaper,
@@ -88,6 +90,7 @@ export default async function Home() {
     courseResearch,
     niftyPipeline,
     intraday,
+    weekdayProfile,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -117,6 +120,7 @@ export default async function Home() {
     fetchCourseResearch(),
     fetchNiftyPipeline(),
     fetchIntraday(),
+    fetchWeekdayProfile(),
   ]);
 
   const snap = snapshot.data;
@@ -185,6 +189,13 @@ export default async function Home() {
                   Intraday rules
                 </SectionLabel>
                 <IntradayCard initial={intraday.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="this weekday over the last 12 months, point by point — a description, not a signal">
+                  How {weekdayProfile.data ? `${weekdayProfile.data.weekday}s` : "this weekday"} move
+                </SectionLabel>
+                <WeekdayCard data={weekdayProfile.data} />
               </section>
 
               <section>
