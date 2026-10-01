@@ -141,8 +141,8 @@ def chain(taken_at, bid, ask):
 def test_an_entry_is_recorded_once_at_the_chains_ask_and_bid(tmp_path):
     path = tmp_path / "intraday.db"
     now = datetime(2026, 10, 1, 9, 20, 20, tzinfo=live.IST)
-    assert live.record(now, chain("2026-10-01T09:20:05", 118.5, 120.0), state(), path) == ["opening_range_5m entry"]
-    assert live.record(now, chain("2026-10-01T09:25:05", 130.0, 131.0), state(), path) == []
+    assert live.record(now, chain("2026-10-01T09:20:05", 118.5, 120.0), state(), path) == (["opening_range_5m entry"], set())
+    assert live.record(now, chain("2026-10-01T09:25:05", 130.0, 131.0), state(), path) == ([], set())
     e = fwd.events("2026-10-01", path)[0]
     assert (e["kind"], e["bar_close_at"][:16], e["ask"], e["bid"], e["option_type"]) == \
         ("entry", "2026-10-01T09:20", 120.0, 118.5, "CE")
@@ -154,7 +154,7 @@ def test_the_exit_follows_the_entry_and_the_trade_is_counted_when_both_are_on_ti
                 state(), path)
     wrote = live.record(datetime(2026, 10, 1, 11, 5, 20, tzinfo=live.IST), chain("2026-10-01T11:05:10", 90.0, 91.0),
                         state("closed"), path)
-    assert wrote == ["opening_range_5m exit"]
+    assert wrote == (["opening_range_5m exit"], set())
     [t] = fwd.trades(path)
     assert t["counted"] and t["return_pct"] == round((90.0 / 120.0 - 1) * 100, 2)
     assert fwd.summary(path)["opening_range_5m"]["trades"] == 1
@@ -171,8 +171,8 @@ def test_a_price_taken_well_after_the_bar_is_kept_but_not_counted(tmp_path):
 def test_nothing_is_written_without_a_price_or_for_another_session(tmp_path):
     path = tmp_path / "intraday.db"
     now = datetime(2026, 10, 1, 9, 20, 20, tzinfo=live.IST)
-    assert live.record(now, [], state(), path) == []
-    assert live.record(now, chain("2026-10-01T09:20:05", 1, 2), state(session="2026-09-30"), path) == []
+    assert live.record(now, [], state(), path) == ([], set())
+    assert live.record(now, chain("2026-10-01T09:20:05", 1, 2), state(session="2026-09-30"), path) == ([], set())
     assert fwd.events(db_path=path) == []
 
 
@@ -276,3 +276,66 @@ def test_sessions_kite_did_not_serve_are_filled_from_yahoo(monkeypatch):
     assert sorted(set(bars.index.date)) == days
     assert source == f"Kite, and Yahoo for {days[3].day} {days[3]:%b}"
     assert len(bars) == len(df)
+
+
+def test_the_tick_prices_what_the_page_built_and_never_builds_it_itself(monkeypatch):
+    import briefing.journal as journal
+    import briefing.paper as paper
+    import cache
+    import market_data.kite_quotes as kq
+    built = []
+    monkeypatch.setattr(live, "build_intraday", lambda *a, **k: built.append(1))
+    monkeypatch.setattr(paper.paper_db, "open_trades", lambda: [])
+    monkeypatch.setattr(paper, "cash_and_equity", lambda marks=None: {})
+    monkeypatch.setattr(journal, "open_trades", lambda: [])
+    monkeypatch.setattr(kq, "option_tokens", lambda contracts: {c["id"]: 7 for c in contracts})
+    monkeypatch.setattr(kq, "last_prices", lambda tokens, index="NSE:NIFTY 50", extra=(): {
+        "index": 22600.0, "by_key": {}, "by_token": {7: 131.5}, "source": "Kite", "quote_at": "t"})
+    assert paper.live_marks()["intraday_live"]["marks"] == {}          # nothing built yet: nothing priced
+    state = {"rules": [{"name": "opening_range_5m", "status": "in_trade",
+                        "contract": {"expiry": "2026-10-06", "strike": 22550, "option_type": "CE"}}]}
+    monkeypatch.setitem(cache._CACHE, "intraday", (0.0, state))       # long past its TTL: still used, not rebuilt
+    assert paper.live_marks()["intraday_live"]["marks"] == {"opening_range_5m": 131.5}
+    assert built == []
+
+
+def test_a_chain_stamped_before_the_bar_closed_is_not_a_price_the_rule_could_pay(tmp_path):
+    """1 Oct 2026: the 09:20 entry was priced from a chain NSE stamped 09:18:45."""
+    path = tmp_path / "intraday.db"
+    now = datetime(2026, 10, 1, 9, 20, 20, tzinfo=live.IST)
+    assert live.record(now, chain("2026-10-01T09:18:45", 155.7, 156.0), state(), path) == ([], {"2026-10-06"})
+    assert fwd.events(db_path=path) == []
+    assert live.record(now, chain("2026-10-01T09:20:10", 157.0, 157.5), state(), path)[0] == ["opening_range_5m entry"]
+
+
+def test_a_price_from_before_the_bar_is_never_counted(tmp_path):
+    path = tmp_path / "intraday.db"
+    for kind, at, bar in (("entry", "2026-10-01T09:18:45", "09:20"), ("exit", "2026-10-01T09:25:30", "09:25")):
+        fwd.record({"trade_day": "2026-10-01", "rule": "opening_range_5m", "kind": kind, "side": 1,
+                    "bar_close_at": f"2026-10-01T{bar}:00+05:30", "index_level": 1.0, "price_at": at,
+                    "bid": 100.0, "ask": 101.0, "recorded_at": at}, path)
+    [t] = fwd.trades(path)
+    assert t["entry_late_s"] == -75 and not t["counted"]
+
+
+def test_the_snapshot_run_asks_again_until_the_chain_is_past_the_bar(tmp_path, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from storage import option_snapshots_db as sdb
+    spec = importlib.util.spec_from_file_location("snap", Path(__file__).parent.parent / "scripts" / "snapshot_options.py")
+    snap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(snap)
+    monkeypatch.setattr(sdb, "DB_PATH", tmp_path / "snaps.db")
+    monkeypatch.setattr(fwd, "DB_PATH", tmp_path / "intraday.db")
+    monkeypatch.setattr(live, "state_now", lambda now: state())
+    stamps = iter(["2026-10-01T09:19:30", "2026-10-01T09:20:40"])
+    asked, slept = [], []
+
+    def refetch(wanted):
+        asked.append(wanted)
+        return chain(next(stamps), 157.0, 157.5), []
+    now = datetime(2026, 10, 1, 9, 20, 20, tzinfo=live.IST)
+    snap.record_intraday(now, chain("2026-10-01T09:18:45", 155.7, 156.0), refetch, sleep=slept.append)
+    assert asked == [["06-Oct-2026"], ["06-Oct-2026"]] and slept == [30, 30]
+    [e] = fwd.events(db_path=tmp_path / "intraday.db")
+    assert e["price_at"] == "2026-10-01T09:20:40" and e["ask"] == 157.5

@@ -103,8 +103,11 @@ def trades(db_path: Path | None = None) -> list[dict]:
     for e in (r for r in rows if r["kind"] == "entry"):
         x = exits.get((e["trade_day"], e["rule"]))
         late, late_out = _late_s(e), _late_s(x) if x else None
-        counted = bool(x and e.get("ask") and x.get("bid") is not None and late is not None and late <= ON_TIME_S
-                       and late_out is not None and late_out <= ON_TIME_S)
+        # A price from before the bar closed does not count either: the rule
+        # could not have paid it (the record's first entry, before this was
+        # checked at the source, was priced 75 seconds early).
+        counted = bool(x and e.get("ask") and x.get("bid") is not None and late is not None
+                       and 0 <= late <= ON_TIME_S and late_out is not None and 0 <= late_out <= ON_TIME_S)
         out.append({"trade_day": e["trade_day"], "rule": e["rule"], "side": e["side"], "entry_at": e["bar_close_at"],
                     "contract": f"{e['expiry']} {e['strike']:g} {e['option_type']}" if e.get("strike") else None,
                     "ask_in": e.get("ask"), "bid_out": x.get("bid") if x else None,
