@@ -249,7 +249,10 @@ def verdicts() -> dict:
 def _frame(candles, now: datetime) -> pd.DataFrame:
     """Completed bars only: one still forming has no close yet."""
     if not candles:
-        return pd.DataFrame(columns=["open", "high", "low", "close"])
+        # Time-indexed even when empty: there is nothing newer than the archive
+        # every evening after the nightly top-up, and on weekends; a plain
+        # empty frame broke every caller that reads its dates (1 Oct 2026).
+        return pd.DataFrame(columns=["open", "high", "low", "close"], index=pd.DatetimeIndex([], tz=IST), dtype=float)
     idx = pd.DatetimeIndex([pd.Timestamp(c.timestamp) for c in candles])
     idx = idx.tz_localize(IST) if idx.tz is None else idx.tz_convert(IST)
     df = pd.DataFrame({"open": [c.open for c in candles], "high": [c.high for c in candles],
@@ -267,17 +270,18 @@ def five_minute_bars(now: datetime, closes: dict | None = None) -> tuple[pd.Data
     today = now.date()
     archived = _frame(ArchiveProvider().get_ohlc("^NSEI", "5m", today - timedelta(days=HISTORY_DAYS), today), now)
     since = archived.index[-1].date() + timedelta(days=1) if not archived.empty else today - timedelta(days=HISTORY_DAYS)
-    source = None
-    try:
-        from market_data.zerodha_provider import ZerodhaProvider
-        recent, source = _frame(ZerodhaProvider().get_ohlc("^NSEI", "5m", since, today, now=now), now), "Kite"
-    except Exception:
+    source, recent = None, archived.iloc[:0]
+    if since <= today:                                  # else the archive already has today
         try:
-            from market_data.yfinance_provider import YFinanceProvider
-            recent = _frame(YFinanceProvider().get_ohlc("^NSEI", "5m", since, today + timedelta(days=1)), now)
-            source = "Yahoo"
+            from market_data.zerodha_provider import ZerodhaProvider
+            recent, source = _frame(ZerodhaProvider().get_ohlc("^NSEI", "5m", since, today, now=now), now), "Kite"
         except Exception:
-            recent = archived.iloc[:0]
+            try:
+                from market_data.yfinance_provider import YFinanceProvider
+                recent = _frame(YFinanceProvider().get_ohlc("^NSEI", "5m", since, today + timedelta(days=1)), now)
+                source = "Yahoo"
+            except Exception:
+                recent = archived.iloc[:0]
     if not archived.empty:
         recent = recent[recent.index.normalize() > archived.index[-1].normalize()]
     have = set(recent.index.date) | set(archived.index.date)

@@ -319,6 +319,12 @@ export type ChartData = {
   /** The 15m view: the last 10 sessions, and the bar still forming. */
   m15: ChartCandle[];
   live_m15: LiveBar | null;
+  /** The 1H view: NSE's hourly blocks from 09:15, the last 30 sessions. */
+  h1?: ChartCandle[];
+  live_h1?: LiveBar | null;
+  /** The 5m view: the last 3 sessions. */
+  m5?: ChartCandle[];
+  live_m5?: LiveBar | null;
 };
 export type LiveBar = {
   t: string; date: string; open: number; high: number; low: number; close: number; as_of: string;
@@ -1096,6 +1102,27 @@ export type Intraday = {
   missing_after?: string[];
 };
 export const fetchIntraday = () => get<Intraday>("/api/intraday");
+
+export type WeekdayShape = {
+  sessions: number; range: number | null; up_from_open: number | null; down_from_open: number | null;
+  open_to_close: number | null; up_first_pct: number; first_up: number | null; back_after_up: number | null;
+  first_down: number | null; back_after_down: number | null; first_swing_ends: string | null;
+  swings_per_day: number | null;
+  path: { at: string; median: number | null; p25: number | null; p75: number | null }[];
+};
+export type WeekdayProfile = {
+  as_of: string; session: string; weekday: string; expiry: boolean; bars_source: string; swing_pct: number;
+  profile: WeekdayShape | null; all_days: WeekdayShape | null; expiry_profile: WeekdayShape | null;
+  today: { open: number; through: string | null; up: number; down: number; now: number;
+           path: { at: string; points: number }[];
+           swings: { dir: 1 | -1; points: number; ends: string | null; done: boolean }[] } | null;
+  similar: { through: string; rose_after: number; fell_after: number; note: string;
+             days: { date: string; match_pct: number; at_last: number; after: number; expiry: boolean }[] } | null;
+  why: string[];
+  indicators: { label: string; verdict: Verdict; holdout_t: number | null; required_t: number | null }[];
+  note: string;
+};
+export const fetchWeekdayProfile = () => get<WeekdayProfile>("/api/weekday_profile");
 
 export type LoginDay = {
   trade_date: string;

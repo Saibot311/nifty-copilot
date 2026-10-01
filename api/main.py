@@ -953,6 +953,18 @@ def intraday() -> dict:
         raise HTTPException(503, f"Intraday rules unavailable: {str(e)[:160]}") from e
 
 
+@app.get("/api/weekday_profile")
+def weekday_profile() -> dict:
+    """How NIFTY moves through a session on this weekday, point by point, over
+    the last 12 months; today's path against it; the past same-weekday
+    sessions most like today so far. Descriptive, never a signal."""
+    from briefing.weekday_profile import build_weekday_profile
+    try:
+        return cached("weekday_profile", ttl_seconds=60, producer=build_weekday_profile, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Weekday profile unavailable: {str(e)[:160]}") from e
+
+
 @app.get("/api/structural")
 def structural() -> dict:
     """Six pre-registered ideas about market structure — volatility pricing,

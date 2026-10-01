@@ -28,9 +28,11 @@ const DOWN = "#fb7185";
 const ZONE = "#fbbf24";
 const CROSS = "#818cf8"; // indigo: interaction (DESIGN §2)
 
-type Tf = "15m" | "4h" | "1d";
+type Tf = "5m" | "15m" | "1h" | "4h" | "1d";
 const TFS: { key: Tf; label: string; name: string }[] = [
+  { key: "5m", label: "5m", name: "5-minute" },
   { key: "15m", label: "15m", name: "15-minute" },
+  { key: "1h", label: "1H", name: "1-hour" },
   { key: "4h", label: "4H", name: "4-hour" },
   { key: "1d", label: "1D", name: "Daily" },
 ];
@@ -40,7 +42,9 @@ const TF_KEY = "todayChart.tf";
 // (and in memory where storage is unavailable). The server always renders 4H.
 let chosenTf: Tf | null = null;
 const tfListeners = new Set<() => void>();
-const isTf = (v: unknown): v is Tf => v === "15m" || v === "4h" || v === "1d";
+const isTf = (v: unknown): v is Tf => v === "5m" || v === "15m" || v === "1h" || v === "4h" || v === "1d";
+/** The views drawn from bars inside a session, labelled by clock time. */
+const clocked = (tf: Tf) => tf === "5m" || tf === "15m" || tf === "1h";
 function readTf(): Tf {
   if (chosenTf) return chosenTf;
   try {
@@ -66,7 +70,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const day = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
 /** "09:15–13:15" or "13:15–15:30" for a 4-hour block's start. */
 const block = (t: string) => (t.slice(11, 16) === "13:15" ? "13:15–15:30" : "09:15–13:15");
-const when = (tf: Tf, t: string) => (tf === "4h" ? block(t) : tf === "15m" ? t.slice(11, 16) : "");
+const when = (tf: Tf, t: string) => (tf === "4h" ? block(t) : clocked(tf) ? t.slice(11, 16) : "");
 
 // Row names for the narrow strip: whole words, never cut mid-word.
 const SHORT: Record<string, string> = {
@@ -133,9 +137,11 @@ function ChartView({ data }: { data: ChartData }) {
   };
 
   // --- the series on screen -------------------------------------------------
-  const picked: ChartCandle[] | undefined = tf === "15m" ? data.m15 : tf === "1d" ? data.daily : data.candles;
+  const picked: ChartCandle[] | undefined = tf === "5m" ? data.m5 : tf === "15m" ? data.m15 : tf === "1h" ? data.h1
+    : tf === "1d" ? data.daily : data.candles;
   const series: ChartCandle[] = picked && picked.length ? picked : data.candles;
-  const liveBar = (tf === "15m" ? data.live_m15 : tf === "1d" ? data.live_day : data.live) ?? null;
+  const liveBar = (tf === "5m" ? data.live_m5 : tf === "15m" ? data.live_m15 : tf === "1h" ? data.live_h1
+    : tf === "1d" ? data.live_day : data.live) ?? null;
   const full: Bar[] = [...series];
   if (liveBar) full.push({ ...liveBar, change_pct: liveBar.change_pct ?? null, live: liveBar.provisional });
   const n = full.length;
@@ -430,7 +436,7 @@ function ChartView({ data }: { data: ChartData }) {
             {bars.map((b, i) => (i % Math.ceil(bars.length / (phone ? 3 : 6)) === 0 ? (
               <text key={`d${b.t}`} x={i === 0 ? plotL : x(i)} y={H - 5} fontSize="9.5" fill="#71717a"
                 textAnchor={i === 0 ? "start" : "middle"} fontFamily="ui-monospace, monospace">
-                {tf === "15m" && b.t.slice(11, 16) !== "09:15" ? b.t.slice(11, 16) : day(b.date)}
+                {clocked(tf) && b.t.slice(11, 16) !== "09:15" ? b.t.slice(11, 16) : day(b.date)}
               </text>
             ) : null))}
 

@@ -25,6 +25,12 @@ def fifteen_minute_bars(days, seed=7):
                          "close": close}, index=stamps)
 
 
+@pytest.fixture(autouse=True)
+def no_five_minute_fetch(monkeypatch):
+    """The 5-minute view reads Kite or Yahoo; tests that want it set it."""
+    monkeypatch.setattr(tc, "_bars5", lambda: pd.DataFrame(columns=["open", "high", "low", "close"]))
+
+
 @pytest.fixture
 def world(monkeypatch):
     close = pd.Series(23000 + np.cumsum(np.random.default_rng(3).normal(0, 60, len(IDX))), index=IDX)
@@ -299,3 +305,36 @@ def test_a_pattern_that_could_not_become_the_call_gets_no_band(world, monkeypatc
     monkeypatch.setattr(tc, "_live_candidates", lambda: set())
     out = tc.today_chart(sessions=60)
     assert out["zones"] == [] and "none of the 26 patterns" in out["note"]
+
+
+def test_hourly_blocks_start_at_09_15_and_the_last_is_the_short_15_15_block():
+    bars = fifteen_minute_bars(IDX[-2:])
+    h = tc.hourly(bars)
+    d = IDX[-1].date()
+    starts = [ts.strftime("%H:%M") for ts in h.index if ts.date() == d]
+    assert starts == ["09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:15"]
+    day15 = bars[bars.index.date == d]
+    first = h.loc[pd.Timestamp(f"{d} 09:15", tz=IST)]
+    four = day15.iloc[:4]
+    assert (first["open"], first["high"], first["low"], first["close"]) == \
+        (four["open"].iloc[0], four["high"].max(), four["low"].min(), four["close"].iloc[-1])
+
+
+def test_an_hour_still_running_is_the_forming_bar_not_a_closed_one():
+    bars = tc.hourly(fifteen_minute_bars(IDX[-3:]))
+    d = IDX[-1].date()
+    now = datetime.combine(d, datetime.strptime("11:40", "%H:%M").time()).replace(tzinfo=tc.IST)
+    rows, live = tc._intraday(bars, tc.H1, 2, {"close": 23000.0, "as_of": "x"}, now)
+    today = [r["t"][11:] for r in rows if r["date"] == str(d)]
+    assert today == ["09:15", "10:15"] and live["t"].endswith("11:15") and live["provisional"]
+    assert sum(r["day_close"] for r in rows) == 1                       # yesterday's 15:15 block only
+
+
+def test_the_chart_carries_the_5_minute_and_1_hour_views(world, monkeypatch):
+    five = pd.DataFrame({"open": 23000.0, "high": 23001.0, "low": 22999.0, "close": 23000.0},
+                        index=pd.date_range(f"{IDX[-1].date()} 09:15", periods=75, freq="5min", tz=IST))
+    monkeypatch.setattr(tc, "_bars5", lambda: five)
+    out = tc.today_chart(sessions=60)
+    assert len(out["m5"]) == 75 and out["m5"][-1]["day_close"] and out["m5"][-1]["t"].endswith("15:25")
+    assert out["h1"] and all(c["t"][11:] in ("09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:15")
+                             for c in out["h1"])

@@ -339,3 +339,28 @@ def test_the_snapshot_run_asks_again_until_the_chain_is_past_the_bar(tmp_path, m
     assert asked == [["06-Oct-2026"], ["06-Oct-2026"]] and slept == [30, 30]
     [e] = fwd.events(db_path=tmp_path / "intraday.db")
     assert e["price_at"] == "2026-10-01T09:20:40" and e["ask"] == 157.5
+
+
+def test_nothing_newer_than_the_archive_is_an_empty_dated_frame_not_a_crash(monkeypatch):
+    """1 Oct 2026, evening: the nightly job had archived the day's bars, Kite
+    had nothing newer, and /api/intraday answered 503."""
+    import market_data.bar_archive as ba
+    import market_data.zerodha_provider as zp
+    df = walk(16, seed=3)
+    candles = [Candle(timestamp=ts.isoformat(), open=r.open, high=r.high, low=r.low, close=r.close)
+               for ts, r in df.iterrows()]
+
+    class Archive:
+        def get_ohlc(self, *a):
+            return candles
+
+    class Kite:
+        def get_ohlc(self, *a, **k):
+            return []
+    monkeypatch.setattr(ba, "ArchiveProvider", Archive)
+    monkeypatch.setattr(zp, "ZerodhaProvider", Kite)
+    last = df.index[-1].date()
+    now = datetime.combine(last, datetime.min.time(), tzinfo=live.IST) + timedelta(hours=21)
+    bars, source = live.five_minute_bars(now, {})
+    assert len(bars) == len(df) and source is None
+    assert live._frame([], now).index.tz is not None
