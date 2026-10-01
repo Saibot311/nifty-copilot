@@ -11,6 +11,7 @@
 #   ./scripts/install_app_services.sh --remove   # uninstall
 #   ./scripts/install_app_services.sh --status   # what is running
 #   ./scripts/install_app_services.sh --snapshots  # (re)install only the option-snapshot recorder
+#   ./scripts/install_app_services.sh --keepawake  # (re)install only the market-hours keep-awake
 #
 # --lan binds both services to every interface, so anything on the same
 # network can *reach* them. What stops it getting in is the token in
@@ -31,10 +32,11 @@ API_LABEL="com.niftycopilot.api"
 WEB_LABEL="com.niftycopilot.web"
 WATCH_LABEL="com.niftycopilot.watchdog"
 SNAP_LABEL="com.niftycopilot.snapshots"
+AWAKE_LABEL="com.niftycopilot.keepawake"
 PATH_LINE="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 status() {
-    for label in "$API_LABEL" "$WEB_LABEL" "$WATCH_LABEL" "$SNAP_LABEL"; do
+    for label in "$API_LABEL" "$WEB_LABEL" "$WATCH_LABEL" "$SNAP_LABEL" "$AWAKE_LABEL"; do
         if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
             info=$(launchctl print "$DOMAIN/$label")
             state=$(awk -F'= ' '/state = /{print $2; exit}' <<<"$info")
@@ -131,8 +133,45 @@ PLIST
     launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$SNAP_LABEL.plist"
 }
 
+# Keeps this Mac awake through the session, 09:05-15:36 IST on weekdays, so the
+# snapshot recorder's runs happen: on 1 Oct 2026 it slept through 09:35-09:55
+# and 10:10, and a missed run is a price that can never be recorded. It runs
+# macOS's own caffeinate (no idle or, on power, system sleep; the display may
+# still sleep) and ends at 15:36 by itself. A closed lid still sleeps the Mac.
+install_keepawake() {
+    launchctl bootout "$DOMAIN/$AWAKE_LABEL" 2>/dev/null || true
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$HOME/Library/LaunchAgents/$AWAKE_LABEL.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$AWAKE_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>now=\$(date +%s); start=\$(date -j -f %H:%M:%S 09:05:00 +%s); end=\$(date -j -f %H:%M:%S 15:36:00 +%s); [ "\$(date +%u)" -le 5 ] &amp;&amp; [ "\$now" -ge "\$start" ] &amp;&amp; [ "\$now" -lt "\$end" ] &amp;&amp; exec /usr/bin/caffeinate -is -t \$((end - now)); exit 0</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <array>
+$(for d in 1 2 3 4 5; do echo "        <dict><key>Weekday</key><integer>$d</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>5</integer></dict>"; done)
+    </array>
+    <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+PLIST
+    launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$AWAKE_LABEL.plist"
+}
+
 if [[ "${1:-}" == "--status" ]]; then
     status
+    exit 0
+fi
+
+if [[ "${1:-}" == "--keepawake" ]]; then
+    install_keepawake
+    echo "Installed $AWAKE_LABEL: the Mac stays awake 09:05-15:36 IST on weekdays"
     exit 0
 fi
 
@@ -168,10 +207,12 @@ launchctl bootout "$DOMAIN/$API_LABEL" 2>/dev/null || true
 launchctl bootout "$DOMAIN/$WEB_LABEL" 2>/dev/null || true
 launchctl bootout "$DOMAIN/$WATCH_LABEL" 2>/dev/null || true
 launchctl bootout "$DOMAIN/$SNAP_LABEL" 2>/dev/null || true
+launchctl bootout "$DOMAIN/$AWAKE_LABEL" 2>/dev/null || true
 
 if [[ "${1:-}" == "--remove" ]]; then
     rm -f "$HOME/Library/LaunchAgents/$API_LABEL.plist" "$HOME/Library/LaunchAgents/$WEB_LABEL.plist" \
-          "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist" "$HOME/Library/LaunchAgents/$SNAP_LABEL.plist"
+          "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist" "$HOME/Library/LaunchAgents/$SNAP_LABEL.plist" \
+          "$HOME/Library/LaunchAgents/$AWAKE_LABEL.plist"
     echo "Removed $API_LABEL and $WEB_LABEL. The ports are free for dev servers again."
     exit 0
 fi
@@ -252,6 +293,7 @@ launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$API_LABEL.plist"
 launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$WEB_LABEL.plist"
 launchctl bootstrap "$DOMAIN" "$HOME/Library/LaunchAgents/$WATCH_LABEL.plist"
 install_snapshots
+install_keepawake
 
 echo "Installed. Give them a few seconds, then:"
 if [[ -n "$LAN_IP" ]]; then

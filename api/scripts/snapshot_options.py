@@ -34,6 +34,9 @@ from storage import option_snapshots_db as db  # noqa: E402
 OPEN, LAST_RUN, CLOSE = time(9, 15), time(15, 35), time(15, 30, 59)
 WINDOW_PCT = 5.0
 SETTLE_S = 20
+# When the chain a rule needs is stamped before the rule's bar closed, ask
+# again this many times, this far apart.
+RETRIES, RETRY_GAP_S = 3, 30
 NSE_DATE = "%d-%b-%Y"
 
 
@@ -82,14 +85,7 @@ def main(now: datetime | None = None, nse=None) -> int:
             from market_data.live_quote import _session
             nse = _session()
         expiries = (nse.option_chain_contract_info("NIFTY") or {}).get("expiryDates") or []
-        rows, stale = [], []
-        for exp in pick_expiries(expiries):
-            table = build_chain_table(nse.index_option_chain("NIFTY", exp), exp, expiries, now.date())
-            stamped = datetime.strptime(table["as_of"], f"{NSE_DATE} %H:%M:%S")
-            if stamped.date() != now.date() or not OPEN <= stamped.time() <= CLOSE:
-                stale.append(f"{exp} stamped {table['as_of']}")
-                continue
-            rows += rows_from(table, datetime.strptime(exp, NSE_DATE).date().isoformat())
+        rows, stale = fetch(nse, now, expiries, pick_expiries(expiries))
         if not rows:
             db.log_run("closed", 0, "; ".join(stale) or "NSE listed no expiries")
             print(f"{now:%H:%M} nothing saved: {'; '.join(stale) or 'no expiries'}")
@@ -97,7 +93,7 @@ def main(now: datetime | None = None, nse=None) -> int:
         new = db.save(rows)
         db.log_run("saved", new, f"{len(rows)} rows seen")
         print(f"{now:%H:%M} {new} new of {len(rows)}")
-        record_intraday(now, rows)
+        record_intraday(now, rows, lambda wanted: fetch(nse, now, expiries, wanted))
         return 0
     except Exception as e:  # noqa: BLE001 — a failed run is logged and retried in five minutes
         db.log_run("failed", 0, f"{type(e).__name__}: {e}")
@@ -105,12 +101,41 @@ def main(now: datetime | None = None, nse=None) -> int:
         return 1
 
 
-def record_intraday(now: datetime, rows: list[dict]) -> None:
+def fetch(nse, now: datetime, listed: list[str], wanted: list[str]) -> tuple[list[dict], list[str]]:
+    """The chains for `wanted` (NSE's spelling) that NSE stamped today, in the session."""
+    rows, stale = [], []
+    for exp in wanted:
+        table = build_chain_table(nse.index_option_chain("NIFTY", exp), exp, listed, now.date())
+        stamped = datetime.strptime(table["as_of"], f"{NSE_DATE} %H:%M:%S")
+        if stamped.date() != now.date() or not OPEN <= stamped.time() <= CLOSE:
+            stale.append(f"{exp} stamped {table['as_of']}")
+            continue
+        rows += rows_from(table, datetime.strptime(exp, NSE_DATE).date().isoformat())
+    return rows, stale
+
+
+def record_intraday(now: datetime, rows: list[dict], refetch=None, sleep=_time.sleep) -> None:
+    """The intraday record, priced only from a chain stamped after the rule's
+    bar closed: when NSE is behind, the needed expiries are asked for again
+    (and saved like any snapshot) a few times before giving up to the next run."""
     try:
-        from briefing.intraday_live import record
-        written = record(now, rows)
+        from briefing.intraday_live import record, state_now
+        state = state_now(now)
+        written, waiting = record(now, rows, state)
+        for _ in range(RETRIES if refetch else 0):
+            if not waiting:
+                break
+            sleep(RETRY_GAP_S)
+            again, _stale = refetch([datetime.fromisoformat(e).strftime(NSE_DATE) for e in sorted(waiting)])
+            if again:
+                db.save(again)
+                db.log_run("saved", len(again), "re-asked for a rule's price")
+            more, waiting = record(now, again, state)
+            written += more
         if written:
             print(f"{now:%H:%M} intraday record: {', '.join(written)}")
+        if waiting:
+            print(f"{now:%H:%M} intraday record: NSE's chain still behind for {', '.join(sorted(waiting))}")
     except Exception as e:  # noqa: BLE001 — the snapshot is saved either way
         print(f"{now:%H:%M} intraday record FAILED — {type(e).__name__}: {e}")
 

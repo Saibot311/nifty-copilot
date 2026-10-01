@@ -72,6 +72,14 @@ def cached(key: str, ttl_seconds: int, producer: Callable[[], Any],
         lock.release()
 
 
+def peek(key: str) -> Any:
+    """The value in hand for `key`, however old, or None. Never computes or
+    refreshes anything: for a fast path that should only use what another
+    endpoint has already built."""
+    hit = _CACHE.get(key)
+    return hit[1] if hit else None
+
+
 _REFRESHING: set[str] = set()
 
 
