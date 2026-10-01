@@ -38,6 +38,14 @@ HISTORY_DAYS = 400
 # Sessions of 15-minute candles sent to the page: 25 a session, so 250.
 M15_SESSIONS = 10
 M15 = timedelta(minutes=15)
+# The 1-hour view: NSE's hourly blocks from 09:15 (the last, 15:15-15:30, is
+# short), folded from the 15-minute bars; 7 a session.
+H1_SESSIONS = 30
+H1 = timedelta(hours=1)
+# The 5-minute view: 75 bars a session.
+M5_SESSIONS = 3
+M5 = timedelta(minutes=5)
+M5_HISTORY_DAYS = 12
 
 
 def _now() -> datetime:
@@ -57,6 +65,58 @@ def _recent15(since: date, today: date) -> tuple[list, str]:
     except Exception:
         from market_data.yfinance_provider import YFinanceProvider
         return YFinanceProvider().get_ohlc("^NSEI", "15m", since, today + timedelta(days=1)), "Yahoo"
+
+
+def _recent5(since: date, today: date) -> tuple[list, str]:
+    """5-minute bars from `since` through the session in progress, Kite first
+    (with the bar still forming), Yahoo when the login has lapsed."""
+    try:
+        from market_data.zerodha_provider import ZerodhaProvider
+        return ZerodhaProvider().get_ohlc("^NSEI", "5m", since, today), "Kite"
+    except Exception:
+        from market_data.yfinance_provider import YFinanceProvider
+        return YFinanceProvider().get_ohlc("^NSEI", "5m", since, today + timedelta(days=1)), "Yahoo"
+
+
+def _bars5() -> pd.DataFrame:
+    """NIFTY's 5-minute bars: the archive's last few sessions (topped up
+    nightly), then Kite's for any day after it, the forming bar included."""
+    from market_data.bar_archive import ArchiveProvider
+
+    def frame(candles):
+        if not candles:
+            return pd.DataFrame(columns=["open", "high", "low", "close"])
+        idx = pd.DatetimeIndex([pd.Timestamp(c.timestamp) for c in candles])
+        idx = idx.tz_localize(IST) if idx.tz is None else idx.tz_convert(IST)
+        return pd.DataFrame({"open": [c.open for c in candles], "high": [c.high for c in candles],
+                             "low": [c.low for c in candles], "close": [c.close for c in candles]}, index=idx)
+
+    today = date.today()
+    archived = frame(ArchiveProvider().get_ohlc("^NSEI", "5m", today - timedelta(days=M5_HISTORY_DAYS), today))
+    since = archived.index[-1].date() + timedelta(days=1) if not archived.empty else today - timedelta(days=5)
+    recent, source = archived.iloc[:0], None
+    if since <= today:
+        try:
+            candles, source = _recent5(since, today)
+            recent = frame(candles)
+        except Exception:
+            recent, source = archived.iloc[:0], None
+    out = pd.concat([archived, recent]).sort_index()
+    out = out[~out.index.duplicated(keep="last")]
+    out.attrs["recent"] = source if not recent.empty else None
+    return out
+
+
+def hourly(bars15: pd.DataFrame) -> pd.DataFrame:
+    """15-minute bars folded into NSE's hourly blocks from 09:15, indexed by
+    each block's start."""
+    if bars15.empty:
+        return bars15
+    idx = bars15.index
+    first = pd.DatetimeIndex([pd.Timestamp.combine(d, BLOCK_STARTS[0]) for d in idx.date]).tz_localize(IST)
+    k = ((idx - first) / H1).astype(int)
+    starts = first + pd.to_timedelta(k, unit="h")
+    return bars15.groupby(starts).agg({"open": "first", "high": "max", "low": "min", "close": "last"})
 
 
 def _bars15() -> pd.DataFrame:
@@ -190,19 +250,27 @@ def _to_the_minute(day: dict | None, bars15: pd.DataFrame, now: datetime) -> dic
             "low": min(float(day["low"]), float(b["low"])), "basis": f"price at {now:%H:%M}"}
 
 
-def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tuple[list[dict], dict | None]:
-    """The 15-minute view: the last M15_SESSIONS sessions of closed bars, with
-    EMAs of 15-minute closes over the whole history, and in a session the bar
-    still forming, carried to the live price."""
-    if bars15.empty:
+def _intraday(bars: pd.DataFrame, step: timedelta, sessions: int, day: dict | None,
+              now: datetime) -> tuple[list[dict], dict | None]:
+    """An intraday view: the last `sessions` sessions of closed bars of `step`,
+    with EMAs of their closes over the whole history, and in a session the bar
+    still forming, carried to the live price. A bar is closed once its end
+    (its start plus `step`, never past 15:30) has passed."""
+    if bars.empty:
         return [], None
-    e20, e50 = ema(bars15["close"], 20), ema(bars15["close"], 50)
-    closed = bars15[[ts + M15 <= pd.Timestamp(now) for ts in bars15.index]]
+    e20, e50 = ema(bars["close"], 20), ema(bars["close"], 50)
+
+    def ends(ts: pd.Timestamp) -> pd.Timestamp:
+        return min(ts + step, pd.Timestamp.combine(ts.date(), SESSION_END).tz_localize(IST))
+    closed = bars[[ends(ts) <= pd.Timestamp(now) for ts in bars.index]]
+    if closed.empty:
+        return [], None
     chg = closed["close"].pct_change() * 100
     days = closed.index.normalize().unique()
-    tail = closed[closed.index.normalize() >= days[-min(M15_SESSIONS, len(days))]]
-    last_slot = (pd.Timestamp.combine(date(2000, 1, 1), SESSION_END) - M15).time()
-    rows = [{"t": f"{ts:%Y-%m-%dT%H:%M}", "date": str(ts.date()), "day_close": ts.time() == last_slot,
+    tail = closed[closed.index.normalize() >= days[-min(sessions, len(days))]]
+    last_of_day = tail.groupby(tail.index.date).apply(lambda g: g.index[-1])
+    rows = [{"t": f"{ts:%Y-%m-%dT%H:%M}", "date": str(ts.date()), "day_close": ts == last_of_day[ts.date()]
+             and ends(ts).time() == SESSION_END,
              "open": round(float(r["open"]), 2), "high": round(float(r["high"]), 2),
              "low": round(float(r["low"]), 2), "close": round(float(r["close"]), 2),
              "ema20": round(float(e20.loc[ts]), 2), "ema50": round(float(e50.loc[ts]), 2),
@@ -212,10 +280,10 @@ def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tu
     live = None
     if day and day.get("close") and BLOCK_STARTS[0] <= now.time() < SESSION_END:
         open_at = pd.Timestamp.combine(now.date(), BLOCK_STARTS[0]).tz_localize(IST)
-        slot = open_at + M15 * int((pd.Timestamp(now) - open_at) / M15)
+        slot = open_at + step * int((pd.Timestamp(now) - open_at) / step)
         price = float(day["close"])
-        if slot in bars15.index:
-            b = bars15.loc[slot]
+        if slot in bars.index:
+            b = bars.loc[slot]
             o, h, lo = float(b["open"]), max(float(b["high"]), price), min(float(b["low"]), price)
         else:
             o = h = lo = price
@@ -223,6 +291,11 @@ def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tu
                 "low": round(lo, 2), "close": round(price, 2), "as_of": day.get("as_of"), "provisional": True,
                 "change_pct": round((price / rows[-1]["close"] - 1) * 100, 2) if rows else None}
     return rows, live
+
+
+def _fifteen_minute(bars15: pd.DataFrame, day: dict | None, now: datetime) -> tuple[list[dict], dict | None]:
+    """The 15-minute view: the last M15_SESSIONS sessions, and the bar forming."""
+    return _intraday(bars15, M15, M15_SESSIONS, day, now)
 
 
 # Test hook: strategies to treat as in play besides those with a zone today.
@@ -265,6 +338,12 @@ def today_chart(sessions: int = 60) -> dict:
 
     day_live = _to_the_minute(_live_candle_today(grid), bars15, now)
     m15, live_m15 = _fifteen_minute(bars15, day_live, now)
+    h1, live_h1 = _intraday(hourly(bars15), H1, H1_SESSIONS, day_live, now)
+    try:
+        bars5 = _bars5()
+    except Exception:
+        bars5 = pd.DataFrame(columns=["open", "high", "low", "close"])
+    m5, live_m5 = _intraday(bars5, M5, M5_SESSIONS, day_live, now)
 
     # The 1D view: the indicator grid's own daily series and EMAs.
     d20, d50 = ema(grid["close"], 20), ema(grid["close"], 50)
@@ -353,6 +432,10 @@ def today_chart(sessions: int = 60) -> dict:
         "live_day": live_day,
         "m15": m15,
         "live_m15": live_m15,
+        "h1": h1,
+        "live_h1": live_h1,
+        "m5": m5,
+        "live_m5": live_m5,
         "source": ("4-hour blocks from NIFTY's 15-minute bars: the local archive (Kite)"
                    + (f", and {bars15.attrs['recent']}'s for days after it" if bars15.attrs.get("recent") else "")),
         "note": (("Shaded bands: where the day's close (15:30) would have to land for a pattern to form; the "
