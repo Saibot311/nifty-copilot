@@ -49,7 +49,7 @@ def _row(d, up_first, first, back, close, path=None):
 
 def test_the_profile_is_medians_in_points_and_the_share_that_went_up_first():
     rows = [_row(date(2026, 9, d), True, 100, 80, 20) for d in (1, 8)] + [_row(date(2026, 9, 15), False, 150, 60, -40)]
-    p = wp.profile(rows)
+    p = wp.profile(rows, 20000.0)
     assert p["sessions"] == 3 and p["up_first_pct"] == 67 and p["first_up"] == 100 and p["back_after_up"] == 80
     assert p["first_down"] == 150 and p["first_swing_ends"] == "09:45" and p["open_to_close"] == 20
 
@@ -74,5 +74,13 @@ def test_the_why_lines_use_a_true_minus_sign():
     rows = [_row(date(2026, 9, 1), True, 100, 80, -20)] * 40
     for k, r in enumerate(rows):
         rows[k] = {**r, "gap_pct": 0.1 + 0.01 * (k % 3), "now": -10.0 - (k % 5)}
-    text = " ".join(wp.why(rows, rows))
+    text = " ".join(wp.why(rows, 20000.0))
     assert "-0." not in text and "−" in text
+
+
+def test_sessions_from_different_years_are_pooled_in_percent_and_shown_at_todays_level():
+    """2015's 8,000 and 2026's 22,000 are not comparable in points: a 1% day is 80 points then, 220 now."""
+    old = {**_row(date(2015, 3, 2), True, 80, 40, 0), "open": 8000.0, "up": 80.0, "down": 40.0}
+    new = {**_row(date(2026, 3, 2), True, 220, 110, 0), "open": 22000.0, "up": 220.0, "down": 110.0}
+    p = wp.profile([old, new], 22000.0)
+    assert p["range"] == 330 and p["range_pct"] == 1.5 and p["first_up"] == 220 and p["since"] == "2015-03-02"

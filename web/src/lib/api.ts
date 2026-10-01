@@ -1110,7 +1110,7 @@ export type Intraday = {
 export const fetchIntraday = () => get<Intraday>("/api/intraday");
 
 export type WeekdayShape = {
-  sessions: number; range: number | null; up_from_open: number | null; down_from_open: number | null;
+  sessions: number; since: string; ref: number; range: number | null; range_pct: number; up_from_open: number | null; down_from_open: number | null;
   open_to_close: number | null; up_first_pct: number; first_up: number | null; back_after_up: number | null;
   first_down: number | null; back_after_down: number | null; first_swing_ends: string | null;
   swings_per_day: number | null;
@@ -1118,6 +1118,8 @@ export type WeekdayShape = {
 };
 export type WeekdayProfile = {
   as_of: string; session: string; weekday: string; expiry: boolean; bars_source: string; swing_pct: number;
+  /** The level every session's % of its open is shown at, in points. */
+  reference: { level: number | null; is: string };
   profile: WeekdayShape | null; all_days: WeekdayShape | null; expiry_profile: WeekdayShape | null;
   today: { open: number; through: string | null; up: number; down: number; now: number;
            path: { at: string; points: number }[];

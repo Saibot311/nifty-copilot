@@ -192,7 +192,7 @@ export default async function Home() {
               </section>
 
               <section>
-                <SectionLabel hint="this weekday over the last 12 months, point by point — a description, not a signal">
+                <SectionLabel hint="every session of this weekday since 2015, point by point — a description, not a signal">
                   How {weekdayProfile.data ? `${weekdayProfile.data.weekday}s` : "this weekday"} move
                 </SectionLabel>
                 <WeekdayCard data={weekdayProfile.data} />
