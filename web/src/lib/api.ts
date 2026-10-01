@@ -1154,6 +1154,12 @@ export type OptionMoves = {
 };
 export const fetchOptionMoves = () => get<OptionMoves>("/api/options/moves");
 
+export type LiveLeg = { price: number; change: number; change_pct: number };
+export type OptionMovesLive = {
+  index: number; move: number; prices_as_of: string; expiry: string;
+  rows: { strike: number; is_atm: boolean; call: LiveLeg | null; put: LiveLeg | null }[];
+};
+
 export type LoginDay = {
   trade_date: string;
   status: "LOGGED_IN" | "PROMPTED" | "MISSING";
@@ -1280,6 +1286,8 @@ export type LiveTick = {
   indices?: IndicesBoard | null;
   /** The journal's open trades, priced on the same Kite answer, by entry id. */
   journal?: Record<string, JournalPosition> | null;
+  /** The option-move card's contracts repriced at the index now (in a session). */
+  option_moves_live?: OptionMovesLive | null;
   /** Today's intraday-rule contracts, priced on the same answer, by rule name. */
   intraday?: { marks: Record<string, number>; at: string | null } | null;
 };
