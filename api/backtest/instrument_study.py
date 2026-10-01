@@ -37,6 +37,7 @@ multiple-testing count.
 import math
 import sqlite3
 import statistics
+from collections.abc import Callable
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -168,7 +169,11 @@ def _cell(trades: list[dict]) -> dict:
 
 
 def run_instrument_study(archive: Archive | None = None, spot_by_day: dict | None = None,
-                         costs: OptionsCostModel = COSTS, sensitivity: bool = True) -> dict:
+                         costs: OptionsCostModel = COSTS, sensitivity: bool = True,
+                         costs_for: Callable[[str, str], OptionsCostModel] | None = None) -> dict:
+    """`costs_for(expiry choice, moneyness label)`, when given, prices each
+    cell with its own cost model (a spread measured for that kind of contract,
+    backtest/spread_model) in place of `costs`."""
     archive = archive or Archive()
     if spot_by_day is None:
         from .strategies import load_daily_data
@@ -177,12 +182,13 @@ def run_instrument_study(archive: Archive | None = None, spot_by_day: dict | Non
     sessions = archive.sessions(START, SPLIT_DATE)
     combos = [(choice, label, m, hold) for choice in EXPIRY_CHOICES for label, m in MONEYNESS.items() for hold in HOLDS]
     found: dict[tuple, list[dict]] = {(c, lb, h): [] for c, lb, _, h in combos}
+    cost_of = {(c, lb): costs_for(c, lb) if costs_for else costs for c, lb, _, _ in combos}
     # Sessions outermost: each day's rows are read once and stay cached
     # while every combination that enters or exits on it is priced.
     for i in range(len(sessions)):
         for choice, label, m, hold in combos:
             for kind in ("CE", "PE"):
-                t = trade(archive, sessions, i, spot_by_day, kind, m, choice, hold, costs)
+                t = trade(archive, sessions, i, spot_by_day, kind, m, choice, hold, cost_of[(choice, label)])
                 if t:
                     found[(choice, label, hold)].append(t)
     cells = [{"expiry": c, "moneyness": lb, "hold": h, **_cell(found[(c, lb, h)])} for c, lb, _, h in combos]
