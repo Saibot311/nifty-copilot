@@ -1052,7 +1052,12 @@ export type NiftyPipeline = {
     rule: string;
     chosen: { expiry: string; moneyness: string };
     chosen_without_slippage: { expiry: string; moneyness: string };
-    rows: { expiry: "nearest" | "monthly"; hold: number; carry_pts: number | null; carry_pts_without_slippage: number | null }[];
+    rows: { expiry: "nearest" | "monthly"; hold: number; carry_pts: number | null; carry_pts_without_slippage: number | null;
+            /** The same with the half-spreads the option snapshots measured, once that run exists. */
+            carry_pts_measured?: number | null }[];
+    /** Phase 1 re-run at real half-spreads (scripts/instrument_study.py --measured-spreads); null until run. */
+    measured?: { sessions: string[]; window: string; basis: "close" | "all_day";
+                 chosen: { expiry: string; moneyness: string } | null; chosen_atm: string | null; caveat: string } | null;
   } | null;
 };
 export const fetchNiftyPipeline = () => get<NiftyPipeline>("/api/nifty_pipeline");

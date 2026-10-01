@@ -920,13 +920,22 @@ def nifty_pipeline() -> dict:
         def carry(cells: list, expiry: str, hold: int) -> float | None:
             hit = [c for c in cells if c["expiry"] == expiry and c["moneyness"] == "ATM" and c["hold"] == hold]
             return hit[0].get("carry_pts_per_session") if hit else None
+        # Phase 1 again with the half-spreads the option snapshots measured
+        # (scripts/instrument_study.py --measured-spreads), when it has been run.
+        real = inst.get("with_measured_spreads")
         instrument = {
             "period": inst["period"], "rule": inst["rule"],
             "chosen": inst["choices"]["directional"],
             "chosen_without_slippage": inst["without_assumed_slippage"]["choices"]["directional"],
             "rows": [{"expiry": e, "hold": h, "carry_pts": carry(inst["cells"], e, h),
-                      "carry_pts_without_slippage": carry(inst["without_assumed_slippage"]["cells"], e, h)}
-                     for e in ("nearest", "monthly") for h in (1, 3, 5)]}
+                      "carry_pts_without_slippage": carry(inst["without_assumed_slippage"]["cells"], e, h),
+                      **({"carry_pts_measured": carry(real["cells"], e, h)} if real else {})}
+                     for e in ("nearest", "monthly") for h in (1, 3, 5)],
+            "measured": ({"sessions": real["sessions"], "window": real["window"], "basis": real["basis"],
+                          "chosen": real["choices"]["directional"],
+                          # The table's own comparison: at the money, held one session.
+                          "chosen_atm": real["choices"]["event_straddle"]["expiry"],
+                          "caveat": real["caveat"]} if real else None)}
     return {"computed_at": study["computed_at"], "prereg": study["prereg_hash"],
             "tests_in_family": study["tests_in_family"], "rows": rows, "instrument": instrument}
 

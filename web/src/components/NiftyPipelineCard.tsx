@@ -13,13 +13,29 @@ function Line({ label, p, strong }: { label: string; p: CoursePeriod | null; str
   );
 }
 
-function pts(v: number | null) {
-  return v == null ? "–" : v.toFixed(1);
+function pts(v: number | null | undefined) {
+  return minus(v, 1);
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** 2026-10-01 as "1 Oct 2026", with no time zone to move the day. */
+function day(iso: string) {
+  const [y, m, d] = iso.split("-");
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+}
+
+function sessionsText(s: string[]) {
+  return s.length === 1 ? day(s[0]) : `${s.length} sessions, ${day(s[0])} to ${day(s[s.length - 1])}`;
+}
+
+function where(m: string) {
+  return m === "ATM" ? "at the money" : m.replace("OTM", "out of the money").replace("ITM", "in the money");
 }
 
 /** The strategy pipeline: which option to hold, then five rules fixed in advance and judged once. */
 export function NiftyPipelineCard({ data }: { data: NiftyPipeline }) {
   const inst = data.instrument;
+  const real = inst?.measured ?? null;
   const passed = data.rows.filter((r) => r.verdict === "APPROVED").length;
   const name = (e: string) => (e === "nearest" ? "the nearest expiry" : "the monthly");
   return (
@@ -35,31 +51,43 @@ export function NiftyPipelineCard({ data }: { data: NiftyPipeline }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
             First: which option to hold ({inst.period.from.slice(0, 4)}–{inst.period.to.slice(0, 4)}, no signal)
           </p>
-          <table className="mt-2 w-full text-[11px]">
-            <thead>
-              <tr className="text-left text-[10px] text-zinc-500">
-                <th className="py-1 pr-2 font-medium">At the money</th>
-                <th className="py-1 pr-2 text-right font-medium">Held</th>
-                <th className="py-1 pr-2 text-right font-medium">Points a session</th>
-                <th className="py-1 text-right font-medium">Without slippage</th>
-              </tr>
-            </thead>
-            <tbody className="font-mono tabular-nums">
-              {inst.rows.map((r) => (
-                <tr key={`${r.expiry}${r.hold}`} className="border-t border-zinc-800/60 text-zinc-400">
-                  <td className="py-1 pr-2 font-sans">{r.expiry === "nearest" ? "Nearest expiry" : "Monthly"}</td>
-                  <td className="py-1 pr-2 text-right">{r.hold}d</td>
-                  <td className="py-1 pr-2 text-right text-zinc-200">{pts(r.carry_pts)}</td>
-                  <td className="py-1 text-right">{pts(r.carry_pts_without_slippage)}</td>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-left text-[10px] text-zinc-500">
+                  <th className="py-1 pr-2 font-medium">At the money</th>
+                  <th className="py-1 pr-2 text-right font-medium">Held</th>
+                  <th className="py-1 pr-2 text-right font-medium">Points a session</th>
+                  <th className={`py-1 text-right font-medium${real ? " pr-2" : ""}`}>Without slippage</th>
+                  {real && <th className="py-1 text-right font-medium">At real spreads</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="font-mono tabular-nums">
+                {inst.rows.map((r) => (
+                  <tr key={`${r.expiry}${r.hold}`} className="border-t border-zinc-800/60 text-zinc-400">
+                    <td className="py-1 pr-2 font-sans">{r.expiry === "nearest" ? "Nearest expiry" : "Monthly"}</td>
+                    <td className="py-1 pr-2 text-right">{r.hold}d</td>
+                    <td className="py-1 pr-2 text-right text-zinc-200">{pts(r.carry_pts)}</td>
+                    <td className={`py-1 text-right${real ? " pr-2" : ""}`}>{pts(r.carry_pts_without_slippage)}</td>
+                    {real && <td className="py-1 text-right">{pts(r.carry_pts_measured)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
             What one point of NIFTY exposure costs a buyer each session, in index points. With the assumed slippage (1.5%
             of premium a side) {name(inst.chosen.expiry)} is cheapest, and the rules below use it; without that
             assumption it is {name(inst.chosen_without_slippage.expiry)}. The real bid–ask spread decides between them,
             and the five-minute option snapshots now record it.
+            {real && (
+              <>
+                {" "}At real spreads charges instead the half-spread they recorded on {sessionsText(real.sessions)} (
+                {real.window}), 2026 quotes on 2019–23 prices: at the money{" "}
+                {real.chosen_atm ? name(real.chosen_atm) : "neither"} is then cheapest held a day
+                {real.chosen && `, and of all three strikes ${name(real.chosen.expiry)} ${where(real.chosen.moneyness)}`}.
+              </>
+            )}
           </p>
         </div>
       )}
