@@ -276,3 +276,24 @@ def test_sessions_kite_did_not_serve_are_filled_from_yahoo(monkeypatch):
     assert sorted(set(bars.index.date)) == days
     assert source == f"Kite, and Yahoo for {days[3].day} {days[3]:%b}"
     assert len(bars) == len(df)
+
+
+def test_the_tick_prices_what_the_page_built_and_never_builds_it_itself(monkeypatch):
+    import briefing.journal as journal
+    import briefing.paper as paper
+    import cache
+    import market_data.kite_quotes as kq
+    built = []
+    monkeypatch.setattr(live, "build_intraday", lambda *a, **k: built.append(1))
+    monkeypatch.setattr(paper.paper_db, "open_trades", lambda: [])
+    monkeypatch.setattr(paper, "cash_and_equity", lambda marks=None: {})
+    monkeypatch.setattr(journal, "open_trades", lambda: [])
+    monkeypatch.setattr(kq, "option_tokens", lambda contracts: {c["id"]: 7 for c in contracts})
+    monkeypatch.setattr(kq, "last_prices", lambda tokens, index="NSE:NIFTY 50", extra=(): {
+        "index": 22600.0, "by_key": {}, "by_token": {7: 131.5}, "source": "Kite", "quote_at": "t"})
+    assert paper.live_marks()["intraday_live"]["marks"] == {}          # nothing built yet: nothing priced
+    state = {"rules": [{"name": "opening_range_5m", "status": "in_trade",
+                        "contract": {"expiry": "2026-10-06", "strike": 22550, "option_type": "CE"}}]}
+    monkeypatch.setitem(cache._CACHE, "intraday", (0.0, state))       # long past its TTL: still used, not rebuilt
+    assert paper.live_marks()["intraday_live"]["marks"] == {"opening_range_5m": 131.5}
+    assert built == []
