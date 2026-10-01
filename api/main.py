@@ -375,7 +375,9 @@ def options_moves(
             expiry = nearest_tradable(first["expiries"], now.date()) or first["expiry"]
         chain = cached(f"option_chain_contracts:{expiry}", ttl_seconds=120, producer=lambda: live_chain_table(expiry),
                        stale_ok=True)
-        return build_move_table(chain, now)
+        from market_data.nse_holidays import trading_holidays
+        holidays, known = trading_holidays()
+        return build_move_table(chain, now, holidays=holidays, holidays_known=known)
     except UnknownExpiry as e:
         raise HTTPException(404, str(e))
     except Exception as e:

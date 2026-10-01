@@ -1132,13 +1132,22 @@ export type WeekdayProfile = {
 };
 export const fetchWeekdayProfile = () => get<WeekdayProfile>("/api/weekday_profile");
 
+export type MoveCell = {
+  flat: number; flat_pct: number;
+  up: Record<string, number>; down: Record<string, number>;
+  up_pct: Record<string, number>; down_pct: Record<string, number>;
+};
 export type MoveLeg = {
   price: number; basis: "mid" | "last" | null; iv: number | null; delta: number | null;
   up: Record<string, number>; down: Record<string, number>;
   up_pct?: Record<string, number>; down_pct?: Record<string, number>;
+  /** The same moves by each horizon's close, with that much less time to expiry. */
+  at?: Record<string, MoveCell>;
 };
 export type OptionMoves = {
   as_of: string; spot: number; expiry: string; expiries: string[]; days_to_expiry: number; moves: number[];
+  forward?: number; forward_basis?: string; holidays_known?: boolean;
+  horizons?: { key: string; label: string; at: string; hours_from_now: number }[];
   rows: { strike: number; is_atm: boolean; call: MoveLeg | null; put: MoveLeg | null;
           call_measured: number | null; put_measured: number | null }[];
   measured_session: string | null; measured_snapshots: number; note: string;
