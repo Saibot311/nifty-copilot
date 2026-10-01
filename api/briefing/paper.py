@@ -657,12 +657,15 @@ def live_marks() -> dict:
     contracts += [{"id": f"j{e['id']}", "underlying": e["underlying"], "expiry": e["expiry"],
                    "strike": e["strike"], "option_type": e["option_type"]} for e in journal]
     spot_keys = tuple(sorted({SPOT_KEYS[e["underlying"]] for e in journal if e["underlying"] in SPOT_KEYS}))
-    # And the contracts today's intraday rules bought, from the state in hand
-    # (refreshed on a thread of its own, so the tick never waits on bars).
+    # And the contracts today's intraday rules bought, from the state the page's
+    # /api/intraday last built (it refreshes with the page, every minute in a
+    # session). Only what is in hand: the tick used to start that build itself,
+    # on a thread that went to Yahoo and NSE — and, from a test, raced another
+    # test for NSE's shared session (1 Oct 2026).
     try:
-        from briefing.intraday_live import build_intraday, tick_contracts
-        from cache import cached_background
-        contracts += tick_contracts(cached_background("intraday", 30, build_intraday))
+        from briefing.intraday_live import tick_contracts
+        from cache import peek
+        contracts += tick_contracts(peek("intraday"))
     except Exception:
         pass
     tokens = option_tokens(contracts)
