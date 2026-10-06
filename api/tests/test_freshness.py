@@ -148,3 +148,20 @@ def test_the_watchdog_starts_the_freshness_check_when_both_services_answer():
     spec.loader.exec_module(hw)
     src = inspect.getsource(hw.main)
     assert "freshness_check.py" in src and "not unhealthy" in src
+
+
+def test_files_written_in_the_second_a_service_restarted_are_not_newer_code():
+    """6 Oct 2026: land.sh wrote main.py at 13:01:57.4 and restarted the API at
+    13:01:57; ps gives whole seconds, so the API looked older than its code."""
+    start = at(2026, 10, 6, 13, 1) + timedelta(seconds=57)
+    assert not fr.service_behind(start, start + timedelta(seconds=0.44))
+    assert fr.service_behind(start, start + timedelta(minutes=5))
+
+
+def test_the_api_is_judged_on_the_code_it_loads_not_the_scripts_beside_it():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("fc", Path(__file__).parents[1] / "scripts" / "freshness_check.py")
+    fc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fc)
+    assert "scripts" in fc.NOT_LOADED_BY_API

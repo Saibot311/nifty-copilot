@@ -39,6 +39,8 @@ STATE = API / "data" / "freshness_state.json"
 LOG = API / "data" / "freshness.log"
 LOCK = API / "data" / "freshness.lock"
 PY = sys.executable
+# Folders the API process never imports: scripts run as their own processes.
+NOT_LOADED_BY_API = (".venv", "tests", "data", "__pycache__", "scripts")
 
 
 def fixes(today: date) -> dict[str, list[list[str]]]:
@@ -98,7 +100,7 @@ def newest(paths) -> datetime | None:
 def services(now: datetime, holidays: set, allow_restart: bool) -> list[dict]:
     """Each service against what is on disk; restarted when behind and allowed."""
     root = API.parent
-    py = [p for p in API.rglob("*.py") if not any(x in p.parts for x in (".venv", "tests", "data", "__pycache__"))]
+    py = [p for p in API.rglob("*.py") if not any(x in p.relative_to(API).parts for x in NOT_LOADED_BY_API)]
     checks = [("com.niftycopilot.api", 8000, newest(py), "its Python code"),
               ("com.niftycopilot.web", 3000, newest([root / "web" / ".next" / "BUILD_ID"]), "its build")]
     out = []
