@@ -120,14 +120,11 @@ def step_forward_log() -> bool:
 
 
 def notify(message: str) -> None:
-    """A macOS notification — the nightly job runs unattended, and a failure
-    nobody sees is the same as no check at all. Best effort: never fails the job."""
-    safe = message.replace('"', "'")[:220]
-    try:
-        subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "NIFTY Copilot"'],
-                       capture_output=True, timeout=10)
-    except Exception:
-        pass
+    """The nightly job runs unattended, and a failure nobody sees is the same
+    as no check at all: to the phone when ntfy is set up, and to the Mac
+    (sentinel/alerts.py). Best effort: never fails the job."""
+    from sentinel.alerts import send
+    send("Nightly job", message)
 
 
 def step_gift_nifty() -> bool:

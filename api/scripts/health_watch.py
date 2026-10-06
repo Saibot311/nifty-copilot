@@ -78,12 +78,9 @@ def log(message: str) -> None:
 
 
 def notify(message: str) -> None:
-    safe = message.replace('"', "'")[:220]
-    try:
-        subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "NIFTY Copilot"'],
-                       capture_output=True, timeout=10)
-    except Exception:
-        pass
+    """To the phone when ntfy is set up, and to the Mac (sentinel/alerts.py)."""
+    from sentinel.alerts import send
+    send("Service", message)
 
 
 def restart(label: str) -> bool:
