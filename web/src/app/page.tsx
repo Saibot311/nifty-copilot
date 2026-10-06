@@ -30,6 +30,7 @@ import { PairingNotice } from "@/components/PairingNotice";
 import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
 import { SectionLabel } from "@/components/ui";
+import { FreshnessStrip } from "@/components/FreshnessStrip";
 import {
   fetchBriefing,
   fetchChart,
@@ -45,6 +46,7 @@ import {
   fetchWeekdayProfile,
   fetchOptionMoves,
   fetchDayForecast,
+  fetchFreshness,
   fetchNiftyPipeline,
   fetchZerodhaStatus,
   fetchPaper,
@@ -97,6 +99,7 @@ export default async function Home() {
     weekdayProfile,
     optionMoves,
     dayForecast,
+    freshness,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -129,6 +132,7 @@ export default async function Home() {
     fetchWeekdayProfile(),
     fetchOptionMoves(),
     fetchDayForecast(),
+    fetchFreshness(),
   ]);
 
   const snap = snapshot.data;
@@ -140,8 +144,14 @@ export default async function Home() {
   const change = live?.change ?? snap?.change ?? null;
   const changePct = live?.change_pct ?? snap?.change_pct ?? null;
 
+  // A card's reason for being behind, from the watchdog's freshness check.
+  const behind = (...keys: string[]) =>
+    freshness.data?.sources.find((x) => keys.includes(x.key) && x.status === "behind")?.reason ?? null;
+
   return (
     <div className="min-h-full bg-zinc-950">
+      {/* Changes on every server render: AutoRefresh reloads a tab whose refreshes stop landing. */}
+      <time id="page-rendered-at" dateTime={new Date().toISOString()} hidden />
       <AutoRefresh />
       <PairingNotice />
       <header className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
@@ -168,25 +178,26 @@ export default async function Home() {
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8">
+        <FreshnessStrip data={freshness.data} />
         <DashboardTabs
           today={
             <>
               <div className="grid gap-6 lg:grid-cols-12">
                 <section className="min-w-0 lg:col-span-7">
-                  <SectionLabel hint="the only thing on this page that is a decision">Today&apos;s call</SectionLabel>
+                  <SectionLabel hint="the only thing on this page that is a decision" behind={behind("recommendation")}>Today&apos;s call</SectionLabel>
                   <RecommendationCard rec={recommendation.data} />
                   <div className="mt-6">
                     <IndicatorGrid initial={indicators.data} />
                   </div>
                 </section>
                 <section className="min-w-0 lg:col-span-5">
-                  <SectionLabel hint="4-hour candles, and the closes that would form a pattern that could become the call">Where NIFTY stands</SectionLabel>
+                  <SectionLabel hint="4-hour candles, and the closes that would form a pattern that could become the call" behind={behind("chart")}>Where NIFTY stands</SectionLabel>
                   <TodayChart data={candles.data} />
                 </section>
               </div>
 
               <section>
-                <SectionLabel hint="written before the session, scored after — how far, not which way">
+                <SectionLabel hint="written before the session, scored after — how far, not which way" behind={behind("day_forecast")}>
                   The next session
                 </SectionLabel>
                 <DayForecastCard data={dayForecast.data} />
@@ -194,34 +205,34 @@ export default async function Home() {
 
               {livePatterns.data?.candle && (
                 <section>
-                  <SectionLabel hint="provisional until 15:30 — never a signal">Live — during the session</SectionLabel>
+                  <SectionLabel hint="provisional until 15:30 — never a signal" behind={behind("live_patterns", "indicators")}>Live — during the session</SectionLabel>
                   <LivePatternsCard initial={livePatterns.data} />
                 </section>
               )}
 
               <section>
-                <SectionLabel hint="the strategy pipeline's three, followed on completed 5-minute bars">
+                <SectionLabel hint="the strategy pipeline's three, followed on completed 5-minute bars" behind={behind("intraday")}>
                   Intraday rules
                 </SectionLabel>
                 <IntradayCard initial={intraday.data} />
               </section>
 
               <section>
-                <SectionLabel hint="every session of this weekday since 2015, point by point — a description, not a signal">
+                <SectionLabel hint="every session of this weekday since 2015, point by point — a description, not a signal" behind={behind("weekday_profile")}>
                   How {weekdayProfile.data ? `${weekdayProfile.data.weekday}s` : "this weekday"} move
                 </SectionLabel>
                 <WeekdayCard data={weekdayProfile.data} />
               </section>
 
               <section>
-                <SectionLabel hint="8 strikes either side of the money — modelled from each price now, and as traded">
+                <SectionLabel hint="8 strikes either side of the money — modelled from each price now, and as traded" behind={behind("option_moves")}>
                   What a move does to option prices
                 </SectionLabel>
                 <OptionMovesCard data={optionMoves.data} />
               </section>
 
               <section>
-                <SectionLabel hint={patternsToday.data ? `from the close of ${patternsToday.data.as_of} (${patternsToday.data.last_close.toLocaleString("en-IN")})` : undefined}>
+                <SectionLabel hint={patternsToday.data ? `from the close of ${patternsToday.data.as_of} (${patternsToday.data.last_close.toLocaleString("en-IN")})` : undefined} behind={behind("patterns_today")}>
                   Patterns in play
                 </SectionLabel>
                 {patternsToday.data ? (
@@ -235,7 +246,7 @@ export default async function Home() {
               </section>
 
               <section>
-                <SectionLabel hint="NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs">
+                <SectionLabel hint="NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs" behind={behind("option_chain")}>
                   Option chain
                 </SectionLabel>
                 <OptionChainCard initial={chainTable.data} />
@@ -248,13 +259,13 @@ export default async function Home() {
 
               <div className="grid gap-6 lg:grid-cols-2">
                 <section className="min-w-0">
-                  <SectionLabel hint="recorded before the outcome existed — never edited">
+                  <SectionLabel hint="recorded before the outcome existed — never edited" behind={behind("forward_log")}>
                     Forward track record
                   </SectionLabel>
                   <ForwardLogCard log={forwardLog.data} />
                 </section>
                 <section className="min-w-0">
-                  <SectionLabel hint="what options cost, from NSE closing prices">
+                  <SectionLabel hint="what options cost, from NSE closing prices" behind={behind("iv")}>
                     Implied volatility
                   </SectionLabel>
                   <IVCard data={impliedVol.data} />
@@ -262,7 +273,7 @@ export default async function Home() {
               </div>
 
               <section>
-                <SectionLabel hint={briefing.data?.as_of?.slice(0, 10)}>Research briefing</SectionLabel>
+                <SectionLabel hint={briefing.data?.as_of?.slice(0, 10)} behind={behind("briefing")}>Research briefing</SectionLabel>
                 <BriefingCard briefing={briefing.data} />
               </section>
             </>
@@ -296,7 +307,7 @@ export default async function Home() {
 
               {newsResearch.data && (
                 <section>
-                  <SectionLabel hint="tone of coverage, tested the same way as everything else">
+                  <SectionLabel hint="tone of coverage, tested the same way as everything else" behind={behind("news_research")}>
                     Does the news pay a buyer?
                   </SectionLabel>
                   <NewsResearchCard data={newsResearch.data} />
@@ -314,7 +325,7 @@ export default async function Home() {
 
               {replication.data && (
                 <section>
-                  <SectionLabel hint="a date traded on several indices counts once">
+                  <SectionLabel hint="a date traded on several indices counts once" behind={behind("replication")}>
                     The same rules on four indices
                   </SectionLabel>
                   <ReplicationCard data={replication.data} />
@@ -322,7 +333,7 @@ export default async function Home() {
               )}
 
               <section>
-                <SectionLabel hint="past markets that looked like this one, and what followed">
+                <SectionLabel hint="past markets that looked like this one, and what followed" behind={behind("similarity")}>
                   Days like this one
                 </SectionLabel>
                 <SimilarityCard data={similarity.data} />
