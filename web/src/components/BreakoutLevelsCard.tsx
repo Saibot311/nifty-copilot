@@ -1,9 +1,9 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type { BreakoutEvent, BreakoutLevel, BreakoutSlice, Breakouts, Versus } from "@/lib/api";
 import { useStored } from "@/lib/stored";
-import { Offline, Panel, Pill } from "./ui";
+import { Offline, Panel } from "./ui";
 
 /** Today's breakout levels as a price ladder: each level above or below NIFTY,
  *  what happened at it today in words, and how often a break of it was followed
@@ -21,11 +21,11 @@ const pct = (v: number | null | undefined) => (v == null ? "–" : `${n(v, 0)}%`
 const arrow = (d: "up" | "down") => (d === "up" ? "↑" : "↓");
 const mins = (h: string) => (h === "5" ? "the next candle" : `${h} min`);
 
-const VERDICT: Record<Versus, { word: string; tone: "info" | "neutral" }> = {
-  more: { word: "more often than random", tone: "info" },
-  less: { word: "less often than random", tone: "neutral" },
-  like: { word: "like random", tone: "neutral" },
-  few: { word: "too few breaks", tone: "neutral" },
+const VERDICT: Record<Versus, { word: string }> = {
+  more: { word: "more often than random" },
+  less: { word: "less often than random" },
+  like: { word: "like random" },
+  few: { word: "too few breaks" },
 };
 
 function Chips<T extends string | number>({ id, label, options, value, onChange, fmt }: {
@@ -75,7 +75,9 @@ function Detail({ lv, data, ti, onlyLike }: { lv: BreakoutLevel; data: Breakouts
   const base = data.baseline_odds?.[dir];
   const vs = lv.vs_random?.[dir];
   const target = data.targets[ti];
-  const slices = (onlyLike ? ["like_today"] : ["all", "like_today"]) as ("all" | "like_today")[];
+  // Both kinds of session side by side where there is room; on a phone, the one the reader picked.
+  const slices = ["all", "like_today"] as const;
+  const shown = (s: string) => (s === (onlyLike ? "like_today" : "all") ? "" : "hidden sm:table-cell");
   const rec = lv.record?.[dir]?.all;
   const baseRec = data.baseline?.[dir]?.all;
   return (
@@ -101,7 +103,7 @@ function Detail({ lv, data, ti, onlyLike }: { lv: BreakoutLevel; data: Breakouts
               <tr className="border-b border-zinc-800">
                 <th className="py-1.5 pr-3 text-left font-medium">Within</th>
                 {slices.map((s) => (
-                  <th key={s} colSpan={2} className="py-1.5 pr-3 text-left font-medium">
+                  <th key={s} className={`py-1.5 pr-3 text-left font-medium ${shown(s)}`}>
                     {s === "all" ? "All sessions" : `Sessions that opened ${data.opened ?? "like today"}`}
                   </th>
                 ))}
@@ -115,13 +117,13 @@ function Detail({ lv, data, ti, onlyLike }: { lv: BreakoutLevel; data: Breakouts
                     const me = share(odds[s], h, ti), rnd = share(base[s], h, ti);
                     const v = vs[s][h]?.[ti] ?? "few";
                     return (
-                      <Fragment key={s}>
-                        <td className="py-1.5 pr-2 font-mono tabular-nums text-zinc-100"
-                          title={`${me.n.toLocaleString("en-IN")} breaks of this level; ${rnd.n.toLocaleString("en-IN")} of random lines`}>
+                      <td key={s} className={`py-1.5 pr-3 ${shown(s)}`}
+                        title={`${me.n.toLocaleString("en-IN")} breaks of this level; ${rnd.n.toLocaleString("en-IN")} of random lines`}>
+                        <span className="whitespace-nowrap font-mono tabular-nums text-zinc-100">
                           {pct(me.p)} <span className="text-zinc-500">vs {pct(rnd.p)}</span>
-                        </td>
-                        <td className="py-1.5 pr-3"><Pill tone={VERDICT[v].tone}>{VERDICT[v].word}</Pill></td>
-                      </Fragment>
+                        </span>
+                        <span className={`block text-[11px] ${v === "more" ? "text-indigo-300" : "text-zinc-500"}`}>{VERDICT[v].word}</span>
+                      </td>
                     );
                   })}
                 </tr>
@@ -182,7 +184,7 @@ export function BreakoutLevelsCard({ data }: { data: Breakouts | null }) {
         <button id={`bo-row-${lv.key}`} type="button" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : lv.key)}
           className="grid min-h-11 w-full grid-cols-[1fr_auto] items-start gap-x-3 gap-y-1 py-2 text-left hover:bg-zinc-900/60 focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:outline-none sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,16rem)]">
           <span className="min-w-0">
-            <span className="block truncate text-[12.5px] text-zinc-200">{lv.label}</span>
+            <span className="block text-[12.5px] leading-snug text-zinc-200">{lv.label}</span>
             <span className="font-mono text-[12px] tabular-nums text-zinc-400">{n(lv.price, 2)}</span>
           </span>
           <span className="min-w-0 text-right text-[11.5px] leading-snug text-zinc-400 sm:text-left">
