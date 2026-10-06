@@ -54,6 +54,7 @@ def fixes(today: date) -> dict[str, list[list[str]]]:
         # answered with none (5 Oct 2026) left its option prices at 1 Oct.
         "market": [[PY, "scripts/market_research.py"]],
         "forecast": [[PY, "scripts/day_forecast.py"]],
+        "breakouts": [[PY, "scripts/breakout_levels.py"]],
         "paper": [[PY, "scripts/paper_observe.py"]],
     }
 

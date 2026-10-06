@@ -67,7 +67,7 @@ def run_script(*args: str) -> bool:
 RETRY_AT_END = ("NSE index report", "forward log", "kite bars", "options archive", "other index options",
                 "participant positioning", "pattern -> option research", "implied volatility",
                 # After what it reads: on 5 Oct 2026 the close and IV came only in the retries.
-                "day-ahead forecast", "structural hypotheses", "replication on other indices", "news archive and judging",
+                "day-ahead forecast", "breakout levels", "structural hypotheses", "replication on other indices", "news archive and judging",
                 "news tone series", "news hypotheses", "market context studies")
 
 
@@ -277,6 +277,8 @@ def main() -> int:
         # After the IV series has today's close: score today's day-ahead
         # forecast and write tomorrow's, before tomorrow opens.
         ("day-ahead forecast", lambda: run_script("scripts/day_forecast.py")),
+        # After the forecast: the record reads its band, the bars and the options archive.
+        ("breakout levels", lambda: run_script("scripts/breakout_levels.py")),
         ("participant positioning", lambda: run_script("scripts/backfill_participant_oi.py")),
         # After positioning: two of the six read today's participant file.
         ("structural hypotheses", lambda: run_script("scripts/structural_research.py")),

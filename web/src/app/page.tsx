@@ -10,6 +10,7 @@ import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
 import { CourseResearchCard } from "@/components/CourseResearchCard";
 import { IntradayCard } from "@/components/IntradayCard";
+import { BreakoutLevelsCard } from "@/components/BreakoutLevelsCard";
 import { WeekdayCard } from "@/components/WeekdayCard";
 import { OptionMovesCard } from "@/components/OptionMovesCard";
 import { DayForecastCard } from "@/components/DayForecastCard";
@@ -46,6 +47,7 @@ import {
   fetchWeekdayProfile,
   fetchOptionMoves,
   fetchDayForecast,
+  fetchBreakouts,
   fetchFreshness,
   fetchNiftyPipeline,
   fetchZerodhaStatus,
@@ -99,6 +101,7 @@ export default async function Home() {
     weekdayProfile,
     optionMoves,
     dayForecast,
+    breakouts,
     freshness,
   ] = await Promise.all([
     fetchSnapshot(),
@@ -132,6 +135,7 @@ export default async function Home() {
     fetchWeekdayProfile(),
     fetchOptionMoves(),
     fetchDayForecast(),
+    fetchBreakouts(),
     fetchFreshness(),
   ]);
 
@@ -215,6 +219,13 @@ export default async function Home() {
                   Intraday rules
                 </SectionLabel>
                 <IntradayCard initial={intraday.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="from data that existed before each was used — every break since 2015 beside random levels" behind={behind("breakouts", "breakout_record")}>
+                  Breakout levels
+                </SectionLabel>
+                <BreakoutLevelsCard data={breakouts.data} />
               </section>
 
               <section>

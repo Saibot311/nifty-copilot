@@ -68,6 +68,9 @@ SOURCES = (
     Source("paper", "Paper book", "/api/paper", "close", ("last_decision.entry_session",), fix=("options", "paper")),
     Source("day_forecast", "The next session", "/api/day_forecast", "self", ("status.stale",),
            fix=("kite_bars", "options", "iv", "forecast")),
+    Source("breakouts", "Breakout levels", "/api/breakouts", "live", ("as_of",), 10),
+    Source("breakout_record", "Breakout record", "/api/breakouts", "nightly", ("record.computed_at",),
+           fix=("breakouts",)),
     Source("pattern_options", "Pattern research", "/api/patterns/options", "nightly", ("computed_at",),
            fix=("research",)),
     Source("structural", "Structural research", "/api/structural", "nightly", ("computed_at",), fix=("research",)),
@@ -215,7 +218,7 @@ def restart_now(now: datetime, holidays: set) -> bool:
 
 # Data first, then what is computed from it; the paper book last, after the
 # options archive has the entry session's prices.
-FIX_ORDER = ("kite_bars", "options", "iv", "research", "market", "forecast", "paper")
+FIX_ORDER = ("kite_bars", "options", "iv", "research", "market", "forecast", "breakouts", "paper")
 
 
 def plan_fixes(evaluation: dict) -> list[str]:

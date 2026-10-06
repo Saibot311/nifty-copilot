@@ -94,6 +94,7 @@ def main(now: datetime | None = None, nse=None) -> int:
         db.log_run("saved", new, f"{len(rows)} rows seen")
         print(f"{now:%H:%M} {new} new of {len(rows)}")
         record_intraday(now, rows, lambda wanted: fetch(nse, now, expiries, wanted))
+        record_breakouts(now, rows)
         return 0
     except Exception as e:  # noqa: BLE001 — a failed run is logged and retried in five minutes
         db.log_run("failed", 0, f"{type(e).__name__}: {e}")
@@ -138,6 +139,22 @@ def record_intraday(now: datetime, rows: list[dict], refetch=None, sleep=_time.s
             print(f"{now:%H:%M} intraday record: NSE's chain still behind for {', '.join(sorted(waiting))}")
     except Exception as e:  # noqa: BLE001 — the snapshot is saved either way
         print(f"{now:%H:%M} intraday record FAILED — {type(e).__name__}: {e}")
+
+
+def record_breakouts(now: datetime, rows: list[dict]) -> None:
+    """Today's breaks of the breakout levels, each the first time a run sees
+    it, at the at-the-money option's price in this run's chain."""
+    try:
+        from briefing.breakout_levels import record, state_now
+        from briefing.intraday_live import expiries
+        state = state_now(now)
+        if state.get("session") != now.date().isoformat():
+            return
+        written = record(now, rows, state, expiries(now.date()))
+        if written:
+            print(f"{now:%H:%M} breakout record: {', '.join(written)}")
+    except Exception as e:  # noqa: BLE001 — the snapshot is saved either way
+        print(f"{now:%H:%M} breakout record FAILED — {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":

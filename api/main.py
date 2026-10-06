@@ -1006,6 +1006,19 @@ def intraday() -> dict:
         raise HTTPException(503, f"Intraday rules unavailable: {str(e)[:160]}") from e
 
 
+@app.get("/api/breakouts")
+def breakouts() -> dict:
+    """Today's breakout levels, each with where price stands, its breaks so far
+    scored as they go, and how breaks of it have gone since 2015, lately and at
+    real option prices — beside random levels measured the same way. A
+    description, not a signal. Kept for 30 seconds, like the intraday rules."""
+    from briefing.breakout_levels import build_breakouts
+    try:
+        return cached("breakouts", ttl_seconds=30, producer=build_breakouts, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Breakout levels unavailable: {str(e)[:160]}") from e
+
+
 @app.get("/api/freshness")
 def freshness() -> dict:
     """Whether every card's data is as current as the market clock says it

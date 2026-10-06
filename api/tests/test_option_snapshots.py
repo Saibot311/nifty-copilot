@@ -137,3 +137,16 @@ def test_a_failing_intraday_record_never_costs_the_snapshot(monkeypatch, capsys)
     spec.loader.exec_module(fresh)
     fresh.record_intraday(AT_10, [])
     assert "intraday record FAILED" in capsys.readouterr().out
+
+
+def test_each_run_records_todays_breakout_levels_from_its_own_chain(monkeypatch):
+    import briefing.breakout_levels as bl
+    import briefing.intraday_live as il
+    seen = {}
+    now = datetime(2026, 10, 7, 10, 16, tzinfo=IST)
+    monkeypatch.setattr(bl, "state_now", lambda t: {"session": "2026-10-07", "levels": []})
+    monkeypatch.setattr(il, "expiries", lambda d: [])
+    monkeypatch.setattr(bl, "record", lambda t, rows, st, listed: seen.update(rows=rows, st=st) or ["pdh up 10:15"])
+    snap.record_breakouts(now, [{"x": 1}])
+    assert seen["rows"] == [{"x": 1}] and seen["st"]["session"] == "2026-10-07"
+    assert "record_breakouts(now, rows)" in inspect.getsource(snap.main)
