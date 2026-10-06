@@ -110,3 +110,21 @@ def test_the_iv_tile_never_reads_an_option_expiring_today(monkeypatch):
     cache.invalidate()
     got = li._chain_iv()
     assert got["iv"] == pytest.approx(12.2) and got["expiry"] == "13 Oct"
+
+
+def test_an_expiry_other_than_the_nearest_is_asked_of_nse_by_name(monkeypatch):
+    """The fix above first returned 'not available': the analytics fetched
+    only the nearest expiry's chain and then looked in it for 13 Oct."""
+    from options import chain_analytics as ca
+    asked = []
+
+    class NSE:
+        def index_option_chain(self, symbol, expiry=None):
+            asked.append(expiry)
+            raise RuntimeError("stop here")
+    monkeypatch.setattr("market_data.live_quote._session", lambda: NSE())
+    with pytest.raises(RuntimeError):
+        ca.live_chain_analytics(expiry="13-Oct-2026")
+    with pytest.raises(RuntimeError):
+        ca.live_chain_analytics()
+    assert asked == ["13-Oct-2026", None]

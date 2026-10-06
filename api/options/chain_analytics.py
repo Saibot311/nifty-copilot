@@ -43,7 +43,7 @@ class ChainAnalytics:
     notes: list[str] = field(default_factory=list)
 
 
-def fetch_live_chain(symbol: str = "NIFTY") -> dict:
+def fetch_live_chain(symbol: str = "NIFTY", expiry: str | None = None) -> dict:
     """Raw live chain from NSE. Raises on failure rather than returning a
     fabricated structure — a missing chain must surface as missing.
 
@@ -54,7 +54,8 @@ def fetch_live_chain(symbol: str = "NIFTY") -> dict:
     """
     from market_data.live_quote import _session
 
-    data = _session().index_option_chain(symbol)
+    # NSE answers with one expiry's chain: the nearest, unless another is named.
+    data = _session().index_option_chain(symbol, expiry) if expiry else _session().index_option_chain(symbol)
     if not data or "records" not in data:
         raise RuntimeError("NSE returned no option-chain records")
     return data
@@ -159,7 +160,7 @@ def analyse_chain(data: dict, expiry: str | None = None) -> ChainAnalytics:
 
 
 def live_chain_analytics(symbol: str = "NIFTY", expiry: str | None = None) -> dict:
-    data = fetch_live_chain(symbol)
+    data = fetch_live_chain(symbol, expiry)
     result = analyse_chain(data, expiry)
     return {
         "as_of": result.as_of,
