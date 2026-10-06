@@ -1406,3 +1406,28 @@ export type Freshness = {
   fixes_run: { fix: string; ok: boolean }[]; nightly_job_running: boolean;
 };
 export const fetchFreshness = () => get<Freshness>("/api/freshness");
+
+/** Today's breakout levels (briefing/breakout_levels.py). */
+export type BreakoutSummary = { n: number; held_30_pct: number | null; failed_pct: number | null;
+                                median_pts_30: number | null; median_pts_close: number | null };
+export type BreakoutRecord = Partial<Record<"up" | "down", { all: BreakoutSummary; recent: BreakoutSummary }>>;
+export type BreakoutEvent = {
+  level: string; direction: "up" | "down"; at: string; bar_close_at: string; close: number; level_price: number;
+  outcome: { pts_15: number | null; pts_30: number | null; pts_60: number | null; pts_close: number | null;
+             held_30: boolean | null; failed: boolean | null };
+  option: { expiry: string; strike: number; option_type: string; ask: number | null; bid: number | null;
+            price_at: string; on_time: number } | null;
+};
+export type BreakoutLevel = {
+  key: string; label: string; price: number; distance_pts: number | null; state: string; since: string | null;
+  failed: boolean | null; opened: "above" | "below" | null; events: BreakoutEvent[]; record: BreakoutRecord | null;
+  forward: Partial<Record<"up" | "down", { n: number; scored: number; held_30_pct: number | null;
+                                           median_option_pct_30: number | null; option_counted: number }>> | null;
+};
+export type Breakouts = {
+  session: string; bars_through: string | null; last_close: number | null; source: string | null; as_of: string;
+  levels: BreakoutLevel[]; baseline: BreakoutRecord | null;
+  record: { computed_at: string | null; since: string | null; sessions: number | null; breaks: number | null };
+  note: string;
+};
+export const fetchBreakouts = () => get<Breakouts>("/api/breakouts");
