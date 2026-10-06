@@ -22,11 +22,17 @@ export function Panel({
   return <div className={`rounded-xl border ${styles} ${className}`}>{children}</div>;
 }
 
-export function SectionLabel({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
+export function SectionLabel({ children, hint, behind }: { children: ReactNode; hint?: ReactNode; behind?: string | null }) {
   return (
     <div className="section-label mb-3 flex flex-wrap items-baseline justify-between gap-2">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+      <h2 className="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
         {children}
+        {/* From the freshness check: this card's data is older than the market clock says it should be. */}
+        {behind && (
+          <span title={behind} className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-300">
+            behind
+          </span>
+        )}
       </h2>
       {hint && <span className="inline-flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">{hint}</span>}
     </div>

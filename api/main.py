@@ -1006,6 +1006,24 @@ def intraday() -> dict:
         raise HTTPException(503, f"Intraday rules unavailable: {str(e)[:160]}") from e
 
 
+@app.get("/api/freshness")
+def freshness() -> dict:
+    """Whether every card's data is as current as the market clock says it
+    should be, from the watchdog's last check (scripts/freshness_check.py,
+    every ten minutes): each source current, behind (and why), unavailable or
+    on demand, the services against their code on disk, and any fixes run."""
+    import json
+    path = Path(__file__).parent / "data" / "freshness.json"
+    if not path.exists():
+        raise HTTPException(503, "No freshness check yet — the watchdog runs one every ten minutes.")
+    data = json.loads(path.read_text())
+    from briefing.freshness import parse_time
+    from market_data.kite_session import IST
+    checked = parse_time(data.get("checked_at"))
+    data["check_age_min"] = round((datetime.now(IST) - checked).total_seconds() / 60, 1) if checked else None
+    return data
+
+
 @app.get("/api/day_forecast")
 def day_forecast() -> dict:
     """The next session's forecast (written before it opens, never edited),

@@ -118,6 +118,11 @@ def main() -> int:
                     + (" — dry run" if a.dry_run else ", watching"))
     state["checked_at"] = datetime.now(timezone.utc).isoformat()
     save_state(state)
+    # Then whether every card's data is current, and the fixes when not. In
+    # its own process: a fix can take minutes, and this check must stay quick.
+    if not a.dry_run and not unhealthy:
+        subprocess.Popen([sys.executable, str(API_DIR / "scripts" / "freshness_check.py")], cwd=API_DIR,
+                         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not unhealthy:
         print("both services answering", flush=True)
     return 0

@@ -1392,3 +1392,17 @@ export type Pairing = {
 
 /** Only answers on the Mac — the token is shown where it belongs. */
 export const fetchPairing = () => get<Pairing>("/api/access/pairing");
+
+/** Whether every card's data is current, from the watchdog's last check
+ *  (briefing/freshness.py, scripts/freshness_check.py). */
+export type FreshnessSource = {
+  key: string; card: string; path: string; kind: string; status: "current" | "behind" | "unavailable" | "on demand";
+  as_of: string | null; reason: string; fix: string[];
+};
+export type Freshness = {
+  checked_at: string; check_age_min: number | null; sources: FreshnessSource[];
+  current: number; behind: number; unavailable: number; on_demand: number;
+  services: { service: string; started: string | null; on_disk: string | null; behind: boolean; action: string | null }[];
+  fixes_run: { fix: string; ok: boolean }[]; nightly_job_running: boolean;
+};
+export const fetchFreshness = () => get<Freshness>("/api/freshness");
