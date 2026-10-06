@@ -16,7 +16,7 @@ import { Panel } from "./ui";
 
 const WINDOWS: { id: PrecheckWindow; label: string }[] = [
   { id: "15m", label: "in 15 minutes" }, { id: "30m", label: "in 30 minutes" }, { id: "60m", label: "in an hour" },
-  { id: "close", label: "by today's close" }, { id: "1s", label: "by the next session's close" },
+  { id: "close", label: "by the session's close" }, { id: "1s", label: "by the next session's close" },
   { id: "2s", label: "within 2 sessions" }, { id: "3s", label: "within 3 sessions" }, { id: "5s", label: "within 5 sessions" },
   { id: "expiry", label: "at expiry" },
 ];
@@ -140,7 +140,7 @@ export function PrecheckCard({ onLog }: { onLog: (p: Prefill) => void }) {
           <p className="text-[13px] text-zinc-200">
             {c.strike.toLocaleString("en-IN")} {c.kind === "CE" ? "call" : "put"}, expiring {c.expiry.slice(8)}/{c.expiry.slice(5, 7)}
             <span className="text-zinc-400"> · {c.lots} lot{c.lots === 1 ? "" : "s"} = {c.quantity} units at ₹{c.premium.toLocaleString("en-IN")} ({result.price_source})
-            · sold {WINDOWS.find((w) => w.id === result.window)?.label} · NIFTY {result.spot.toLocaleString("en-IN")} ·{" "}
+            · sold by {c.exit_at.slice(11, 16)} on {c.exit_at.slice(8, 10)}/{c.exit_at.slice(5, 7)} · NIFTY {result.spot.toLocaleString("en-IN")} ·{" "}
             {result.marked === 0 ? "nothing marked" : `${result.marked} of ${result.checks.length} checks marked`}</span>
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
