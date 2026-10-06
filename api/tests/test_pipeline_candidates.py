@@ -52,7 +52,7 @@ def test_even_an_approved_straddle_is_never_the_call():
 def test_the_call_lists_them_and_stays_no_trade(monkeypatch):
     import briefing.recommendation as rec_mod
     prox = {"as_of": "2026-10-06", "regime": "RANGE", "patterns": []}
-    monkeypatch.setattr(rec_mod, "cached", lambda key, ttl_seconds, producer: prox)
+    monkeypatch.setattr(rec_mod, "cached", lambda key, ttl_seconds, producer, **_: prox)
     monkeypatch.setattr(rec_mod, "load_research", lambda: {"patterns": []})
     monkeypatch.setattr(rec_mod, "holdout_family", lambda r: {"patterns": 0, "iv_filter": 1, "structural": 6,
                                                                "replication": 22, "news_tone": 5, "total": 65})
