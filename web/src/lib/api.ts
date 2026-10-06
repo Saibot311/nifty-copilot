@@ -85,7 +85,22 @@ export interface IndicatorTile {
   detail: string;
   state: string;
   as_of: string;
+  /** Fixed words: what it is, why it is read, how it moves, what it means to a buyer. */
+  explain: { what: string; why: string; reacts: string; buyer: string };
+  /** Today's reading in words. */
+  now: string;
+  /** What followed days whose closing reading fell in today's bucket, at today's price. */
+  history: IndicatorHistory | null;
 }
+
+/** Shares (%) are one per entry of Indicators.targets (points from the next session's open). */
+export type IndicatorSide = { n: number; up: (number | null)[]; down: (number | null)[]; either: (number | null)[];
+                              median_either_pts: number | null; closed_up_pct: number | null };
+export type Versus = "more" | "less" | "like" | "few";
+export type IndicatorHistory = {
+  bucket: string; like: IndicatorSide; all: IndicatorSide;
+  vs_rest: Record<"up" | "down" | "either", Versus[]>; closed_up_vs_rest: Versus;
+};
 
 // The grid under the Today chart. `live` means today's candle so far is in
 // every reading (provisional until 15:30); `basis` says which candle.
@@ -95,6 +110,8 @@ export interface Indicators {
   as_of: string;
   session: string;
   tiles: IndicatorTile[];
+  targets: number[];
+  history_note: string;
 }
 
 export interface Candle {
@@ -1414,20 +1431,34 @@ export type BreakoutRecord = Partial<Record<"up" | "down", { all: BreakoutSummar
 export type BreakoutEvent = {
   level: string; direction: "up" | "down"; at: string; bar_close_at: string; close: number; level_price: number;
   outcome: { pts_15: number | null; pts_30: number | null; pts_60: number | null; pts_close: number | null;
-             held_30: boolean | null; failed: boolean | null };
+             held_30: boolean | null; failed: boolean | null;
+             travel_5?: number | null; travel_15?: number | null; travel_30?: number | null; travel_60?: number | null };
   option: { expiry: string; strike: number; option_type: string; ask: number | null; bid: number | null;
             price_at: string; on_time: number } | null;
 };
+/** Per horizon (minutes, as a string): breaks counted, and the share (%) that went at least each target. */
+export type BreakoutSlice = { n: Record<string, number>; pct: Record<string, (number | null)[]> };
+export type BreakoutOdds = { all: BreakoutSlice; like_today: BreakoutSlice };
+export type BreakoutVersus = { all: Record<string, Versus[]>; like_today: Record<string, Versus[]> };
 export type BreakoutLevel = {
   key: string; label: string; price: number; distance_pts: number | null; state: string; since: string | null;
   failed: boolean | null; opened: "above" | "below" | null; events: BreakoutEvent[]; record: BreakoutRecord | null;
   forward: Partial<Record<"up" | "down", { n: number; scored: number; held_30_pct: number | null;
                                            median_option_pct_30: number | null; option_counted: number }>> | null;
+  beyond_random: boolean;
+  plain: { where: string; today: string; watch: "up" | "down" | null };
+  odds?: Record<"up" | "down", BreakoutOdds>;
+  vs_random?: Record<"up" | "down", BreakoutVersus>;
 };
 export type Breakouts = {
   session: string; bars_through: string | null; last_close: number | null; source: string | null; as_of: string;
   levels: BreakoutLevel[]; baseline: BreakoutRecord | null;
   record: { computed_at: string | null; since: string | null; sessions: number | null; breaks: number | null };
   note: string;
+  opened: "gap up" | "gap down" | "flat" | null;
+  baseline_odds: Record<"up" | "down", BreakoutOdds> | null;
+  targets: number[]; horizons: string[];
+  summary: { head: string; edge: string; better: string[] };
+  travel_as_of: string | null;
 };
 export const fetchBreakouts = () => get<Breakouts>("/api/breakouts");

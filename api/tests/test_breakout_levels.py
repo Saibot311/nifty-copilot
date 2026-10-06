@@ -223,3 +223,76 @@ def test_a_level_the_session_opened_beyond_says_so():
     st = bl.state(130.0, bars([134, 135, 136], open_=133.0), [], start=0)
     assert st["state"] == "untouched" and st["opened"] == "above"
     assert bl.state(140.0, bars([134, 135, 136], open_=133.0), [], start=0)["opened"] == "below"
+
+
+# --- how far price went after a break --------------------------------------------------
+
+def test_travel_is_the_furthest_price_went_the_breaks_way_from_the_breaking_close():
+    b = bars([128, 131] + [131 + i for i in range(1, 74)])                 # rising a point a bar, highs +2
+    o = bl.outcome(bl.breaks("pdh", 130.0, b, start=0)[0], b)
+    # from the 131 close: the next bar's high is 132 + 2; three bars on, 134 + 2
+    assert o["travel_5"] == pytest.approx(3.0) and o["travel_15"] == pytest.approx(5.0)
+    assert o["travel_30"] == pytest.approx(8.0) and o["travel_60"] == pytest.approx(14.0)
+    down = bars([110, 107] + [107 - i for i in range(1, 20)])
+    od = bl.outcome(bl.breaks("pdl", 108.0, down, start=0)[0], down)
+    assert od["travel_5"] == pytest.approx(3.0)                            # 107 to the next low, 106 - 2
+    short = bars([128, 131, 133])
+    assert bl.outcome(bl.breaks("pdh", 130.0, short, start=0)[0], short)["travel_15"] is None
+
+
+def test_a_session_is_classed_by_how_it_opened():
+    assert bl.open_class(100.3, 100.0) == "gap up" and bl.open_class(99.7, 100.0) == "gap down"
+    assert bl.open_class(100.1, 100.0) == "flat" and bl.open_class(99.85, 100.0) == "flat"
+
+
+def test_history_carries_each_sessions_open():
+    b = pd.concat([bars([100 + i for i in range(75)], day=date(2026, 10, 1)),
+                   bars([128, 131] + [133] * 73, day=date(2026, 10, 5))])
+    daily = {date(2026, 9, 29): {"open": 100, "high": 120, "low": 100, "close": 118},
+             date(2026, 10, 1): {"open": 100, "high": 174, "low": 98, "close": 174},
+             date(2026, 10, 5): {"open": 128, "high": 135, "low": 126, "close": 133}}
+    hist = bl.history(b, daily, {})
+    assert {e["open"] for e in hist if e["day"] == "2026-10-01"} == {"gap down"}   # 100 against 118
+    assert {e["open"] for e in bl.baseline_history(b, daily) if e["day"] == "2026-10-01"} == {"gap down"}
+
+
+def _ev(level, d, travel, open_="gap up", close=20000.0):
+    return {"level": level, "direction": d, "open": open_, "close": close,
+            "outcome": {f"travel_{m}": travel for m in bl.TRAVEL_MIN}}
+
+
+def test_the_odds_of_a_move_are_counted_exactly_at_todays_price_for_every_size():
+    # four breaks at 20,000 that travelled 0.1%, 0.2%, 0.3%, 0.4%: 20, 40, 60, 80 points then
+    evs = [_ev("pdh", "up", 20000 * p / 100) for p in (0.1, 0.2, 0.3, 0.4)]
+    table = bl.travel_table(evs)
+    od = bl.odds(table, "pdh", "up", "gap up", price=25000.0)               # at 25,000 those are 25..100 pts
+    i = {t: k for k, t in enumerate(bl.TARGETS)}
+    assert od["all"]["n"]["30"] == 4
+    assert od["all"]["pct"]["30"][i[20]] == 100.0 and od["all"]["pct"]["30"][i[30]] == 75.0
+    assert od["all"]["pct"]["30"][i[100]] == 25.0 and od["all"]["pct"]["30"][i[110]] == 0.0
+    assert od["like_today"]["n"]["30"] == 4
+    assert bl.odds(table, "pdh", "up", "gap down", price=25000.0)["like_today"]["n"]["30"] == 0
+
+
+def test_a_level_stands_out_only_when_it_beats_random_lines_well_beyond_chance():
+    assert bl.compare(60.0, 400, 40.0, 4000) == "more often than random"
+    assert bl.compare(20.0, 400, 40.0, 4000) == "less often than random"
+    assert bl.compare(44.0, 400, 40.0, 4000) == "like random"              # inside chance at this size
+    assert bl.compare(90.0, 10, 40.0, 4000) == "too few breaks"
+
+
+def test_each_level_says_in_plain_words_where_it_is_and_what_happened_today():
+    lv = {"key": "pdh", "label": "Yesterday's high", "price": 22621.8, "distance_pts": 154.3,
+          "state": "broken up", "since": "09:50", "failed": False, "opened": "below", "events": []}
+    p = bl.plain(lv)
+    assert p["where"] == "154 pts below NIFTY" and p["watch"] == "up"     # today's break, not the way back
+    assert p["today"] == "Crossed upward at 09:50 and still above"
+    p2 = bl.plain({**lv, "distance_pts": -40.0, "state": "untouched", "since": None, "opened": "below"})
+    assert p2["where"] == "40 pts above NIFTY" and p2["watch"] == "up" and p2["today"] == "Not reached today"
+    p3 = bl.plain({**lv, "state": "broken up", "failed": True})
+    assert p3["today"] == "Crossed upward at 09:50, then closed back within 30 minutes"
+
+
+def test_a_level_further_than_the_random_lines_is_marked():
+    lv = {x["key"]: x for x in bl.evaluate(bars([129, 131, 127, 133]), DAILY, DAY, {"oip": 100.0})["levels"]}
+    assert lv["oip"]["beyond_random"] and not lv["pdc"]["beyond_random"]  # 100 is 22% from the 128 close

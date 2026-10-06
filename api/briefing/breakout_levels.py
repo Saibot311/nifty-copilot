@@ -13,6 +13,11 @@ real option prices.
            at the close, in the break's direction; and, from 1 Oct 2026, the
            at-the-money option on the break's side bought at the ask when the
            bar closed and sold at the bid 15, 30 and 60 minutes later.
+  travel   how far price went the break's way from the close that broke it,
+           within 5, 15, 30 and 60 minutes: what a buyer entering on that
+           close could have seen. Kept as a share of price, so a session at
+           8,000 and one at 25,000 count alike, and turned into points at
+           today's price for every move size from 10 to 150.
   record   every break since 2015 measured the same way, the last 60 sessions
            beside it, and the forward record kept from today, never edited.
            It is recomputed every night with that day's breaks in it: the
@@ -23,6 +28,7 @@ been registered and judged against the evidence bar, and a level that "held
 54% of the time" is close to a coin. Nothing here says to buy anything.
 """
 
+import bisect
 import json
 import statistics
 from datetime import date, datetime, timedelta
@@ -37,6 +43,11 @@ BAR_MIN = 5
 OR_BARS = 3                    # 09:15, 09:20, 09:25: the range is set when the 09:25 bar closes
 FAIL_BARS = 6                  # back across within 30 minutes
 HORIZONS = (15, 30, 60)
+TRAVEL_MIN = (5, 15, 30, 60)   # the next candle, then a quarter, half and whole hour
+TARGETS = tuple(range(10, 151, 10))  # move sizes in points, at today's price; the reader picks one
+OPEN_FLAT_PCT = 0.2            # a session that opens within 0.2% of the last close opened flat
+MIN_BREAKS = 30
+STANDS_OUT_Z = 3.0             # many levels, sizes and horizons are compared: chance gets a high bar
 LAST_BAR = 15 * 60 + 25        # the 15:25 bar closes the session
 ON_TIME_S = 360                # a price taken more than 6 minutes after the bar is not counted
 RECENT = 60
@@ -50,6 +61,7 @@ ORDER = tuple(LABELS)
 BASELINE_LEVELS = 3            # random levels a session, within BASELINE_SPAN of the last close
 BASELINE_SPAN = 0.01
 RESEARCH_PATH = Path(__file__).parent.parent / "data" / "breakout_levels.json"
+TRAVEL_PATH = Path(__file__).parent.parent / "data" / "breakout_travel.json"
 
 
 # --- levels ---------------------------------------------------------------------------
@@ -122,7 +134,16 @@ def outcome(event: dict, session: pd.DataFrame) -> dict:
     out["best_60"] = round(float(max(((h[j] if d > 0 else -lo[j]) - lvl * d) for j in hour)), 2) if len(hour) else None
     out["worst_60"] = round(float(min(((lo[j] if d > 0 else -h[j]) - lvl * d) for j in hour)), 2) if len(hour) else None
     out["pts_close"] = round(float((c[-1] - lvl) * d), 2) if complete(session) else None
+    for m in TRAVEL_MIN:
+        n = m // BAR_MIN
+        out[f"travel_{m}"] = (round(float(max(((h[j] - c[i]) if d > 0 else (c[i] - lo[j])) for j in range(i + 1, i + 1 + n))), 2)
+                              if i + n < len(c) else None)
     return out
+
+
+def open_class(open_: float, prev_close: float) -> str:
+    g = (open_ - prev_close) / prev_close * 100
+    return "gap up" if g > OPEN_FLAT_PCT else "gap down" if g < -OPEN_FLAT_PCT else "flat"
 
 
 def state(level: float, session: pd.DataFrame, events: list[dict], start: int = 0) -> dict:
@@ -173,12 +194,14 @@ def history(bars5: pd.DataFrame, daily: dict, extras_by_day: dict) -> list[dict]
         return []
     out = []
     for day, session in bars5.groupby(bars5.index.date):
-        if not [d for d in daily if d < day]:
+        prev = [d for d in daily if d < day]
+        if not prev:
             continue
+        opened = open_class(float(session["open"].iloc[0]), daily[max(prev)]["close"])
         for lv in day_levels(daily, day, session, extras_by_day.get(day, {})):
             for e in breaks(lv["key"], lv["price"], session, lv["start"]):
                 out.append({**{k: e[k] for k in ("level", "direction", "at", "level_price", "close")},
-                            "day": day.isoformat(), "outcome": outcome(e, session)})
+                            "day": day.isoformat(), "open": opened, "outcome": outcome(e, session)})
     return out
 
 
@@ -194,12 +217,95 @@ def baseline_history(bars5: pd.DataFrame, daily: dict) -> list[dict]:
         if not prev:
             continue
         pc = daily[max(prev)]["close"]
+        opened = open_class(float(session["open"].iloc[0]), pc)
         rng = np.random.default_rng(day.toordinal())
         for lvl in pc * (1 + rng.uniform(-BASELINE_SPAN, BASELINE_SPAN, BASELINE_LEVELS)):
             for e in breaks("baseline", round(float(lvl), 2), session, 0):
                 out.append({**{k: e[k] for k in ("level", "direction", "at", "level_price", "close")},
-                            "day": day.isoformat(), "outcome": outcome(e, session)})
+                            "day": day.isoformat(), "open": opened, "outcome": outcome(e, session)})
     return out
+
+
+def travel_table(events: list[dict]) -> dict:
+    """Each level, direction and kind of open: the travel at each horizon as a
+    sorted share of the breaking close (%), so any move size can be counted
+    exactly later at any price."""
+    out: dict = {}
+    for e in events:
+        g = out.setdefault(f"{e['level']}|{e['direction']}|{e.get('open')}", {str(m): [] for m in TRAVEL_MIN})
+        for m in TRAVEL_MIN:
+            t = e["outcome"].get(f"travel_{m}")
+            if t is not None:
+                g[str(m)].append(round(t / e["close"] * 100, 4))
+    for g in out.values():
+        for v in g.values():
+            v.sort()
+    return out
+
+
+def _share(sorted_pct: list[float], target_pts: float, price: float) -> float | None:
+    if not sorted_pct:
+        return None
+    need = target_pts / price * 100 - 1e-9
+    return round((len(sorted_pct) - bisect.bisect_left(sorted_pct, need)) / len(sorted_pct) * 100, 1)
+
+
+def _slice(groups: list[dict], price: float) -> dict:
+    out: dict = {"n": {}, "pct": {}}
+    for m in TRAVEL_MIN:
+        vals = sorted(v for g in groups for v in g.get(str(m), []))
+        out["n"][str(m)] = len(vals)
+        out["pct"][str(m)] = [_share(vals, t, price) for t in TARGETS]
+    return out
+
+
+def odds(table: dict, key: str, direction: str, opened: str | None, price: float) -> dict:
+    """How often price went at least each of TARGETS points the break's way
+    within each horizon, at `price`: over every session, and over sessions
+    that opened like today."""
+    mine = {o: table.get(f"{key}|{direction}|{o}") for o in ("gap up", "gap down", "flat")}
+    return {"all": _slice([g for g in mine.values() if g], price),
+            "like_today": _slice([mine[opened]] if mine.get(opened) else [], price)}
+
+
+def compare(pct: float | None, n: int, base_pct: float | None, base_n: int) -> str:
+    """A level against random lines: different only beyond a high bar for chance."""
+    if pct is None or base_pct is None or n < MIN_BREAKS or base_n < MIN_BREAKS:
+        return "too few breaks"
+    p1, p2 = pct / 100, base_pct / 100
+    pool = (p1 * n + p2 * base_n) / (n + base_n)
+    se = (pool * (1 - pool) * (1 / n + 1 / base_n)) ** 0.5
+    z = (p1 - p2) / se if se else 0.0
+    return "more often than random" if z >= STANDS_OUT_Z else "less often than random" if z <= -STANDS_OUT_Z else "like random"
+
+
+CODES = {"more often than random": "more", "less often than random": "less", "like random": "like", "too few breaks": "few"}
+
+
+def compare_slices(mine: dict, base: dict) -> dict:
+    return {s: {m: [CODES[compare(p, mine[s]["n"][m], b, base[s]["n"][m])]
+                    for p, b in zip(mine[s]["pct"][m], base[s]["pct"][m])] for m in mine[s]["pct"]}
+            for s in mine}
+
+
+def plain(lv: dict) -> dict:
+    """The level in words: where it is from NIFTY, what happened at it today,
+    and which break to look at: today's, if it broke, or else the way price
+    would reach it from here."""
+    dist = lv.get("distance_pts")
+    where = ("–" if dist is None else "at NIFTY" if abs(dist) < 0.5
+             else f"{abs(dist):,.0f} pts {'below' if dist > 0 else 'above'} NIFTY")
+    st = lv["state"]
+    if st.startswith("broken"):
+        d = st.split()[1]
+        today = (f"Crossed {d}ward at {lv['since']}, then closed back within 30 minutes" if lv.get("failed")
+                 else f"Crossed {d}ward at {lv['since']} and still {'above' if d == 'up' else 'below'}")
+    elif st == "tested":
+        today = "Touched, but no 5-minute close across it"
+    else:
+        today = "Not reached today"
+    watch = st.split()[1] if st.startswith("broken") else None if dist is None else ("down" if dist > 0 else "up")
+    return {"where": where, "today": today, "watch": watch}
 
 
 def forecast_bands(daily: dict, iv30: dict, events: dict, expiries: set) -> dict:
@@ -241,6 +347,19 @@ def oi_strikes(db_path=None) -> dict:
 
 def load_research() -> dict | None:
     return json.loads(RESEARCH_PATH.read_text()) if RESEARCH_PATH.exists() else None
+
+
+_travel: dict = {}
+
+
+def load_travel() -> dict:
+    """The nightly travel table, read again only when the file changes."""
+    if not TRAVEL_PATH.exists():
+        return {}
+    mtime = TRAVEL_PATH.stat().st_mtime
+    if _travel.get("mtime") != mtime:
+        _travel.update(mtime=mtime, data=json.loads(TRAVEL_PATH.read_text()))
+    return _travel["data"]
 
 
 # --- the forward record ---------------------------------------------------------------
@@ -361,12 +480,16 @@ def evaluate(session: pd.DataFrame, daily: dict, day: date, extras: dict) -> dic
     """Every level for `day` with its breaks, each scored so far, and where price stands."""
     levels = []
     last = float(session["close"].iloc[-1]) if len(session) else None
+    prev = [d for d in daily if d < day]
+    prev_close = daily[max(prev)]["close"] if prev else None
+    opened = open_class(float(session["open"].iloc[0]), daily[max(prev)]["close"]) if len(session) and prev else None
     for lv in day_levels(daily, day, session, extras):
         evs = breaks(lv["key"], lv["price"], session, lv["start"]) if len(session) else []
         levels.append({**lv, "distance_pts": round(last - lv["price"], 1) if last is not None else None,
+                       "beyond_random": bool(prev_close and abs(lv["price"] / prev_close - 1) > BASELINE_SPAN),
                        **state(lv["price"], session, evs, lv["start"]),
                        "events": [{**e, "outcome": outcome(e, session)} for e in evs]})
-    return {"session": day.isoformat(), "last_close": last,
+    return {"session": day.isoformat(), "last_close": last, "opened": opened,
             "bars_through": f"{_end(session.index[-1]):%H:%M}" if len(session) else None, "levels": levels}
 
 
@@ -390,15 +513,25 @@ def build_breakouts(now: datetime | None = None) -> dict:
     rec = research.get("stats", {})
     forward = db.summary()
     recorded = {(e["level"], e["direction"], e["bar_close_at"]): e for e in db.events(st["session"])}
+    travel = load_travel()
+    table, price = travel.get("groups") or {}, st.get("last_close")
+    base = {d: odds(table, "baseline", d, st.get("opened"), price) for d in ("up", "down")} if price else None
     for lv in st["levels"]:
         lv["record"] = rec.get(lv["key"])
         lv["forward"] = forward.get(lv["key"])
+        lv["plain"] = plain(lv)
+        if base:
+            lv["odds"] = {d: odds(table, lv["key"], d, st.get("opened"), price) for d in ("up", "down")}
+            lv["vs_random"] = {d: compare_slices(lv["odds"][d], base[d]) for d in ("up", "down")}
         for e in lv["events"]:
             r = recorded.get((e["level"], e["direction"], e["bar_close_at"]))
             e["option"] = ({k: r[k] for k in ("expiry", "strike", "option_type", "ask", "bid", "price_at", "on_time")}
                            if r else None)
     return {**st, "as_of": now.isoformat(timespec="seconds"),
-            "baseline": rec.get("baseline"),
+            "baseline": rec.get("baseline"), "baseline_odds": base,
+            "targets": list(TARGETS), "horizons": [str(m) for m in TRAVEL_MIN],
+            "summary": summary(st, base is not None),
+            "travel_as_of": travel.get("computed_at"),
             "record": {"computed_at": research.get("computed_at"), "since": research.get("since"),
                        "sessions": research.get("sessions"), "breaks": research.get("breaks")},
             "note": ("Levels from data that existed before each was used. A break is a 5-minute close across a level; "
@@ -407,6 +540,39 @@ def build_breakouts(now: datetime | None = None) -> dict:
                      "From 6 Oct 2026 each break is also recorded at the real price of the at-the-money option on its "
                      "side. A description of how breaks have gone, not a signal: no break rule has been registered and "
                      "judged against the evidence bar.")}
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def summary(st: dict, have_odds: bool) -> dict:
+    """The card's first lines, in words: what NIFTY did at its levels today, and
+    whether any of them has been followed by moves more often than random lines."""
+    crossed = [lv for lv in st["levels"] if lv["state"].startswith("broken")]
+    dirs = {lv["state"].split()[1] for lv in crossed}
+    head = f"{len(crossed)} of {len(st['levels'])} levels crossed today"
+    if crossed:
+        head += (f", all {dirs.pop()}ward" if len(dirs) == 1 else "") + ": " + ", ".join(lv["label"] for lv in crossed)
+    better = [lv["label"] for lv in st["levels"]
+              if lv.get("vs_random") and lv["plain"]["watch"]
+              and any(c == "more" for cs in lv["vs_random"][lv["plain"]["watch"]]["all"].values() for c in cs)]
+    far = {lv["label"] for lv in st["levels"] if lv.get("beyond_random")}
+    if not have_odds:
+        edge = "The move record is not built yet; it is rebuilt every night."
+    elif better:
+        edge = (f"Since 2015, a break of {_and(better)} in the direction shown was followed by a move of some size "
+                f"more often than a break of a random line near the price. Open a level to see which sizes and by how much.")
+        if set(better) <= far:
+            edge += (f" {'Both lie' if len(better) == 2 else 'All lie' if len(better) > 2 else 'It lies'} more than "
+                     f"{BASELINE_SPAN:.0%} from the previous close, further than the random lines: price reaches such a "
+                     f"level only on a day already moving a lot, so the difference may be the day, not the level.")
+    else:
+        edge = (f"Since 2015, no break of these levels, in the direction shown, was followed by "
+                f"a move of {TARGETS[0]}–{TARGETS[-1]} pts within {TRAVEL_MIN[0]}–{TRAVEL_MIN[-1]} minutes more often "
+                f"than a break of a random line near the price. A break shows price moving; it has not shown how far "
+                f"it goes. Read the levels as reference points, not signals.")
+    return {"head": head, "edge": edge, "better": better}
 
 
 # --- the nightly work -----------------------------------------------------------------
@@ -460,6 +626,8 @@ def run_nightly(now: datetime | None = None) -> dict:
     research = {"computed_at": now.isoformat(timespec="seconds"), "since": str(finished.index[0].date()) if len(finished) else None,
                 "sessions": len({e["day"] for e in hist}), "breaks": len(hist), "stats": stats(hist)}
     RESEARCH_PATH.write_text(json.dumps(research, indent=1))
+    TRAVEL_PATH.write_text(json.dumps({"computed_at": research["computed_at"], "since": research["since"],
+                                       "groups": travel_table(hist)}, separators=(",", ":")))
 
     sessions = {d: g for d, g in finished.groupby(finished.index.date)}
 
