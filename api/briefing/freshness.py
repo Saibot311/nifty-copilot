@@ -200,9 +200,12 @@ def may_fix(fix: str, now: datetime, job_running: bool, last_tried: datetime | N
     return True
 
 
+RESTART_GRACE = timedelta(minutes=2)   # ps gives whole seconds; a landing writes and restarts within one
+
+
 def service_behind(process_started: datetime, newest_on_disk: datetime) -> bool:
     """A service started before its code or build last changed is running old code."""
-    return newest_on_disk > process_started
+    return newest_on_disk > process_started + RESTART_GRACE
 
 
 def restart_now(now: datetime, holidays: set) -> bool:
