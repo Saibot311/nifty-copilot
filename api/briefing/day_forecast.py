@@ -122,19 +122,25 @@ def lean(daily: dict, target: date) -> dict:
 
 
 def make_forecast(prev: date, prev_close: float, target: date, iv: float, cal: dict, tag_list: list[str],
-                  daily: dict) -> dict:
-    raw = sigma_pct(iv, prev, target)
+                  daily: dict, method: str = "iv", raw_pct: float | None = None, iv_source: str = "iv30") -> dict:
+    """`raw_pct` is the width the method in use gives (forecast_learning);
+    without it, implied volatility alone, as the forecast began."""
+    iv_raw = sigma_pct(iv, prev, target)
+    raw = raw_pct if raw_pct is not None else iv_raw
     mult = 1.0
     for t in tag_list:
         mult *= cal["multipliers"].get(t, 1.0)
     sig = raw * cal["k"] * mult
     band = lambda z: [round(prev_close * math.exp(-z * sig / 100), 2), round(prev_close * math.exp(z * sig / 100), 2)]  # noqa: E731
     sess = iv * math.sqrt(1 / UNITS_PER_YEAR) * 100
+    from .forecast_learning import LABELS
     return {"target": target.isoformat(), "prev": prev.isoformat(), "prev_close": round(prev_close, 2),
-            "iv30": round(iv * 100, 2), "sigma_raw_pct": round(raw, 3), "k": cal["k"], "tag_multiplier": round(mult, 3),
-            "sigma_pct": round(sig, 3), "sigma_pts": round(prev_close * sig / 100, 1),
+            "iv30": round(iv * 100, 2), "iv_source": iv_source, "sigma_raw_pct": round(raw, 3), "k": cal["k"],
+            "tag_multiplier": round(mult, 3), "sigma_pct": round(sig, 3), "sigma_pts": round(prev_close * sig / 100, 1),
             "band68": band(Z68), "band95": band(Z95),
-            "expected_range_pts": round(prev_close * sess * cal["range_ratio"] * cal["k"] * mult / 100, 1),
+            # The day's range widens with the close band: the same ratio to plain IV.
+            "expected_range_pts": round(prev_close * sess * cal["range_ratio"] * (sig / iv_raw) / 100, 1),
+            "method": method, "method_label": LABELS.get(method, method),
             "tags": tag_list, "lean": lean(daily, target), "calibration": cal}
 
 
@@ -207,6 +213,31 @@ def hindcast(rows: list[dict], daily: dict) -> dict:
 
 # --- data, and the nightly run ------------------------------------------------------------
 
+def fill_from_nse(daily: dict, nse: dict) -> tuple[dict, list[date]]:
+    """Sessions after the Kite archive's last, from NSE's own index report.
+    On 5 Oct 2026 the Kite login had lapsed and the archive stopped at 1 Oct,
+    so nothing was scored or forecast. NSE's closes match Kite's on every
+    shared day; a day NSE reported without its range is not used, since a
+    score needs the high and low."""
+    last = max(daily) if daily else date.min
+    filled = sorted(d for d, b in nse.items() if d > last and all(b.get(k) for k in ("open", "high", "low", "close")))
+    return {**daily, **{d: nse[d] for d in filled}}, filled
+
+
+def iv_on(day: date, iv30: dict, vix: dict) -> tuple[float | None, str | None]:
+    """The 30-day implied volatility for `day`: the series built from the
+    options archive, or — when that is late — India VIX, NSE's own 30-day
+    implied volatility of NIFTY, scaled by its median ratio to the series
+    over the last 60 days both have."""
+    if day in iv30:
+        return iv30[day], "iv30"
+    if day not in vix:
+        return None, None
+    both = sorted(d for d in iv30 if d in vix and vix[d] and d < day)[-60:]
+    ratio = statistics.median(iv30[d] * 100 / vix[d] for d in both) if both else 1.0
+    return vix[day] / 100 * ratio, f"India VIX {vix[day]:.2f}, scaled ×{ratio:.3f} to the IV series (the series was late)"
+
+
 def load_inputs(today: date) -> dict:
     import sqlite3
 
@@ -221,7 +252,25 @@ def load_inputs(today: date) -> dict:
             "SELECT trade_date, iv_30d FROM iv_daily WHERE iv_30d > 0")}
     finally:
         conn.close()
-    return {"daily": daily, "iv30": iv30, "events": events(), "expiries": set(load_expiries())}
+    nse, vix = {}, {}
+    try:
+        conn = sqlite3.connect(f"file:{API_DIR / 'data' / 'nse_indices.db'}?mode=ro", uri=True)
+        try:
+            for name, d, o, h, lo, c in conn.execute(
+                    "SELECT index_name, trade_date, open, high, low, close FROM index_daily "
+                    "WHERE index_name IN ('Nifty 50', 'India VIX') AND trade_date >= ?",
+                    ((today - timedelta(days=120)).isoformat(),)):
+                if name == "India VIX":
+                    vix[date.fromisoformat(d)] = float(c)
+                else:
+                    nse[date.fromisoformat(d)] = {"open": o, "high": h, "low": lo, "close": c}
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass  # no NSE archive: the Kite archive alone, as before
+    daily, filled = fill_from_nse(daily, nse)
+    return {"daily": daily, "iv30": iv30, "vix": vix, "events": events(), "expiries": set(load_expiries()),
+            "filled_from_nse": [d.isoformat() for d in filled]}
 
 
 def run_day_forecast(now: datetime | None = None, db_path=None, inputs: dict | None = None,
@@ -249,13 +298,108 @@ def run_day_forecast(now: datetime | None = None, db_path=None, inputs: dict | N
     target = sessions_after(last, 1, holidays)[0]
     opens = datetime.combine(target, time(9, 15), tzinfo=IST)
     have = {r["target_day"] for r in db.records(db_path)}
-    if now < opens and target.isoformat() not in have and last in iv30:
-        cal = calibration([r for r in rows if r["day"] <= last])
-        fc = make_forecast(last, daily[last]["close"], target, iv30[last], cal,
-                           tags(target, data["events"], data["expiries"]), daily)
+    iv, iv_source = iv_on(last, iv30, data.get("vix", {}))
+    if now < opens and target.isoformat() not in have and iv is not None:
+        from . import forecast_learning as fl
+        past = [r for r in rows if r["day"] <= last]
+        choices = db.method_choices(db_path)
+        in_use = choices[-1]["choice"]["champion"] if choices else "iv"
+        choice = fl.compare(past, in_use)
+        db.add_method_choice(last.isoformat(), now.isoformat(timespec="seconds"), choice, db_path)
+        method = choice["champion"]
+        cal = calibration(fl.method_rows(past, method))
+        fc = make_forecast(last, daily[last]["close"], target, iv, cal,
+                           tags(target, data["events"], data["expiries"]), daily, method=method,
+                           raw_pct=fl.target_raw_sigma(past, method, iv, last, target), iv_source=iv_source)
         if db.add_forecast(target.isoformat(), now.isoformat(timespec="seconds"), fc, db_path):
             written["forecast"] = target.isoformat()
     return written
+
+
+JOB_DONE_BY = time(23, 0)     # the nightly job has written tomorrow's forecast by now on a normal night
+
+
+def _latest_closed(now: datetime, holidays: set) -> date:
+    from market_data.nse_holidays import is_session
+    d = now.date()
+    if is_session(d, holidays) and now.time() >= time(15, 30):
+        return d
+    d -= timedelta(days=1)
+    while not is_session(d, holidays):
+        d -= timedelta(days=1)
+    return d
+
+
+def forecast_status(now: datetime, db_path, inputs: dict, holidays: set, records: list | None = None) -> dict:
+    """Whether the next session has its forecast, and if not, what is missing.
+    The card used to keep showing an old forecast with no word that it was old."""
+    from market_data.nse_holidays import sessions_after
+    from storage import day_forecast_db as db
+    recs = records if records is not None else db.records(db_path)
+    latest = _latest_closed(now, holidays)
+    due = sessions_after(latest, 1, holidays)[0]
+    opens = datetime.combine(due, time(9, 15), tzinfo=IST)
+    if any(r["target_day"] == due.isoformat() for r in recs):
+        return {"due": due.isoformat(), "stale": False, "waiting": False, "reasons": []}
+    waiting = now.date() == latest and now.time() < JOB_DONE_BY and now < opens
+    if waiting:
+        return {"due": due.isoformat(), "stale": False, "waiting": True, "reasons": []}
+    reasons = []
+    daily = inputs["daily"]
+    if latest not in daily:
+        reasons.append(f"NIFTY's {latest.isoformat()} close is not in yet: the archive ends "
+                       f"{max(daily).isoformat()}, and neither Kite's bars (is the login current?) nor NSE's "
+                       "report has it")
+    if iv_on(latest, inputs["iv30"], inputs.get("vix", {}))[0] is None:
+        reasons.append(f"No implied volatility for {latest.isoformat()} yet: neither the options archive nor India VIX")
+    if now >= opens:
+        reasons.append(f"The {due.isoformat()} session opened before a forecast could be written")
+    if not reasons:
+        reasons.append("Not written yet: the forecast step has not run since the close")
+    return {"due": due.isoformat(), "stale": True, "waiting": False, "reasons": reasons}
+
+
+def needs_catch_up(status: dict, now: datetime, job_running: bool) -> bool:
+    """A missing forecast is written outside the nightly job only while it can
+    still count — before its session opens — and never while the job, which
+    writes the same data, is running."""
+    opens = datetime.combine(date.fromisoformat(status["due"]), time(9, 15), tzinfo=IST)
+    return status["stale"] and now < opens and not job_running
+
+
+def job_running(log_path) -> bool:
+    """Whether the nightly job has started and not yet logged that it is done."""
+    from pathlib import Path
+    path = Path(log_path)
+    if not path.exists():
+        return False
+    start = done = -1
+    for i, line in enumerate(path.read_text(errors="replace").splitlines()):
+        if "daily job start" in line:
+            start = i
+        elif "daily job done" in line:
+            done = i
+    return start > done
+
+
+def accuracy(records: list[dict], last_n: int = 20) -> dict | None:
+    """The last `last_n` scored forecasts: how often the close landed in each
+    band, and whether the width ran right. The width ratio is the RMS of the
+    close's error in band units: 1 is right-sized, above 1 too narrow."""
+    scored = [r for r in records if r.get("outcome")][-last_n:]
+    if not scored:
+        return None
+    n = len(scored)
+    zs = [r["outcome"]["z"] for r in scored]
+    ratio = round(math.sqrt(statistics.mean(z * z for z in zs)), 2)
+    reading = ("running narrow: moves were bigger than the band allowed" if ratio > 1.15 else
+               "running wide: moves were smaller than the band allowed" if ratio < 0.85 else "about right")
+    return {"forecasts": n,
+            "inside68_pct": round(sum(r["outcome"]["inside68"] for r in scored) / n * 100, 1),
+            "inside95_pct": round(sum(r["outcome"]["inside95"] for r in scored) / n * 100, 1),
+            "lean_hit_pct": round(sum(r["outcome"]["lean_hit"] for r in scored) / n * 100, 1),
+            "width_ratio": ratio, "width_reading": reading,
+            "mean_abs_move_pts": round(statistics.mean(abs(r["outcome"]["move_pts"]) for r in scored), 1)}
 
 
 def view(db_path=None, inputs: dict | None = None) -> dict:
@@ -274,7 +418,14 @@ def view(db_path=None, inputs: dict | None = None) -> dict:
                    "inside95_pct": round(sum(r["outcome"]["inside95"] for r in scored) / n * 100, 1),
                    "lean_hit_pct": round(sum(r["outcome"]["lean_hit"] for r in scored) / n * 100, 1),
                    "first": scored[0]["target_day"]}
+    from market_data.nse_holidays import trading_holidays
+    holidays, _known = trading_holidays()
+    choices = db.method_choices(db_path)
+    learning = {"latest": choices[-1] if choices else None,
+                "switches": [c for c in choices if c["choice"]["switched"]]}
     return {"next": pending[-1] if pending else None, "recent": list(reversed(scored[-10:])), "summary": summary,
+            "status": forecast_status(datetime.now(IST), db_path, data, holidays, records=recs),
+            "accuracy": accuracy(recs), "learning": learning,
             "hindcast": hindcast(rows, data["daily"]), "calibration_now": calibration(rows),
             "note": ("A forecast of how far NIFTY moves, made before the session and never edited, then scored. "
                      "The lean is a weekday base rate, unproven as an edge; nothing here is a reason to trade.")}

@@ -1159,6 +1159,13 @@ export type DayForecastBody = {
   tag_multiplier: number; sigma_pct: number; sigma_pts: number; band68: [number, number]; band95: [number, number];
   expected_range_pts: number; tags: string[];
   lean: { side: "up" | "down"; p_up: number; sessions: number; basis: string };
+  /** Present from 2026-10-06: which way the band was sized, and where its IV came from. */
+  method?: string; method_label?: string; iv_source?: string;
+};
+export type ForecastMethodChoice = {
+  decided_on: string; made_at: string;
+  choice: { champion: string; previous: string; switched: boolean; sessions: number; trial: number; margin: number;
+            scores: Record<string, number>; reason: string; labels: Record<string, string> };
 };
 export type DayOutcome = {
   open: number; high: number; low: number; close: number; move_pts: number; move_pct: number; z: number;
@@ -1172,6 +1179,10 @@ export type DayForecast = {
   summary: { forecasts: number; inside68_pct: number; inside95_pct: number; lean_hit_pct: number; first: string } | null;
   hindcast: { k_dev?: number; holdout_inside68_pct?: number; holdout_inside95_pct?: number; holdout_lean_hit_pct?: number };
   calibration_now: { k: number; window: number; multipliers: { event: number; expiry: number }; range_ratio: number };
+  status: { due: string; stale: boolean; waiting: boolean; reasons: string[] };
+  accuracy: { forecasts: number; inside68_pct: number; inside95_pct: number; lean_hit_pct: number;
+              width_ratio: number; width_reading: string; mean_abs_move_pts: number } | null;
+  learning: { latest: ForecastMethodChoice | null; switches: ForecastMethodChoice[] };
   note: string;
 };
 export const fetchDayForecast = () => get<DayForecast>("/api/day_forecast");

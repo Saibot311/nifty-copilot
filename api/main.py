@@ -1107,6 +1107,13 @@ def zerodha_callback(request_token: str | None = None, status: str | None = None
         raise HTTPException(503, str(e))
     except Exception as e:
         raise HTTPException(502, f"Token exchange with Kite failed: {e}")
+    # A lapsed login is what leaves the day-ahead forecast unwritten (5 Oct
+    # 2026); now that Kite answers, catch it up if it can still count.
+    import subprocess
+    import sys
+    subprocess.Popen([sys.executable, str(Path(__file__).parent / "scripts" / "forecast_catchup.py")],
+                     cwd=Path(__file__).parent, start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return RedirectResponse("http://localhost:3000/?zerodha=connected")
 
 

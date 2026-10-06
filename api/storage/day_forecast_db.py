@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS outcomes (
     scored_at    TEXT NOT NULL,
     body         TEXT NOT NULL       -- JSON: the session's bar, z, hits, reasons
 );
+-- Which method sized the band from each close on (briefing/forecast_learning):
+-- the scores it was chosen on and whether it replaced the one before.
+CREATE TABLE IF NOT EXISTS method_choices (
+    decided_on   TEXT PRIMARY KEY,   -- the close the choice was made after
+    made_at      TEXT NOT NULL,
+    body         TEXT NOT NULL       -- JSON: champion, previous, switched, scores, halves, reason
+);
+CREATE TRIGGER IF NOT EXISTS method_choices_never_updated BEFORE UPDATE ON method_choices
+BEGIN SELECT RAISE(ABORT, 'a method choice is never edited'); END;
+CREATE TRIGGER IF NOT EXISTS method_choices_never_deleted BEFORE DELETE ON method_choices
+BEGIN SELECT RAISE(ABORT, 'a method choice is never edited'); END;
 CREATE TRIGGER IF NOT EXISTS forecasts_never_updated BEFORE UPDATE ON forecasts
 BEGIN SELECT RAISE(ABORT, 'a forecast is never edited'); END;
 CREATE TRIGGER IF NOT EXISTS forecasts_never_deleted BEFORE DELETE ON forecasts
@@ -73,3 +84,17 @@ def records(db_path: Path | None = None) -> list[dict]:
                             "LEFT JOIN outcomes o USING (target_day) ORDER BY f.target_day").fetchall()
     return [{"target_day": r["target_day"], "made_at": r["made_at"], "forecast": json.loads(r["f"]),
              "scored_at": r["scored_at"], "outcome": json.loads(r["o"]) if r["o"] else None} for r in rows]
+
+
+def add_method_choice(decided_on: str, made_at: str, body: dict, db_path: Path | None = None) -> bool:
+    with connect(db_path) as conn:
+        before = conn.total_changes
+        conn.execute("INSERT OR IGNORE INTO method_choices VALUES (?, ?, ?)", (decided_on, made_at, json.dumps(body)))
+        return conn.total_changes > before
+
+
+def method_choices(db_path: Path | None = None) -> list[dict]:
+    """Every night's choice of method, oldest first."""
+    with connect(db_path) as conn:
+        rows = conn.execute("SELECT decided_on, made_at, body FROM method_choices ORDER BY decided_on").fetchall()
+    return [{"decided_on": r["decided_on"], "made_at": r["made_at"], "choice": json.loads(r["body"])} for r in rows]
