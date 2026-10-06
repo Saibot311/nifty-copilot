@@ -130,8 +130,21 @@ _register_pcr_strategies()
 
 
 def load_daily_data(symbol: str = "^NSEI", days: int = 7000) -> tuple[pd.DataFrame, pd.Series]:
-    provider = YFinanceProvider()
-    candles = provider.get_ohlc(symbol, "1d", date.today() - timedelta(days=days), date.today())
+    """Daily bars for every study: Kite's archive first (NIFTY's daily bars
+    from 1990, kept nightly; no network, no login), NSE's own index report for
+    any session it lacks, and Yahoo only when the archive holds too little —
+    for an index it does not carry, or a machine without it. Until 6 Oct 2026
+    this read Yahoo first: same closes (one day of 4,673 differs by more than
+    0.1%), but 74 fewer sessions, and nothing at all when Yahoo was down."""
+    from market_data.bar_archive import ArchiveProvider
+    start = date.today() - timedelta(days=days)
+    candles = []
+    try:
+        candles = ArchiveProvider().get_ohlc(symbol, "1d", start, date.today())
+    except Exception:
+        pass
+    if len(candles) < 100:
+        candles = YFinanceProvider().get_ohlc(symbol, "1d", start, date.today())
     if len(candles) < 100:
         raise ValueError(f"Only got {len(candles)} daily bars for {symbol} — need 100+ to backtest.")
     df = _top_up_from_nse(candles_to_df(candles), symbol)
