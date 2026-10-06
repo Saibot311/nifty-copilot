@@ -76,3 +76,16 @@ def test_the_nightly_job_backs_up_again_after_it_has_written():
     for name in ("backup_forward_log()", "backup_journal()", "backup_paper()", "backup_news()",
                  "backup_gift_nifty()", "backup_hypothesis_log()"):
         assert name in step
+
+
+def test_breakouts_and_incidents_are_backed_up(tmp_path):
+    from storage import backup, breakout_db, incidents_db
+    b, i = tmp_path / "b.db", tmp_path / "i.db"
+    breakout_db.add_event({"trade_day": "2026-10-06", "level": "pdh", "direction": "up",
+                           "bar_close_at": "2026-10-06T09:50:00+05:30", "level_price": 1.0, "index_level": 2.0,
+                           "expiry": None, "strike": None, "option_type": None, "price_at": None, "bid": None,
+                           "ask": None, "ltp": None, "on_time": 0, "recorded_at": "x"}, b)
+    incidents_db.open_incident("disk", "data", "warn", "low", "2026-10-07T05:00:00+05:30", i)
+    rb = backup.backup_breakouts(source=b, dest_dir=tmp_path / "out", today=date(2026, 10, 7))
+    ri = backup.backup_incidents(source=i, dest_dir=tmp_path / "out", today=date(2026, 10, 7))
+    assert rb["ok"] and rb["rows"] == 1 and ri["ok"] and ri["rows"] == 1

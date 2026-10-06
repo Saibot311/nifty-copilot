@@ -187,9 +187,11 @@ def step_backup() -> bool:
     from storage.backup import backup_forward_log, backup_news
     from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_option_snapshots
     from storage.backup import backup_day_forecast, backup_intraday_forward, backup_paper
+    from storage.backup import backup_breakouts, backup_incidents
     ok = True
     for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(), backup_gift_nifty(),
-              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast()):
+              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast(),
+              backup_breakouts(), backup_incidents()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
