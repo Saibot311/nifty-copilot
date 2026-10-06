@@ -124,3 +124,8 @@ def test_the_check_describes_and_never_advises():
 def test_the_api_serves_the_check():
     import main
     assert any(getattr(r, "path", "") == "/api/precheck" for r in main.app.routes)
+
+
+def test_a_contract_that_has_expired_is_refused_not_priced():
+    with pytest.raises(LookupError, match="expired"):
+        pc.run_check("CE", 22800, "06-Oct-2026", now=at(TUE, 17, 0))

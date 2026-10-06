@@ -33,7 +33,7 @@ def _research(**verdicts):
 @pytest.fixture
 def wire(monkeypatch):
     def _wire(prox, research):
-        monkeypatch.setattr(rec_mod, "cached", lambda key, ttl_seconds, producer: prox)
+        monkeypatch.setattr(rec_mod, "cached", lambda key, ttl_seconds, producer, **_: prox)
         monkeypatch.setattr(rec_mod, "load_research", lambda: research)
         # The other families are fixed at today's counts, so these tests do not
         # move when a study on disk is re-run.

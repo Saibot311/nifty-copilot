@@ -257,4 +257,4 @@ def history_table() -> dict:
         t = table(df, vix, iv30)
         return {"rows": t, "since": str(df.index[0].date()), "through": str(t.index[-1].date()) if len(t) else None,
                 "last_iv30": iv30[max(iv30)] * 100 if iv30 else None}
-    return cached("indicator_history", ttl_seconds=3600, producer=build, stale_ok=True)
+    return cached("indicator_history", ttl_seconds=3600, producer=build, background=True)

@@ -147,7 +147,7 @@ def _inputs() -> tuple[dict, dict, list[dict], float]:
 
     a = build_analysis()
     ind = a["indicators"]
-    prox = cached("proximity:^NSEI", ttl_seconds=1800, producer=lambda: pattern_proximity("^NSEI"))
+    prox = cached("proximity:^NSEI", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity("^NSEI"))
     live = cached("live_patterns", ttl_seconds=60, producer=live_patterns)
     live_rows = merge_live(live, prox, load_research()) if live.get("candle") else []
     level, change, where, vix = a["price"], a["change_pct"], f"the {a['as_of'][:10]} close", ind.get("india_vix")

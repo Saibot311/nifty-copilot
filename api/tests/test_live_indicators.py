@@ -92,3 +92,21 @@ def test_every_working_tile_has_a_state_line(world):
     assert all(t["state"] for t in tiles.values())
     assert tiles["vix"]["state"] == "up on the day"
     assert tiles["atr"]["state"] in ("above its 1-year median", "below its 1-year median")
+
+
+def test_the_iv_tile_never_reads_an_option_expiring_today(monkeypatch):
+    """On 6 Oct 2026, expiry day, the tile read the expiring option's IV
+    (1.7%) against 11.7% realised. It reads the next expiry instead."""
+    import cache
+    asked = []
+
+    def chain(symbol="NIFTY", expiry=None):
+        asked.append(expiry)
+        e = expiry or "06-Oct-2026"
+        return {"expiry": e, "available_expiries": ["06-Oct-2026", "13-Oct-2026"], "as_of": "06-Oct-2026 15:30:00",
+                "atm_iv": {"CE": 1.7 if e == "06-Oct-2026" else 12.0, "PE": 1.7 if e == "06-Oct-2026" else 12.4}}
+    monkeypatch.setattr("options.chain_analytics.live_chain_analytics", chain)
+    monkeypatch.setattr(li, "_today", lambda: __import__("datetime").date(2026, 10, 6))
+    cache.invalidate()
+    got = li._chain_iv()
+    assert got["iv"] == pytest.approx(12.2) and got["expiry"] == "13 Oct"

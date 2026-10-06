@@ -265,7 +265,7 @@ def _history_frames() -> dict:
         bars5 = pd.DataFrame({k: [getattr(c, k) for c in candles] for k in ("open", "high", "low", "close")}, index=idx)
         daily, _, _ = load()
         return {"bars5": bars5, "daily": daily}
-    return cached("precheck_history", ttl_seconds=3600, producer=build, stale_ok=True)
+    return cached("precheck_history", ttl_seconds=3600, producer=build, background=True)
 
 
 def _forecast() -> dict | None:
@@ -311,13 +311,15 @@ def run_check(kind: str, strike: float, expiry_nse: str, lots: int = 1, premium:
     if window not in WINDOWS:
         raise ValueError(f"window must be one of {', '.join(WINDOWS)}")
     now = now or datetime.now(IST)
+    expiry = datetime.strptime(expiry_nse, "%d-%b-%Y").date()
+    if now >= datetime.combine(expiry, SESSION_CLOSE, tzinfo=IST):
+        raise LookupError(f"The {expiry_nse} contracts expired at 15:30 on {expiry:%-d %b}: pick a later expiry")
     holidays, _ = trading_holidays()
     chain = live_chain_table(expiry_nse, now.date())
     row = next((r for r in chain["rows"] if r["strike"] == float(strike)), None)
     c = row and row["call" if kind == "CE" else "put"]
     if not c:
         raise LookupError(f"NSE lists no {kind} at {strike:g} for {expiry_nse}")
-    expiry = datetime.strptime(expiry_nse, "%d-%b-%Y").date()
     paid = premium or c.get("ask") or c.get("ltp")
     if not paid:
         raise LookupError(f"No price for the {strike:g} {kind}: enter what you would pay")

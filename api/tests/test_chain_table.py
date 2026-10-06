@@ -224,3 +224,18 @@ def test_the_summary_matches_what_the_open_interest_card_showed():
 def test_a_chain_with_no_call_open_interest_has_no_ratio():
     oi = _table([(22800.0, _side(22800.0, oi=0), _side(22800.0, kind="PE", oi=500))])["open_interest"]
     assert oi["pcr"] is None and oi["max_call_oi_strike"] is None and oi["max_put_oi_strike"] == 22800.0
+
+
+def test_after_the_close_on_expiry_day_the_default_is_the_next_expiry():
+    """After 15:30 on 6 Oct 2026 the chain still listed 06-Oct-2026 first, and
+    the card, the before-you-buy check and the IV tile all opened on a
+    contract that had just expired."""
+    from datetime import datetime
+
+    from market_data.kite_session import IST
+    from options.chain_table import nearest_open
+    listed = ["06-Oct-2026", "13-Oct-2026", "19-Oct-2026"]
+    assert nearest_open(listed, datetime(2026, 10, 6, 14, 0, tzinfo=IST)) == "06-Oct-2026"   # still trading
+    assert nearest_open(listed, datetime(2026, 10, 6, 15, 30, tzinfo=IST)) == "13-Oct-2026"
+    assert nearest_open(listed, datetime(2026, 10, 6, 17, 0, tzinfo=IST)) == "13-Oct-2026"
+    assert nearest_open(["06-Oct-2026"], datetime(2026, 10, 6, 17, 0, tzinfo=IST)) is None

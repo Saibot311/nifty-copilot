@@ -38,7 +38,7 @@ LIVE = {"candle": {"close": 23300.0}, "provisional": True, "basis": "15m", "chan
 @pytest.fixture(autouse=True)
 def stub(monkeypatch):
     calls = {"similarity": 0}
-    monkeypatch.setattr(ctxmod, "cached", lambda key, ttl_seconds, producer: producer())
+    monkeypatch.setattr(ctxmod, "cached", lambda key, ttl_seconds, producer, **_: producer())
     monkeypatch.setattr(ctxmod, "build_recommendation", lambda symbol: REC)
     monkeypatch.setattr(ctxmod, "pattern_proximity", lambda symbol: PROX)
     monkeypatch.setattr(ctxmod, "load_research", lambda: RESEARCH)
