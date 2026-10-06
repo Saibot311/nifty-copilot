@@ -125,6 +125,12 @@ function BuyerView({ data, pick }: { data: OptionChainTable; pick: { strike: num
                 sub={`NIFTY ${b.needs_move_pts >= 0 ? "up" : "down"} ${Math.abs(b.needs_move_pts).toLocaleString("en-IN")} pts (${fmtPct(b.needs_move_pct)})`} />
         </div>
       )}
+      {b && (
+        <a id="chain-precheck" href={`?tab=journal&check=${pick.kind}:${pick.strike}:${data.expiry}`}
+          className="mt-3 inline-flex min-h-8 items-center rounded-md border border-zinc-700 px-3 text-[12px] text-zinc-200 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60">
+          Check it before buying: the move you need by when you plan to sell →
+        </a>
+      )}
     </div>
   );
 }

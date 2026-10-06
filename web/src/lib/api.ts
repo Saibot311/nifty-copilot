@@ -1462,3 +1462,21 @@ export type Breakouts = {
   travel_as_of: string | null;
 };
 export const fetchBreakouts = () => get<Breakouts>("/api/breakouts");
+
+/** Before you buy (briefing/precheck.py): one contract measured, never judged. */
+export type PrecheckWindow = "15m" | "30m" | "60m" | "close" | "1s" | "2s" | "3s" | "5s" | "expiry";
+export type Precheck = {
+  as_of: string; chain_as_of: string; spot: number; forward_basis: string; window: PrecheckWindow; window_label: string;
+  price_source: string; marked: number; note: string;
+  contract: {
+    kind: "CE" | "PE"; strike: number; expiry: string; premium: number; bid: number | null; ask: number | null;
+    lots: number; quantity: number; forward: number; direction: "up" | "down"; iv: number | null; exit_at: string;
+    paid_rs: number; buy_charges_rs: number; charges_rs: number; charges_pct: number;
+    spread_rs: number | null; spread_pct: number | null; sell_now_rs: number | null;
+    flat_rs: number; flat_pct: number; value_flat: number; breakeven_pts: number | null;
+  };
+  history: { touch_pct: number | null; end_pct: number | null; n: number; basis: string };
+  forecast: { target_day: string; sigma_pts: number | null; band68: number[] | null } | null;
+  checks: { key: string; tone: "warn" | "info"; text: string }[];
+};
+export const fetchPrecheck = (q: URLSearchParams) => journalRequest<Precheck>(`/api/precheck?${q.toString()}`);

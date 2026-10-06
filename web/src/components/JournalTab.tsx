@@ -6,6 +6,7 @@ import {
   type PaperReport,
 } from "@/lib/api";
 import { PaperCard } from "./PaperCard";
+import { PrecheckCard, type Prefill } from "./PrecheckCard";
 import { Panel, Pill, SectionLabel } from "./ui";
 
 const inputCls =
@@ -81,8 +82,20 @@ export function JournalTab({ paper }: { paper?: PaperReport | null }) {
   const s = report?.summary;
   const took = form.decision === "TOOK";
 
+  // From the check above: the contract fills the form; saving stays the reader's own step.
+  const fill = (p: Prefill) => {
+    setForm((f) => ({ ...f, decision: "TOOK", underlying: "NIFTY", option_type: p.option_type, strike: String(p.strike),
+                      expiry: p.expiry, quantity: String(p.quantity), entry_premium: String(p.entry_premium) }));
+    document.getElementById("j-date")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   return (
     <>
+      <section>
+        <SectionLabel hint="the contract you are about to buy, measured — never judged">Before you buy</SectionLabel>
+        <PrecheckCard onLog={fill} />
+      </section>
+
       <section>
         <SectionLabel hint="what you did, next to what the system said">Your trade journal</SectionLabel>
         <Panel className="p-4">

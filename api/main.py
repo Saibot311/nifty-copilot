@@ -336,6 +336,31 @@ def options_chain(
         raise HTTPException(503, f"Live option chain unavailable: {e}")
 
 
+@app.get("/api/precheck")
+def precheck(
+    option_type: str = Query(..., pattern="^(CE|PE)$"),
+    strike: float = Query(..., gt=0),
+    expiry: str = Query(..., pattern=r"^\d{2}-[A-Za-z]{3}-\d{4}$", description="e.g. 13-Oct-2026"),
+    lots: int = Query(1, ge=1, le=100),
+    premium: float | None = Query(None, gt=0, description="what you would pay a unit; the ask when left out"),
+    window: str = Query("close", description="15m 30m 60m close 1s 2s 3s 5s expiry: when you plan to sell"),
+) -> dict:
+    """Before you buy: one contract's charges, spread, decay to the exit,
+    the NIFTY move that gets the money back, and how often NIFTY has moved
+    that far that way over the same window since 2015. Measurements only;
+    nothing says whether to buy (briefing/precheck.py)."""
+    from briefing.precheck import run_check
+    from options.chain_table import UnknownExpiry
+    try:
+        return run_check(option_type, strike, expiry, lots, premium, window)
+    except UnknownExpiry as e:
+        raise HTTPException(404, str(e))
+    except (LookupError, ValueError) as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(503, f"Check unavailable: {e}")
+
+
 @app.get("/api/options/chain/contracts")
 def options_chain_contracts(
     expiry: str | None = Query(None, pattern=r"^\d{2}-[A-Za-z]{3}-\d{4}$",
