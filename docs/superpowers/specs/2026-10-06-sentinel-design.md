@@ -150,7 +150,7 @@ The backup list gains every irreplaceable database: `breakouts.db`, the forecast
 
 A "System health" line joins the freshness strip: "All checks passing", or the count of open
 incidents with the oldest one named. It links to a short list of incidents, each with what it is,
-when it opened, the repairs tried, and whether it is resolved. It sits on the Journal tab.
+when it opened, the repairs tried, and whether it is resolved. It sits in the freshness strip at the top of the Today tab.
 
 ## 4. What the owner does (Claude cannot: accounts, payments, system settings)
 
