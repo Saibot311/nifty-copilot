@@ -81,3 +81,12 @@ def test_the_forward_log_step_fails_when_the_last_session_is_not_the_one_recorde
     assert job.step_forward_log() is False
     monkeypatch.setattr(job, "last_session", lambda: "2026-09-28")
     assert job.step_forward_log() is True
+
+
+def test_a_forecast_that_could_not_be_written_is_retried_after_what_it_reads():
+    """5 Oct 2026: Monday's close and IV arrived only in the end-of-job retries,
+    after the forecast step had already run and written nothing."""
+    order = _job().RETRY_AT_END
+    assert "day-ahead forecast" in order
+    for before in ("NSE index report", "kite bars", "options archive", "implied volatility"):
+        assert order.index(before) < order.index("day-ahead forecast")

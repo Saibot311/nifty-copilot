@@ -103,3 +103,110 @@ def test_calibration_is_the_spread_of_recent_errors_and_tags_need_enough_days():
     cal = df.calibration(rows)
     assert cal["k"] == 1.2 and cal["multipliers"] == {"event": 1.0, "expiry": 1.0} and cal["window"] == 120
     assert df.calibration([{"z": 3.0, "tags": [], "range_ratio": 1, "day": date(2026, 1, 1)}])["k"] == df.K_BOUNDS[1]
+
+
+# --- never stalling silently (2026-10-06) --------------------------------------------
+# On 5 Oct the Kite login had lapsed, the archive stopped at 1 Oct, and the card
+# kept showing Monday's forecast into Tuesday with nothing written or scored.
+
+def test_a_close_missing_from_the_kite_archive_comes_from_nses_report():
+    daily = daily_series(60)
+    last = max(daily)
+    nxt = last + timedelta(days=3 if last.weekday() == 4 else 1)
+    nse = {last: {"open": 1, "high": 1, "low": 1, "close": 1},          # already archived: Kite's wins
+           nxt: {"open": 20100.0, "high": 20200.0, "low": 20000.0, "close": 20150.0}}
+    merged, filled = df.fill_from_nse(daily, nse)
+    assert filled == [nxt] and merged[nxt]["close"] == 20150.0 and merged[last] == daily[last]
+
+
+def test_a_close_nse_reported_without_a_range_is_not_used():
+    daily = daily_series(60)
+    nxt = max(daily) + timedelta(days=7)
+    merged, filled = df.fill_from_nse(daily, {nxt: {"open": None, "high": None, "low": None, "close": 20150.0}})
+    assert filled == [] and nxt not in merged
+
+
+def test_missing_implied_volatility_falls_back_to_india_vix_scaled_to_the_series():
+    days = [date(2026, 9, d) for d in range(1, 30) if date(2026, 9, d).weekday() < 5]
+    iv30 = {d: 0.13 for d in days[:-1]}
+    vix = {d: 14.3 for d in days}                                      # VIX runs 10% above the series
+    assert df.iv_on(days[-2], iv30, vix) == (0.13, "iv30")
+    iv, src = df.iv_on(days[-1], iv30, vix)
+    assert iv == pytest.approx(0.13) and "VIX" in src
+    assert df.iv_on(days[-1] + timedelta(days=1), iv30, vix) == (None, None)
+
+
+def test_the_forecast_is_written_from_vix_when_the_iv_series_is_late_and_says_so(tmp_path):
+    daily = daily_series(80)
+    days = sorted(daily)
+    last, target = days[-2], days[-1]
+    seen = {d: b for d, b in daily.items() if d <= last}
+    inputs = {**_inputs(seen), "iv30": {d: 0.15 for d in days[:-2]}, "vix": {d: 15.0 for d in days}}
+    evening = datetime.combine(last, datetime.min.time(), tzinfo=IST) + timedelta(hours=21)
+    assert df.run_day_forecast(evening, tmp_path / "fc.db", inputs, holidays=set())["forecast"] == target.isoformat()
+    from storage import day_forecast_db as store
+    assert "VIX" in store.records(tmp_path / "fc.db")[-1]["forecast"]["iv_source"]
+
+
+def test_a_missing_forecast_says_so_and_why(tmp_path):
+    daily = daily_series(80)
+    days = sorted(daily)
+    last, target = days[-2], days[-1]
+    stale = {d: b for d, b in daily.items() if d < last}               # the last close never arrived
+    night = datetime.combine(last, datetime.min.time(), tzinfo=IST) + timedelta(hours=23, minutes=30)
+    st = df.forecast_status(night, tmp_path / "fc.db", _inputs(stale), holidays=set())
+    assert st["stale"] and st["due"] == target.isoformat()
+    assert any(last.isoformat() in r and "close" in r for r in st["reasons"])
+    df.run_day_forecast(night, tmp_path / "fc.db", _inputs({d: b for d, b in daily.items() if d <= last}), holidays=set())
+    ok = df.forecast_status(night, tmp_path / "fc.db", _inputs({d: b for d, b in daily.items() if d <= last}),
+                            holidays=set())
+    assert not ok["stale"] and ok["reasons"] == []
+
+
+def test_before_the_nightly_job_a_missing_forecast_is_only_waiting():
+    daily = daily_series(80)
+    last = sorted(daily)[-2]
+    seen = {d: b for d, b in daily.items() if d <= last}
+    evening = datetime.combine(last, datetime.min.time(), tzinfo=IST) + timedelta(hours=17)
+    st = df.forecast_status(evening, None, _inputs(seen), holidays=set(), records=[])
+    assert not st["stale"] and st["waiting"]
+
+
+def test_the_record_says_whether_the_width_was_right():
+    recs = [{"target_day": f"2026-09-{d:02d}", "outcome": {"z": z, "inside68": abs(z) <= 1, "inside95": abs(z) <= 1.96,
+                                                         "lean_hit": True, "move_pts": 10.0}, "forecast": {}}
+            for d, z in zip(range(1, 21), [2.0, -2.0] * 10)]
+    acc = df.accuracy(recs)
+    assert acc["forecasts"] == 20 and acc["inside68_pct"] == 0.0
+    assert acc["width_ratio"] == pytest.approx(2.0) and "narrow" in acc["width_reading"]
+
+
+def test_a_login_catches_up_a_missing_forecast_only_when_it_can_still_count():
+    before_open = datetime(2026, 10, 6, 2, 10, tzinfo=IST)
+    stale = {"due": "2026-10-06", "stale": True, "waiting": False, "reasons": ["…"]}
+    assert df.needs_catch_up(stale, before_open, job_running=False)
+    assert not df.needs_catch_up(stale, before_open, job_running=True)                    # the job owns the data then
+    assert not df.needs_catch_up(stale, datetime(2026, 10, 6, 9, 20, tzinfo=IST), job_running=False)  # opened
+    assert not df.needs_catch_up({**stale, "stale": False, "waiting": True}, before_open, job_running=False)
+
+
+def test_the_job_counts_as_running_between_its_start_and_done_lines(tmp_path):
+    log = tmp_path / "daily_job.log"
+    log.write_text("[2026-10-05 19:32:19] daily job start\n[2026-10-05 21:33:27]   news tone series\n")
+    assert df.job_running(log)
+    log.write_text(log.read_text() + "[2026-10-06 02:41:15] daily job done — FAILED: news tone series\n")
+    assert not df.job_running(log)
+    assert not df.job_running(tmp_path / "missing.log")
+
+
+def test_logging_in_to_kite_starts_the_forecast_catch_up(monkeypatch):
+    import subprocess
+
+    import main
+    started = []
+    monkeypatch.setattr(main.kite_session, "check_state", lambda s: True)
+    monkeypatch.setattr(main.kite_session, "complete_login", lambda t: {"issued_at": "2026-10-06T02:03:54+05:30"})
+    monkeypatch.setattr(main.login_log_db, "record", lambda *a, **k: None)
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: started.append(args))
+    main.zerodha_callback(request_token="t", status="success", state="s")
+    assert started and started[0][-1].endswith("forecast_catchup.py")
