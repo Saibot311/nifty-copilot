@@ -76,7 +76,7 @@
   - `test_the_digest_runs_once_a_day_after_0830`;
   - `test_the_digest_names_each_open_incident`.
 - [ ] **Step 2:** Run `pytest tests/test_sentinel_alerts.py -q`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Read env via `access._env`. Send with `urllib.request` and a 10 s timeout; on any network error return False. A failed alert is logged by the caller and never raised. Move the `osascript` call from `health_watch.notify` here as `local_notify(message)` and make `health_watch.notify` call it.
+- [ ] **Step 3:** Implement. Read env via `access._env`. Send with `urllib.request` and a 10 s timeout; on any network error return False. A failed alert is logged by the caller and never raised. Move the `osascript` call from `health_watch.notify` here as `local_notify(message)`. Make `health_watch.notify`, `daily_job.notify`, `kite_login.notify` and the freshness check's notification call `send(...)`. This covers F3: the 08:45 "log in to Kite" reminder then reaches the phone.
 - [ ] **Step 4:** Run the tests plus `tests/test_health_watch*.py` if present. Expected: PASS.
 - [ ] **Step 5:** Commit: "Sentinel alerts: ntfy when configured, macOS always, one message per incident".
 
