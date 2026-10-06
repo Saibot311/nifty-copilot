@@ -58,7 +58,7 @@ def _pipeline_candidates(as_of: str, tests: int) -> list[dict]:
 
 
 def build_recommendation(symbol: str = "^NSEI") -> dict:
-    prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
+    prox = cached(f"proximity:{symbol}", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity(symbol))
     research = load_research()
     by_name = {p["strategy"]: p for p in (research or {}).get("patterns", [])}
     # The bar is corrected for every hypothesis that has had its look at the

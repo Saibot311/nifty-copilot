@@ -53,13 +53,27 @@ def _is_open() -> bool:
         return open_by_clock()
 
 
+def _today():
+    from market_data.kite_session import IST
+    return datetime.now(IST).date()
+
+
 def _chain_iv() -> dict:
-    """ATM implied volatility of the nearest expiry, from the same cached
-    chain the Options tab reads (one NSE request per two minutes at most)."""
+    """ATM implied volatility of the nearest expiry that does not expire
+    today, from the same cached chain the Options tab reads (one NSE request
+    per two minutes at most). An option in its last hours has almost no time
+    value, and its IV says nothing about the market: on expiry day, 6 Oct
+    2026, it read 1.7% against 11.7% realised."""
     from cache import cached
-    from options.chain_analytics import live_chain_analytics
+    from options import chain_analytics
+    from options.move_table import nearest_tradable
     try:
-        c = cached("option_chain:NIFTY:near", ttl_seconds=120, producer=live_chain_analytics, stale_ok=True)
+        c = cached("option_chain:NIFTY:near", ttl_seconds=120, producer=chain_analytics.live_chain_analytics, stale_ok=True)
+        if datetime.strptime(c.get("expiry") or "", "%d-%b-%Y").date() <= _today():
+            nxt = nearest_tradable(c.get("available_expiries") or [], _today())
+            if nxt:
+                c = cached(f"option_chain:NIFTY:{nxt}", ttl_seconds=120, stale_ok=True,
+                           producer=lambda: chain_analytics.live_chain_analytics(expiry=nxt))
     except Exception:
         return {"iv": None, "as_of": None}
     ivs = [v for v in (c.get("atm_iv") or {}).values() if v]

@@ -34,7 +34,7 @@ def _lock_for(key: str) -> threading.Lock:
 
 
 def cached(key: str, ttl_seconds: int, producer: Callable[[], Any],
-           stale_ok: bool = False, wait_s: float | None = None) -> Any:
+           stale_ok: bool = False, wait_s: float | None = None, background: bool = False) -> Any:
     """The cached value, producing it if it is missing or past its TTL.
 
     stale_ok: rather than wait for another thread's refresh, return the last
@@ -45,10 +45,17 @@ def cached(key: str, ttl_seconds: int, producer: Callable[[], Any],
     wait_s: give up waiting for the lock after this long and fall back to
     the stale value. A producer that never returns then costs one thread
     instead of every thread that follows it.
+
+    background: once a value exists, an expired one is handed back at once
+    and a daemon thread rebuilds it (cached_background). For slow producers
+    a page render asks for: pattern proximity takes 14 s, and the dashboard
+    used to wait for it every half hour.
     """
     hit = _CACHE.get(key)
     if hit and (time.monotonic() - hit[0]) < ttl_seconds:
         return hit[1]
+    if background and hit is not None:
+        return cached_background(key, ttl_seconds, producer)
 
     lock = _lock_for(key)
     have_stale = hit is not None

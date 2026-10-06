@@ -151,3 +151,26 @@ def test_a_failing_background_refresh_keeps_the_last_value():
     assert cached_background("bg-fail", 10, boom) == "old"
     _t.sleep(0.1)
     assert cached_background("bg-fail", 10, boom) == "old"
+
+
+def test_a_slow_expired_key_with_background_is_served_at_once_and_refreshed():
+    """The dashboard took 26 s to render every half hour: pattern proximity
+    (14 s) and the market snapshot (7 s) expired together and the page's
+    request rebuilt them while it waited, past the watchdog's 20 s. With
+    background=True an expired value is handed back and one thread rebuilds it."""
+    invalidate("slow_bg")
+    cached("slow_bg", ttl_seconds=60, producer=lambda: "old", background=True)   # cold: computed in the call
+    release = threading.Event()
+
+    def slow():
+        release.wait(5)
+        return "new"
+    started = time.monotonic()
+    got = cached("slow_bg", ttl_seconds=0, producer=slow, background=True)
+    assert got == "old" and time.monotonic() - started < 0.5
+    release.set()
+    for _ in range(50):
+        if cached("slow_bg", ttl_seconds=60, producer=lambda: "never", background=True) == "new":
+            break
+        time.sleep(0.05)
+    assert cached("slow_bg", ttl_seconds=60, producer=lambda: "never", background=True) == "new"

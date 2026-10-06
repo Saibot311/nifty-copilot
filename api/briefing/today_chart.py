@@ -187,7 +187,7 @@ def _daily():
 def _proximity() -> dict:
     from backtest.pattern_proximity import pattern_proximity
     from cache import cached
-    return cached("proximity:^NSEI", ttl_seconds=1800, producer=lambda: pattern_proximity("^NSEI"))
+    return cached("proximity:^NSEI", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity("^NSEI"))
 
 
 def _live_candle() -> dict | None:

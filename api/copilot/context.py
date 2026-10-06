@@ -116,7 +116,7 @@ def _market_digest() -> dict:
     from market_engine.engine import load_studies, today
     from market_engine.knowledge import KNOWLEDGE
 
-    t = cached("market_today", ttl_seconds=1800, producer=today)
+    t = cached("market_today", ttl_seconds=1800, background=True, producer=today)
     s = load_studies() or {}
     vrp = s.get("variance_risk_premium") or {}
     pos = t.get("positioning") or {}
@@ -192,7 +192,7 @@ def _replication_digest() -> dict | None:
 def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | None = None) -> dict:
     sections = SCOPES.get(scope or "", DEFAULT_SECTIONS)
     rec = cached(f"recommendation:{symbol}", ttl_seconds=600, producer=lambda: build_recommendation(symbol))
-    prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
+    prox = cached(f"proximity:{symbol}", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity(symbol))
     research = {p["strategy"]: p for p in (load_research() or {}).get("patterns", [])}
 
     def pattern(p: dict) -> dict:
@@ -241,7 +241,7 @@ def build_context(symbol: str = "^NSEI", live: dict | None = None, scope: str | 
     if "similarity" in sections:
         # Only computed when the scope needs it — a question about a
         # pattern's record should not wait for the analog search.
-        sim = cached(f"similarity:{symbol}", ttl_seconds=1800, producer=lambda: run_similarity(symbol))
+        sim = cached(f"similarity:{symbol}", ttl_seconds=1800, background=True, producer=lambda: run_similarity(symbol))
         wf = sim.get("walk_forward", {})
         ctx["similar_past_days"] = {
             "count": len(sim.get("analogs", [])),

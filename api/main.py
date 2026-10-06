@@ -1110,7 +1110,7 @@ def market() -> dict:
     strike activity and who is positioned how — plus the historical studies
     and the sourced principles behind them. For understanding; not a signal."""
     try:
-        today = cached("market_today", ttl_seconds=1800, producer=market_today)
+        today = cached("market_today", ttl_seconds=1800, background=True, producer=market_today)
     except Exception as e:
         raise HTTPException(503, f"Market context failed: {e}")
     return {"today": today, "studies": load_market_studies(), "knowledge": KNOWLEDGE}
@@ -1195,7 +1195,7 @@ def patterns_today(symbol: str = SymbolQuery) -> dict:
     """Patterns that formed on the last close or could form on the next one,
     each with the option it points to and that option's track record."""
     try:
-        prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
+        prox = cached(f"proximity:{symbol}", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity(symbol))
     except Exception as e:
         raise HTTPException(503, f"Pattern proximity failed: {e}")
     try:
@@ -1215,7 +1215,7 @@ def live_patterns_endpoint(symbol: str = SymbolQuery) -> dict:
     closed at the current level — provisional until 15:30."""
     try:
         live = cached("live_patterns", ttl_seconds=60, producer=live_patterns)
-        prox = cached(f"proximity:{symbol}", ttl_seconds=1800, producer=lambda: pattern_proximity(symbol))
+        prox = cached(f"proximity:{symbol}", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity(symbol))
     except Exception as e:
         raise HTTPException(503, f"Live pattern tracking failed: {e}")
     return {**live, "patterns": merge_live(live, prox, load_research())}
@@ -1226,7 +1226,7 @@ def similarity(symbol: str = SymbolQuery) -> dict:
     """Phase 11: past days most like today and what followed, next to the
     base rate and a walk-forward test of whether analogs predict anything."""
     try:
-        return cached(f"similarity:{symbol}", ttl_seconds=1800, producer=lambda: run_similarity(symbol))
+        return cached(f"similarity:{symbol}", ttl_seconds=1800, background=True, producer=lambda: run_similarity(symbol))
     except Exception as e:
         raise HTTPException(503, f"Similarity failed: {e}")
 
@@ -1240,7 +1240,7 @@ class CopilotQuestion(BaseModel):
 def _live_or_none() -> dict | None:
     try:
         live = cached("live_patterns", ttl_seconds=60, producer=live_patterns)
-        prox = cached("proximity:^NSEI", ttl_seconds=1800, producer=lambda: pattern_proximity("^NSEI"))
+        prox = cached("proximity:^NSEI", ttl_seconds=1800, background=True, producer=lambda: pattern_proximity("^NSEI"))
         return {**live, "patterns": merge_live(live, prox, load_research())}
     except Exception:
         return None

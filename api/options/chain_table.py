@@ -137,6 +137,16 @@ def _open_interest(rows: list[dict]) -> dict:
     }
 
 
+def nearest_open(expiries: list[str], now: datetime) -> str | None:
+    """The nearest expiry still trading at `now`: on expiry day, that day's
+    contracts until its 15:30 close and the next expiry from then on (NSE
+    keeps listing the expired one for the evening)."""
+    from datetime import time as _time
+    open_ = sorted((datetime.strptime(e, "%d-%b-%Y").date(), e) for e in expiries
+                   if datetime.combine(datetime.strptime(e, "%d-%b-%Y").date(), _time(15, 30), tzinfo=now.tzinfo) > now)
+    return open_[0][1] if open_ else None
+
+
 def live_chain_table(expiry: str | None = None, today: date | None = None) -> dict:
     """The live chain for `expiry` (the nearest when not given). An expiry NSE
     does not list is refused before its chain is asked for."""
@@ -147,7 +157,9 @@ def live_chain_table(expiry: str | None = None, today: date | None = None) -> di
     expiries = (nse.option_chain_contract_info("NIFTY") or {}).get("expiryDates") or []
     if not expiries:
         raise RuntimeError("NSE listed no NIFTY expiries")
-    target = expiry or expiries[0]
+    # A given day is read at its open; with none, the moment of asking.
+    now = datetime.combine(today, datetime.min.time().replace(hour=9, minute=15), tzinfo=IST) if today else datetime.now(IST)
+    target = expiry or nearest_open(expiries, now) or expiries[0]
     if target not in expiries:
         raise UnknownExpiry(f"NSE lists no NIFTY expiry {target}")
     data = nse.index_option_chain("NIFTY", target)
