@@ -56,6 +56,7 @@ LABELS = {"pdh": "Yesterday's high", "pdl": "Yesterday's low", "pdc": "Yesterday
           "pwh": "Last week's high", "pwl": "Last week's low",
           "fch": "Forecast band top (68%)", "fcl": "Forecast band bottom (68%)",
           "oic": "Most call open interest", "oip": "Most put open interest",
+          "r2": "Pivot R2", "r1": "Pivot R1", "pp": "Pivot point", "s1": "Pivot S1", "s2": "Pivot S2",
           "baseline": "Any level (random, the yardstick)"}
 ORDER = tuple(LABELS)
 BASELINE_LEVELS = 3            # random levels a session, within BASELINE_SPAN of the last close
@@ -75,6 +76,10 @@ def day_levels(daily: dict, day: date, session: pd.DataFrame, extras: dict) -> l
     if prev:
         p = daily[max(prev)]
         out += [("pdh", p["high"]), ("pdl", p["low"]), ("pdc", p["close"])]
+        # The day's support and resistance: classic floor pivots from the previous session.
+        pp = (p["high"] + p["low"] + p["close"]) / 3
+        rng = p["high"] - p["low"]
+        out += [("pp", pp), ("r1", 2 * pp - p["low"]), ("s1", 2 * pp - p["high"]), ("r2", pp + rng), ("s2", pp - rng)]
         monday = day - timedelta(days=day.weekday())
         week = [daily[d] for d in prev if monday - timedelta(days=7) <= d < monday]
         if week:
@@ -531,6 +536,10 @@ def build_breakouts(now: datetime | None = None) -> dict:
             "baseline": rec.get("baseline"), "baseline_odds": base,
             "targets": list(TARGETS), "horizons": [str(m) for m in TRAVEL_MIN],
             "summary": summary(st, base is not None),
+            "levels_merged": (merged := merge_same_price(sorted(st["levels"], key=lambda lv: -lv["price"]))),
+            "key_levels": key_levels(merged, price),
+            "entry": (entry := entry_check(merged, price, table, now) if price else None),
+            "entry_as_of": now.isoformat(timespec="seconds") if entry and not entry.get("error") else None,
             "travel_as_of": travel.get("computed_at"),
             "record": {"computed_at": research.get("computed_at"), "since": research.get("since"),
                        "sessions": research.get("sessions"), "breaks": research.get("breaks")},
@@ -540,6 +549,116 @@ def build_breakouts(now: datetime | None = None) -> dict:
                      "From 6 Oct 2026 each break is also recorded at the real price of the at-the-money option on its "
                      "side. A description of how breaks have gone, not a signal: no break rule has been registered and "
                      "judged against the evidence bar.")}
+
+
+def merge_same_price(levels: list[dict]) -> list[dict]:
+    """Levels at the same price as one row: "Yesterday's high & close"."""
+    groups: dict[float, list[dict]] = {}
+    for lv in levels:
+        groups.setdefault(round(float(lv["price"]), 2), []).append(lv)
+    out = []
+    for g in groups.values():
+        if len(g) == 1:
+            out.append({**g[0], "keys": [g[0]["key"]]})
+            continue
+        words = [lv["label"].split() for lv in g]
+        common = 0
+        while all(len(w) > common + 1 and w[common] == words[0][common] for w in words):
+            common += 1
+        rest = [" ".join(w[common:]) for w in words]
+        label = " ".join(words[0][:common] + [", ".join(rest[:-1]) + " & " + rest[-1]])
+        out.append({**g[0], "label": label, "keys": [lv["key"] for lv in g]})
+    return out
+
+
+def key_levels(levels: list[dict], last: float | None) -> dict:
+    """The two that matter now: the nearest level above NIFTY (resistance) and below it (support)."""
+    if last is None:
+        return {"resistance": None, "support": None}
+    above = [lv for lv in levels if lv["price"] > last]
+    below = [lv for lv in levels if lv["price"] < last]
+    return {"resistance": min(above, key=lambda lv: lv["price"]) if above else None,
+            "support": max(below, key=lambda lv: lv["price"]) if below else None}
+
+
+def entry_odds(table: dict, key: str, direction: str, need_pts: float, price: float, minutes: int) -> dict:
+    """How often, since 2015, a break of `key` in `direction` was followed by at
+    least `need_pts` the break's way within `minutes`, at today's price, beside
+    random lines measured the same way."""
+    def pooled(k):
+        return sorted(v for o in ("gap up", "gap down", "flat")
+                      for v in (table.get(f"{k}|{direction}|{o}") or {}).get(str(minutes), []))
+    mine, base = pooled(key), pooled("baseline")
+    pct, rpct = _share(mine, need_pts, price), _share(base, need_pts, price)
+    return {"pct": pct, "n": len(mine), "random_pct": rpct, "random_n": len(base),
+            "verdict": CODES[compare(pct, len(mine), rpct, len(base))]}
+
+
+ENTRY_WINDOWS = (15, 30, 60)
+
+
+def entry_check(levels: list[dict], last: float | None, table: dict, now: datetime, chain: dict | None = None,
+                holidays: set | None = None) -> dict:
+    """For the nearest level above and below: if it breaks, the at-the-money
+    option on that side bought now, the NIFTY move it needs to get its money
+    back (both legs' charges and the spread, briefing/precheck.py) within 15,
+    30 and 60 minutes, and how often a break of that level travelled that far
+    in that time since 2015, beside random lines. Measurements, not a call."""
+    from backtest.options_engine import OptionsCostModel
+    from briefing import precheck
+    from options.move_table import forward_from
+    keys = key_levels(levels, last)
+    out: dict = {"resistance": None, "support": None, "error": None}
+    if chain is None:
+        try:
+            chain = _entry_chain(now)
+        except Exception as e:
+            out["error"] = f"option chain unavailable: {type(e).__name__}"
+            return out
+    if holidays is None:
+        from market_data.nse_holidays import trading_holidays
+        holidays = trading_holidays()[0]
+    rows = chain["rows"]
+    atm = min(rows, key=lambda r: abs(r["strike"] - chain["underlying_value"]))
+    forward, _ = forward_from(atm, chain["underlying_value"])
+    expiry = datetime.strptime(chain["expiry"], "%d-%b-%Y").date()
+    costs = OptionsCostModel(premium_slippage_pct=0.0)
+    for side, direction, kind in (("resistance", "up", "CE"), ("support", "down", "PE")):
+        lv = keys[side]
+        c = atm["call" if kind == "CE" else "put"] or {}
+        premium = c.get("ask") or c.get("ltp")
+        if lv is None or not premium:
+            continue
+        windows = {}
+        for w in ENTRY_WINDOWS:
+            exit_at = precheck.exit_time(f"{w}m", now, expiry, holidays)
+            e = precheck.economics(kind, atm["strike"], expiry, float(premium), c.get("bid"), c.get("ask"), 1, forward,
+                                   now, exit_at, holidays, costs, chain.get("lot_size") or 65)
+            need = e["breakeven_pts"]
+            odds = (entry_odds(table, lv.get("keys", [lv["key"]])[0], direction, need, last, w) if need
+                    else {"pct": None, "n": 0, "random_pct": None, "random_n": 0, "verdict": "few"})
+            windows[str(w)] = {"need_pts": need, **odds}
+        out[side] = {"key": lv["key"], "label": lv["label"], "price": lv["price"],
+                     "distance_pts": round(abs(lv["price"] - last), 1), "direction": direction,
+                     "option": {"kind": kind, "strike": atm["strike"], "expiry": expiry.isoformat(),
+                                "premium": float(premium), "price_source": "ask" if c.get("ask") else "last trade"},
+                     "windows": windows}
+    return out
+
+
+def _entry_chain(now: datetime) -> dict:
+    """The nearest expiry that does not expire today (the studies' contract), from
+    the same cache the option chain card uses."""
+    from cache import cached
+    from options.chain_table import live_chain_table
+    from options.move_table import nearest_tradable
+    near = cached("option_chain_contracts:near", ttl_seconds=120, producer=lambda: live_chain_table(None),
+                  stale_ok=True)
+    expiry = nearest_tradable(near["expiries"], now.date()) or near["expiry"]
+    if expiry == near["expiry"]:
+        return near
+    return cached(f"option_chain_contracts:{expiry}", ttl_seconds=120, producer=lambda: live_chain_table(expiry),
+                  stale_ok=True)
 
 
 def _and(names: list[str]) -> str:

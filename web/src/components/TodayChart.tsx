@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
-import type { ChartCandle, ChartData, ChartZone } from "@/lib/api";
+import type { Breakouts, ChartCandle, ChartData, ChartZone } from "@/lib/api";
 import { Offline, Panel } from "./ui";
 
 /** Where NIFTY stands, and what close would change the call.
@@ -102,12 +102,19 @@ function Toggle({ on, onClick, children, label }: { on: boolean; onClick: () => 
 
 const BTN = "rounded-md border border-zinc-800 px-2 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 disabled:opacity-30";
 
-export function TodayChart({ data }: { data: ChartData | null }) {
+type KeyLevels = Breakouts["key_levels"] | null | undefined;
+
+/** keyLevels: the breakout card's nearest resistance above and support below
+ *  (/api/breakouts), drawn across today with their names; they move as NIFTY
+ *  crosses levels, on the page's own refresh. */
+export function TodayChart({ data, keyLevels }: { data: ChartData | null; keyLevels?: KeyLevels }) {
   if (!data || data.candles.length === 0) return <Offline what="Price chart" />;
-  return <ChartView data={data} />;
+  return <ChartView data={data} keyLevels={keyLevels} />;
 }
 
-function ChartView({ data }: { data: ChartData }) {
+const RES = "#f59e0b", SUP = "#38bdf8";
+
+function ChartView({ data, keyLevels }: { data: ChartData; keyLevels?: KeyLevels }) {
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [w, setW] = useState(0);
@@ -206,7 +213,12 @@ function ChartView({ data }: { data: ChartData }) {
   // today's levels would only squash the old candles.
   const values = bars.flatMap((b) => [b.low, b.high,
     ...(show.ema20 && b.ema20 != null ? [b.ema20] : []), ...(show.ema50 && b.ema50 != null ? [b.ema50] : [])]);
-  if (atLatest) values.push(data.levels.prev_high, data.levels.prev_low, ref, ...lanes.map((z) => z.edge ?? ref));
+  const keyLines = [
+    ...(keyLevels?.resistance ? [{ ...keyLevels.resistance, role: "R" as const, color: RES }] : []),
+    ...(keyLevels?.support ? [{ ...keyLevels.support, role: "S" as const, color: SUP }] : []),
+  ];
+  if (atLatest) values.push(data.levels.prev_high, data.levels.prev_low, ref, ...lanes.map((z) => z.edge ?? ref),
+    ...keyLines.map((k) => k.price));
   const lo0 = Math.min(...values), hi0 = Math.max(...values);
   const pad = (hi0 - lo0) * 0.06 || 1;
   const lo = lo0 - pad, hi = hi0 + pad;
@@ -413,6 +425,16 @@ function ChartView({ data }: { data: ChartData }) {
 
             {show.ema20 && <polyline points={line("ema20")} fill="none" stroke={EMA20} strokeWidth="1.5" />}
             {show.ema50 && <polyline points={line("ema50")} fill="none" stroke={EMA50} strokeWidth="1.5" />}
+
+            {/* the two key levels from the breakout card: nearest resistance above, support below */}
+            {atLatest && keyLines.filter((k) => inRange(k.price)).map((k) => (
+              <g key={k.role}>
+                <line x1={plotL} x2={colR} y1={y(k.price)} y2={y(k.price)} stroke={k.color} strokeWidth="1.25" strokeDasharray="6 3" opacity="0.85" />
+                <text x={plotL + 2} y={y(k.price) + (k.role === "R" ? -4 : 12)} fontSize="9.5" fill={k.color}>
+                  {k.role === "R" ? "resistance" : "support"} · {k.label} {fmt(k.price)}
+                </text>
+              </g>
+            ))}
 
             {/* the price now */}
             {inRange(ref) && (

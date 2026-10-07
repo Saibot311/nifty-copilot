@@ -1469,7 +1469,21 @@ export type Breakouts = {
   targets: number[]; horizons: string[];
   summary: { head: string; edge: string; better: string[] };
   travel_as_of: string | null;
+  /** Every level, highest first, with levels at one price merged ("Yesterday's high & close"). */
+  levels_merged: (BreakoutLevel & { keys: string[] })[];
+  /** The nearest level above NIFTY and the nearest below. */
+  key_levels: { resistance: KeyLevel | null; support: KeyLevel | null };
+  entry: BreakoutEntry | null;
 };
+export type KeyLevel = { key: string; label: string; price: number };
+export type EntryWindow = { need_pts: number | null; pct: number | null; n: number; random_pct: number | null;
+                            random_n: number; verdict: Versus };
+export type EntrySide = {
+  key: string; label: string; price: number; distance_pts: number; direction: "up" | "down";
+  option: { kind: "CE" | "PE"; strike: number; expiry: string; premium: number; price_source: string };
+  windows: Record<string, EntryWindow>;
+};
+export type BreakoutEntry = { resistance: EntrySide | null; support: EntrySide | null; error: string | null };
 export const fetchBreakouts = () => get<Breakouts>("/api/breakouts");
 
 /** Before you buy (briefing/precheck.py): one contract measured, never judged. */

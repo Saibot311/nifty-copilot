@@ -296,3 +296,69 @@ def test_each_level_says_in_plain_words_where_it_is_and_what_happened_today():
 def test_a_level_further_than_the_random_lines_is_marked():
     lv = {x["key"]: x for x in bl.evaluate(bars([129, 131, 127, 133]), DAILY, DAY, {"oip": 100.0})["levels"]}
     assert lv["oip"]["beyond_random"] and not lv["pdc"]["beyond_random"]  # 100 is 22% from the 128 close
+
+
+# --- support and resistance, the two key levels, the entry check ----------------------
+
+def test_the_days_floor_pivots_come_from_the_previous_session():
+    lv = {x["key"]: x["price"] for x in bl.day_levels(DAILY, DAY, bars([129, 131, 127, 133]), {})}
+    # 5 Oct: high 130, low 108, close 128 -> P 122, R1 136, S1 114, R2 144, S2 100
+    assert (lv["pp"], lv["r1"], lv["s1"], lv["r2"], lv["s2"]) == (122, 136, 114, 144, 100)
+
+
+def test_levels_at_the_same_price_are_one_row():
+    rows = bl.merge_same_price([{"key": "pdh", "label": "Yesterday's high", "price": 22776.1},
+                                {"key": "pdc", "label": "Yesterday's close", "price": 22776.1},
+                                {"key": "orh", "label": "Opening range high", "price": 22692.95}])
+    assert [r["label"] for r in rows] == ["Yesterday's high & close", "Opening range high"]
+    assert rows[0]["keys"] == ["pdh", "pdc"]
+
+
+def test_the_key_levels_are_the_nearest_above_and_below_nifty():
+    levels = [{"key": "pdh", "label": "Yesterday's high", "price": 22776.1},
+              {"key": "orh", "label": "Opening range high", "price": 22692.95},
+              {"key": "orl", "label": "Opening range low", "price": 22600.45},
+              {"key": "pdl", "label": "Yesterday's low", "price": 22561.6}]
+    k = bl.key_levels(levels, 22603.05)
+    assert k["resistance"]["key"] == "orh" and k["support"]["key"] == "orl"
+    assert bl.key_levels(levels, 23000.0)["resistance"] is None
+
+
+def test_the_entry_odds_are_counted_at_the_exact_move_needed():
+    evs = [{"level": "orh", "direction": "up", "open": "flat", "close": 20000.0,
+            "outcome": {f"travel_{m}": 20000 * p / 100 for m in bl.TRAVEL_MIN}} for p in (0.1, 0.2, 0.3, 0.4)]
+    evs += [{"level": "baseline", "direction": "up", "open": "flat", "close": 20000.0,
+             "outcome": {f"travel_{m}": 20000 * p / 100 for m in bl.TRAVEL_MIN}} for p in (0.1, 0.1, 0.4, 0.4)]
+    table = bl.travel_table(evs)
+    o = bl.entry_odds(table, "orh", "up", need_pts=37.0, price=25000.0, minutes=30)  # 25, 50, 75, 100 pts at 25,000
+    assert o["pct"] == 75.0 and o["n"] == 4 and o["random_pct"] == 50.0 and o["random_n"] == 4
+    assert o["verdict"] == "few"                                                    # too few breaks to judge
+
+
+def test_the_entry_check_prices_the_atm_option_and_counts_the_odds_for_each_window():
+    levels = [{"key": "orh", "label": "Opening range high", "price": 22692.95},
+              {"key": "orl", "label": "Opening range low", "price": 22600.45}]
+    evs = [{"level": k, "direction": d, "open": "flat", "close": 22600.0,
+            "outcome": {f"travel_{m}": 22600 * p / 100 for m in bl.TRAVEL_MIN}}
+           for k, d in (("orh", "up"), ("orl", "down"), ("baseline", "up"), ("baseline", "down"))
+           for p in (0.05, 0.1, 0.2, 0.3)]
+    table = bl.travel_table(evs)
+    row = {"strike": 22600.0, "is_atm": True,
+           "call": {"bid": 99.0, "ask": 100.0, "ltp": 99.5}, "put": {"bid": 89.0, "ask": 90.0, "ltp": 89.5}}
+    chain = {"expiry": "13-Oct-2026", "rows": [row], "lot_size": 65, "underlying_value": 22603.05}
+    now = datetime(2026, 10, 7, 11, 0, tzinfo=IST)
+    e = bl.entry_check(levels, 22603.05, table, now, chain=chain, holidays=set())
+    up, down = e["resistance"], e["support"]
+    assert up["key"] == "orh" and up["direction"] == "up" and up["option"]["kind"] == "CE"
+    assert down["option"]["kind"] == "PE" and down["option"]["premium"] == 90.0
+    assert set(up["windows"]) == {"15", "30", "60"}
+    w = up["windows"]["30"]
+    assert w["need_pts"] > 0 and w["n"] == 4 and w["random_n"] == 4 and w["verdict"] == "few"
+    assert up["windows"]["15"]["need_pts"] < up["windows"]["60"]["need_pts"]  # longer wait, more decay to beat
+
+
+def test_the_entry_check_and_the_key_levels_are_watched_for_staleness():
+    import briefing.freshness as fr
+    keys = {s.key: s for s in fr.SOURCES}
+    assert keys["breakout_entry"].path == "/api/breakouts" and keys["breakout_entry"].fields == ("entry_as_of",)
+    assert keys["breakout_entry"].kind == "live" and keys["breakout_entry"].max_age_min == 10
