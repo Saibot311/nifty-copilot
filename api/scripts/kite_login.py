@@ -31,8 +31,11 @@ LOGIN_PAGE = "http://127.0.0.1:8000/api/zerodha/login"
 
 def notify(message: str) -> None:
     """To the phone when ntfy is set up, and to the Mac (sentinel/alerts.py)."""
-    from sentinel.alerts import send
-    send("Kite login", message)
+    try:
+        from sentinel.alerts import send
+        send("Kite login", message)
+    except Exception:
+        pass  # an alert must never break what it reports on
 
 
 def main() -> int:

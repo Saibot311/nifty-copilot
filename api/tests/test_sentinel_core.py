@@ -47,7 +47,8 @@ def test_a_check_that_raises_is_a_finding_and_the_rest_still_run(env):
     kw, _ = env
     r = core.run("fast", [_check(None, "broken", raises=True), _check(lambda: Finding(False, "warn", "x"), "disk")], T0, **kw)
     assert set(r["failing"]) == {"broken", "disk"}
-    assert "check broken: boom" in [o["summary"] for o in idb.open_incidents(kw["db_path"])][0]
+    summary = [o["summary"] for o in idb.open_incidents(kw["db_path"])][0]
+    assert summary.startswith("check broken") and "boom" in summary
 
 
 def test_it_resolves_only_after_two_passes(env):

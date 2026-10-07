@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from market_data.kite_session import IST  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "data" / "sentinel.json"
+LOCK = Path(__file__).resolve().parent.parent / "data" / "sentinel.lock"
 
 
 def all_checks() -> list:
@@ -45,9 +46,19 @@ def main(argv: list[str] | None = None) -> int:
     from sentinel import core
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=("fast", "deep"), default="fast")
+    ap.add_argument("--job-running", choices=("auto", "no"), default="auto",
+                    help="'no' from the nightly job itself, whose own deep run may repair")
     a = ap.parse_args(argv)
+    import fcntl
+    lock = open(LOCK, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("sentinel: another run is in progress; this one exits")
+        return 0
     now = datetime.now(IST)
-    result = core.run(a.mode, all_checks(), now)
+    kw = {"job_running": False} if a.mode == "deep" or a.job_running == "no" else {}
+    result = core.run(a.mode, all_checks(), now, **kw)
     if a.mode == "fast":
         send_digest_if_due(now)
     OUT.write_text(json.dumps({"checked_at": now.isoformat(timespec="seconds"), "mode": a.mode, **result}, indent=1))

@@ -20,6 +20,10 @@ HOLIDAYS_AHEAD = timedelta(days=60)
 RATE_CARD_MAX_AGE = timedelta(days=180)
 CHAIN_FIELDS = ("lastPrice", "openInterest", "impliedVolatility", "buyPrice1", "sellPrice1")
 QUOTE_FIELDS = ("last", "open", "high", "low", "market_time")
+# NSE stalls requests that do not look like a browser; the others do not mind.
+HOST_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+NPM_EVERY = timedelta(days=7)
 HOSTS = {"yahoo": "https://query1.finance.yahoo.com", "gdelt": "https://api.gdeltproject.org",
          "nse": "https://www.nseindia.com"}
 SECURITY_ROWS = ("1.1", "15.1", "15.2")
@@ -67,8 +71,8 @@ def job_missed(log_text: str, last_session: date, now: datetime) -> Finding:
     done = [datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
             for m in re.finditer(r"\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\] daily job done", log_text)]
     ok = any(d >= after for d in done)
-    return Finding(ok, "warn", f"The nightly job did not finish after the {last_session:%-d %b} session; "
-                   "the catch-up starts it", {"last_done": max(done).isoformat() if done else None})
+    return Finding(ok, "warn", f"The nightly job did not finish after the {last_session:%-d %b} session",
+                   {"last_done": max(done).isoformat() if done else None})
 
 
 def job_overrun(started_at: datetime | None, now: datetime, step: str) -> Finding:
@@ -81,12 +85,38 @@ def job_twice(pids: list[int]) -> Finding:
     return Finding(len(pids) <= 1, "warn", f"{len(pids)} nightly jobs running at once", {"pids": pids})
 
 
-def catch_up_allowed(state: dict, today: date, running: bool) -> bool:
-    return not running and state.get("catch_up_on") != today.isoformat()
+def catch_up_allowed(state: dict, now: datetime, running: bool, session_day: bool) -> bool:
+    """Once a day, never beside a running job, and only when it can finish
+    before the market opens (before 09:00 on a session day) or on a day off.
+    After the close the 19:30 run is the catch-up."""
+    if running or state.get("catch_up_on") == now.date().isoformat():
+        return False
+    return not session_day or now.hour < 9
+
+
+def job_pids(ps_text: str) -> list[int]:
+    """The nightly job's Python processes. launchd starts it under caffeinate,
+    whose own command line names the script too: that is not a second job."""
+    out = []
+    for line in ps_text.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2 and parts[1].split()[0].lower().endswith("python") and "scripts/daily_job.py" in parts[1]:
+            out.append(int(parts[0]))
+    return out
+
+
+def year_end(last_holiday: date) -> date:
+    return date(last_holiday.year, 12, 31)
+
+
+def npm_due(last: str | None, today: date) -> bool:
+    return last is None or today - date.fromisoformat(last) >= NPM_EVERY
 
 
 def holidays_known(known_through: date | None, today: date) -> Finding:
-    ok = known_through is not None and known_through >= today + HOLIDAYS_AHEAD
+    """Judged in December only: NSE publishes next year's list late in the year,
+    and a reminder before then is one the owner cannot act on."""
+    ok = known_through is not None and (today.month < 12 or known_through >= today + HOLIDAYS_AHEAD)
     return Finding(ok, "warn", "NSE's holiday list does not reach two months ahead (it ends "
                    f"{known_through or 'nowhere'}): next year's list is not out yet, or NSE did not answer",
                    {"known_through": str(known_through)})
@@ -136,8 +166,7 @@ def _now():
 
 
 def _job_pids() -> list[int]:
-    out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=10).stdout
-    return [int(line.split()[0]) for line in out.splitlines() if "scripts/daily_job.py" in line]
+    return job_pids(subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=10).stdout)
 
 
 def _job_started() -> tuple[datetime | None, str]:
@@ -162,14 +191,16 @@ def _last_session(today: date) -> date:
 
 
 def _catch_up() -> tuple[bool, str]:
+    from market_data.nse_holidays import is_session, trading_holidays
     from sentinel.core import nightly_job_running
     state = _state()
-    today = _now().date()
-    if not catch_up_allowed(state, today, nightly_job_running()):
-        return False, "already started today, or the job is running"
-    subprocess.Popen([sys.executable, str(API / "scripts" / "daily_job.py")], cwd=API, start_new_session=True,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    state["catch_up_on"] = today.isoformat()
+    now = _now()
+    if not catch_up_allowed(state, now, nightly_job_running(), is_session(now.date(), trading_holidays()[0])):
+        return False, "not now: once a day, before 09:00 on a session day, never beside a running job"
+    keep_awake = ["/usr/bin/caffeinate", "-i", "-s"] if sys.platform == "darwin" else []
+    subprocess.Popen([*keep_awake, sys.executable, str(API / "scripts" / "daily_job.py")], cwd=API,
+                     start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    state["catch_up_on"] = now.date().isoformat()
     _save(state)
     return True, "the nightly job was started"
 
@@ -195,7 +226,7 @@ def _hosts() -> Finding:
     results = {}
     for name, url in HOSTS.items():
         try:
-            requests.head(url, timeout=10)
+            requests.head(url, timeout=10, headers=HOST_HEADERS)
             results[name] = True
         except Exception:
             results[name] = False
@@ -208,7 +239,7 @@ def _hosts() -> Finding:
 def _holidays() -> Finding:
     from market_data.nse_holidays import trading_holidays
     hol, known = trading_holidays()
-    return holidays_known(max(hol) if known and hol else None, _now().date())
+    return holidays_known(year_end(max(hol)) if known and hol else None, _now().date())
 
 
 def _lot() -> Finding:
@@ -236,10 +267,14 @@ def _security() -> Finding:
 
 
 def _npm() -> Finding:
-    if _now().weekday() != 6:
-        return Finding(True, "info", "checked on Sundays")
+    state = _state()
+    today = _now().date()
+    if not npm_due(state.get("npm_on"), today):
+        return Finding(True, "info", f"checked weekly, last {state.get('npm_on')}")
     out = subprocess.run(["npm", "audit", "--omit=dev", "--json"], cwd=API.parent / "web", capture_output=True,
                          text=True, timeout=120).stdout
+    state["npm_on"] = today.isoformat()
+    _save(state)
     return npm_audit(json.loads(out or "{}"))
 
 

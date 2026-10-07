@@ -69,9 +69,22 @@ def gaps(archived: dict[str, set[str]], sessions: list[date]) -> Finding:
                    + " (a lapsed Kite login is the usual cause)", {"missing": missing})
 
 
+def _weekdays_before(today: date, n: int) -> date:
+    d = today
+    for _ in range(n):
+        d -= timedelta(days=1)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+    return d
+
+
 def backups_fresh(newest: dict[str, date | None], today: date) -> Finding:
-    stale = {s: (d.isoformat() if d else None) for s, d in newest.items() if d is None or today - d > BACKUP_MAX_AGE}
-    return Finding(not stale, "warn", "Backup missing or older than 2 days: "
+    """The job backs up on weekdays: a backup is stale when it is older than the
+    second weekday before today (one missed night allowed; Friday's is fresh on
+    Monday morning)."""
+    oldest_ok = _weekdays_before(today, 2)
+    stale = {s: (d.isoformat() if d else None) for s, d in newest.items() if d is None or d < oldest_ok}
+    return Finding(not stale, "warn", "Backup missing or older than two weekdays: "
                    + ", ".join(f"{s} ({d or 'none'})" for s, d in stale.items()), {"stale": stale})
 
 

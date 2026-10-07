@@ -62,14 +62,16 @@ def test_two_jobs_at_once():
 
 
 def test_the_catch_up_runs_once_a_day_and_never_twice():
-    assert f.catch_up_allowed({}, date(2026, 10, 8), running=False)
-    assert not f.catch_up_allowed({"catch_up_on": "2026-10-08"}, date(2026, 10, 8), running=False)
-    assert not f.catch_up_allowed({}, date(2026, 10, 8), running=True)
+    early = datetime(2026, 10, 8, 8, 5, tzinfo=IST)
+    assert f.catch_up_allowed({}, early, running=False, session_day=True)
+    assert not f.catch_up_allowed({"catch_up_on": "2026-10-08"}, early, running=False, session_day=True)
+    assert not f.catch_up_allowed({}, early, running=True, session_day=True)
 
 
 def test_time_checks():
-    assert f.holidays_known(date(2026, 12, 25), date(2026, 10, 7)).ok
-    assert not f.holidays_known(date(2026, 12, 25), date(2026, 11, 1)).ok
+    assert f.holidays_known(date(2026, 12, 31), date(2026, 10, 7)).ok
+    assert not f.holidays_known(date(2026, 12, 31), date(2026, 12, 5)).ok        # December, next year unknown
+    assert not f.holidays_known(None, date(2026, 10, 7)).ok
     assert f.lot_size(65, 65).ok and f.lot_size(75, 65).severity == "critical" and not f.lot_size(75, 65).ok
     assert f.rate_card_age("2026-09-27", date(2027, 3, 1)).ok and not f.rate_card_age("2026-09-27", date(2027, 4, 1)).ok
 

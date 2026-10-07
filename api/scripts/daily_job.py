@@ -123,8 +123,11 @@ def notify(message: str) -> None:
     """The nightly job runs unattended, and a failure nobody sees is the same
     as no check at all: to the phone when ntfy is set up, and to the Mac
     (sentinel/alerts.py). Best effort: never fails the job."""
-    from sentinel.alerts import send
-    send("Nightly job", message)
+    try:
+        from sentinel.alerts import send
+        send("Nightly job", message)
+    except Exception:
+        pass  # an alert must never break what it reports on
 
 
 def step_gift_nifty() -> bool:
@@ -164,7 +167,7 @@ def step_sentinel() -> bool:
     database integrity, missing sessions, NSE's formats, the calendar, the
     rate card, security. A failure there is an incident and an alert, not a
     failed job."""
-    run_script("scripts/sentinel_run.py", "--mode", "deep")
+    run_script("scripts/sentinel_run.py", "--mode", "deep", "--job-running", "no")
     return True
 
 
@@ -265,7 +268,28 @@ def step_kite_bars() -> bool:
                 run_script("scripts/backfill_bars.py", "--timeframe", "5m")])
 
 
+LOCK_PATH = API_DIR / "data" / "daily_job.lock"
+
+
+def acquire_lock(path: Path = LOCK_PATH):
+    """An exclusive lock for the run, or None when another job holds it: two
+    jobs writing the same archives and backups at once is how data gets torn.
+    Released by the OS when the process ends, however it ends."""
+    import fcntl
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
 def main() -> int:
+    lock = acquire_lock()
+    if lock is None:
+        print("another nightly job is running; this one exits", flush=True)
+        return 0
     log("daily job start")
     steps = [
         ("forward log, journal and paper backup", step_backup),

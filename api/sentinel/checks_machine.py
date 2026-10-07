@@ -27,6 +27,10 @@ SLEEP_FIX = "sudo pmset -c sleep 0 disksleep 0 autorestart 1 womp 1"
 # --- pure checks ---------------------------------------------------------------------
 
 def slow_api(latencies_s: list[float]) -> Finding:
+    """Slow, not down: an API that does not answer is the watchdog's to restart
+    (health_watch.py), and the first probe after its restart is cold."""
+    if any(x == float("inf") for x in latencies_s):
+        return Finding(True, "info", "the API is not answering: the watchdog restarts it")
     s = sorted(latencies_s)
     p95 = s[min(len(s) - 1, int(round(0.95 * (len(s) - 1))))] if s else float("inf")
     return Finding(p95 <= SLOW_API_S, "critical", f"The API is answering slowly: {p95:.1f} s (over {SLOW_API_S:.0f} s)",
@@ -53,6 +57,8 @@ def memory(rss_mb: dict[str, float]) -> Finding:
 
 
 def slow_render(seconds: float) -> Finding:
+    if seconds == float("inf"):
+        return Finding(True, "info", "the dashboard is not answering: the watchdog restarts it")
     return Finding(seconds <= SLOW_RENDER_S, "warn",
                    f"The dashboard took {seconds:.1f} s to render (over {SLOW_RENDER_S:.0f} s): a slow cache is being "
                    "rebuilt inside a page request", {"seconds": round(seconds, 2)})

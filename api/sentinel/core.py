@@ -60,9 +60,21 @@ def session_open(now: datetime, holidays: set | None = None) -> bool:
     return is_session(now.date(), holidays) and 9 * 60 + 15 <= t < 15 * 60 + 30
 
 
+def job_alive(log_says_running: bool, pids: list[int]) -> bool:
+    """Running means the log has a start without a done AND a job process
+    exists: a job killed mid-run (a power cut) leaves only the first."""
+    return log_says_running and bool(pids)
+
+
 def nightly_job_running() -> bool:
+    import subprocess
+
     from briefing.day_forecast import job_running as running
-    return running(LOG_PATH)
+    from sentinel.checks_feeds import job_pids
+    if not running(LOG_PATH):
+        return False
+    ps = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=10).stdout
+    return job_alive(True, job_pids(ps))
 
 
 def may_repair(name: str, now: datetime, state: dict, in_session: bool, job_running: bool,
@@ -112,47 +124,64 @@ def run(mode: str, checks: list[Check], now: datetime, db_path: Path | None = No
         try:
             f = c.detect()
         except Exception as e:
-            f = Finding(False, "warn", f"check broken: {e}")
-        inc = open_by_key.get(c.key)
-        if f.ok:
-            if inc:
-                n = state["passes"].get(c.key, 0) + 1
-                state["passes"][c.key] = n
-                if n >= PASSES_TO_RESOLVE:
-                    idb.add_event(inc["id"], "resolved", f"passed {n} runs in a row", at, db_path)
-                    _alert(send, "resolved", c, inc["summary"], inc["severity"])
-                    state["passes"].pop(c.key, None)
-                    out["resolved"].append(c.key)
-            continue
-        out["failing"].append(c.key)
-        state["passes"].pop(c.key, None)
-        detail = f.summary + (f" · {json.dumps(f.evidence, default=str)[:300]}" if f.evidence else "")
-        if inc:
-            iid = inc["id"]
-            idb.add_event(iid, "seen", detail, at, db_path)
-        else:
-            iid = idb.open_incident(c.key, c.area, f.severity, f.summary, at, db_path)
-            idb.add_event(iid, "seen", detail, at, db_path)
-            inc = {"id": iid, "last_alert_at": None, "severity": f.severity}
-            out["opened"].append(c.key)
-        if c.repair and c.auto and c.repair in REPAIRS:
-            fn, allow = REPAIRS[c.repair]
-            ok, why = may_repair(c.repair, now, state, session, running, allow)
-            if ok:
-                state["repairs"][c.repair] = at
-                try:
-                    done, msg = fn()
-                except Exception as e:
-                    done, msg = False, f"raised {e}"
-                why = f"{c.repair}: {'ok' if done else 'failed'}, {msg}"
-            else:
-                why = f"{c.repair}: {why}"
-            idb.add_event(iid, "repair", why, at, db_path)
-        kind = alerts.due(inc, now)
-        if kind:
-            _alert(send, kind, c, f.summary, f.severity)
-            idb.add_event(iid, "alert", kind, at, db_path)
+            f = Finding(False, "warn", f"check broken: {type(e).__name__}: {_scrub(str(e))}")
+        try:
+            _handle(c, f, mode, now, at, state, out, open_by_key, db_path, send, session, running)
+        except Exception as e:
+            # The record could not be written (disk full, a locked database): say so directly.
+            if not f.ok:
+                out["failing"].append(c.key)
+                _alert(send, "open", c, f"{f.summary} (could not be recorded: {type(e).__name__})", f.severity)
     state["checked_at"] = at
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state, indent=1))
     return out
+
+
+def _scrub(text: str) -> str:
+    """No home paths in a message that may go to a public ntfy topic."""
+    import os
+    return text.replace(os.path.expanduser("~"), "~")
+
+
+def _handle(c: Check, f: Finding, mode: str, now: datetime, at: str, state: dict, out: dict, open_by_key: dict,
+            db_path, send, session: bool, running: bool) -> None:
+    inc = open_by_key.get(c.key)
+    if f.ok:
+        if inc:
+            n = state["passes"].get(c.key, 0) + 1
+            state["passes"][c.key] = n
+            if n >= PASSES_TO_RESOLVE:
+                idb.add_event(inc["id"], "resolved", f"passed {n} runs in a row", at, db_path)
+                _alert(send, "resolved", c, inc["summary"], inc["severity"])
+                state["passes"].pop(c.key, None)
+                out["resolved"].append(c.key)
+        return
+    out["failing"].append(c.key)
+    state["passes"].pop(c.key, None)
+    detail = f.summary + (f" · {json.dumps(f.evidence, default=str)[:300]}" if f.evidence else "")
+    if inc:
+        iid = inc["id"]
+        idb.add_event(iid, "seen", detail, at, db_path)
+    else:
+        iid = idb.open_incident(c.key, c.area, f.severity, f.summary, at, db_path)
+        idb.add_event(iid, "seen", detail, at, db_path)
+        inc = {"id": iid, "last_alert_at": None, "severity": f.severity}
+        out["opened"].append(c.key)
+    if c.repair and c.auto and c.repair in REPAIRS:
+        fn, allow = REPAIRS[c.repair]
+        ok, why = may_repair(c.repair, now, state, session, running, allow)
+        if ok:
+            state["repairs"][c.repair] = at
+            try:
+                done, msg = fn()
+            except Exception as e:
+                done, msg = False, f"raised {e}"
+            why = f"{c.repair}: {'ok' if done else 'failed'}, {msg}"
+        else:
+            why = f"{c.repair}: {why}"
+        idb.add_event(iid, "repair", why, at, db_path)
+    kind = alerts.due(inc, now)
+    if kind:
+        _alert(send, kind, c, f.summary, f.severity)
+        idb.add_event(iid, "alert", kind, at, db_path)

@@ -79,8 +79,11 @@ def log(message: str) -> None:
 
 def notify(message: str) -> None:
     """To the phone when ntfy is set up, and to the Mac (sentinel/alerts.py)."""
-    from sentinel.alerts import send
-    send("Service", message)
+    try:
+        from sentinel.alerts import send
+        send("Service", message)
+    except Exception:
+        pass  # an alert must never break what it reports on
 
 
 def restart(label: str) -> bool:
