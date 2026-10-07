@@ -165,3 +165,9 @@ def test_the_api_is_judged_on_the_code_it_loads_not_the_scripts_beside_it():
     fc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fc)
     assert "scripts" in fc.NOT_LOADED_BY_API
+
+
+def test_the_sentinel_is_itself_watched():
+    import briefing.freshness as fr
+    s = {x.key: x for x in fr.SOURCES}["sentinel"]
+    assert s.path == "/api/sentinel" and s.kind == "live" and s.fields == ("checked_at",) and s.max_age_min == 25

@@ -1,12 +1,22 @@
-import type { Freshness } from "@/lib/api";
+import type { Freshness, Sentinel } from "@/lib/api";
+import { SystemHealth } from "./SystemHealth";
 
 /** One line under the header: every card current, or which are behind and why.
  *  The watchdog checks every ten minutes (scripts/freshness_check.py) and
  *  fixes what it can; this only reports. Before it existed a card could sit
  *  days behind (5-6 Oct 2026) with nothing on the page saying so. */
-export function FreshnessStrip({ data }: { data: Freshness | null }) {
+export function FreshnessStrip({ data, sentinel }: { data: Freshness | null; sentinel?: Sentinel | null }) {
+  return (
+    <>
+      <Freshness data={data} />
+      <SystemHealth data={sentinel ?? null} />
+    </>
+  );
+}
+
+function Freshness({ data }: { data: Freshness | null }) {
   if (!data) {
-    return <p className="mb-4 text-[11px] text-zinc-600">Freshness: no check yet — the watchdog runs one every ten minutes.</p>;
+    return <p className="mb-1 text-[11px] text-zinc-600">Freshness: no check yet — the watchdog runs one every ten minutes.</p>;
   }
   const checked = data.checked_at.slice(11, 16);
   const late = data.check_age_min != null && data.check_age_min > 25;
@@ -16,14 +26,14 @@ export function FreshnessStrip({ data }: { data: Freshness | null }) {
   const ok = !behind.length && !unavailable.length && !services.length && !late;
   if (ok) {
     return (
-      <p className="mb-4 text-[11px] text-zinc-600">
+      <p className="mb-1 text-[11px] text-zinc-600">
         All {data.current} live and daily sources current · checked {checked} IST
         {data.on_demand > 0 && ` · ${data.on_demand} on-demand studies shown with their age`}
       </p>
     );
   }
   return (
-    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2 text-[12px] text-amber-200">
+    <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2 text-[12px] text-amber-200">
       <p>
         {behind.length > 0 && `${behind.length} card${behind.length === 1 ? "" : "s"} behind`}
         {behind.length > 0 && unavailable.length > 0 && " · "}

@@ -49,6 +49,7 @@ import {
   fetchDayForecast,
   fetchBreakouts,
   fetchFreshness,
+  fetchSentinel,
   fetchNiftyPipeline,
   fetchZerodhaStatus,
   fetchPaper,
@@ -103,6 +104,7 @@ export default async function Home() {
     dayForecast,
     breakouts,
     freshness,
+    sentinel,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -137,6 +139,7 @@ export default async function Home() {
     fetchDayForecast(),
     fetchBreakouts(),
     fetchFreshness(),
+    fetchSentinel(),
   ]);
 
   const snap = snapshot.data;
@@ -182,7 +185,7 @@ export default async function Home() {
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8">
-        <FreshnessStrip data={freshness.data} />
+        <FreshnessStrip data={freshness.data} sentinel={sentinel.data} />
         <DashboardTabs
           today={
             <>
