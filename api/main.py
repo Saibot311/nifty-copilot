@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -1042,6 +1043,25 @@ def breakouts() -> dict:
         return cached("breakouts", ttl_seconds=30, producer=build_breakouts, stale_ok=True)
     except Exception as e:
         raise HTTPException(503, f"Breakout levels unavailable: {str(e)[:160]}") from e
+
+
+def _sentinel_state() -> dict:
+    try:
+        return json.loads((Path(__file__).parent / "data" / "sentinel.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+@app.get("/api/sentinel")
+def sentinel() -> dict:
+    """The sentinel's incidents (api/sentinel/): what is open, with every
+    repair tried, and what opened in the last fortnight. Whether phone alerts
+    are set up, never the topic itself."""
+    from sentinel.alerts import _env
+    from storage import incidents_db
+    last = _sentinel_state()
+    return {"checked_at": last.get("checked_at"), "mode": last.get("mode"), "open": incidents_db.open_incidents(),
+            "recent": incidents_db.recent(14), "ntfy": bool(_env("NTFY_TOPIC"))}
 
 
 @app.get("/api/freshness")

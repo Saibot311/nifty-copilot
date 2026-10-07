@@ -16,7 +16,6 @@ everything except the login itself:
 """
 
 import argparse
-import subprocess
 import sys
 import webbrowser
 from datetime import datetime
@@ -31,12 +30,12 @@ LOGIN_PAGE = "http://127.0.0.1:8000/api/zerodha/login"
 
 
 def notify(message: str) -> None:
-    safe = message.replace('"', "'")[:220]
+    """To the phone when ntfy is set up, and to the Mac (sentinel/alerts.py)."""
     try:
-        subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "NIFTY Copilot"'],
-                       capture_output=True, timeout=10)
+        from sentinel.alerts import send
+        send("Kite login", message)
     except Exception:
-        pass
+        pass  # an alert must never break what it reports on
 
 
 def main() -> int:

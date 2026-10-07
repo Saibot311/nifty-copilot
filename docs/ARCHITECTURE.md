@@ -207,6 +207,7 @@ t = 1.36 against a bar near 3.4 at that sample size. Six structural hypotheses
 | `backtest/similarity.py` | Phase 11: 5-feature nearest-neighbour analogs + walk-forward test | More features without evidence they help |
 | `backtest/live_patterns.py` | Phase 10: today's candle from 15-min closes → which patterns would form now | Anything final before 15:30 |
 | `storage/options_db.py` | Options archives — NIFTY (4.6 M rows) and, via `db_path_for()`, BANKNIFTY, MIDCPNIFTY, SENSEX in their own files | Strategy verdicts |
+| `sentinel/` · `storage/incidents_db.py` · `scripts/sentinel_run.py` · `scripts/land_health.sh` | Failure catalogue (machine, data, backups, feeds, jobs, calendar, security): checks every 10 min and nightly, safe repairs rate-limited and kept out of the job and the session, append-only incidents, alerts (ntfy + macOS), rollback of a landing that breaks the app | Restoring or editing an irreplaceable DB; any repair during 19:20–"daily job done" |
 | `storage/strategy_status_db.py` | The Playbook — verdict history | Live recomputation |
 | `briefing/research_briefing.py` | Rule-based evidence for/against | Verdicts |
 | `briefing/recommendation.py` | The gate → CALL/PUT/NO_TRADE | New statistics |

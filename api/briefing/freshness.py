@@ -69,6 +69,7 @@ SOURCES = (
     Source("day_forecast", "The next session", "/api/day_forecast", "self", ("status.stale",),
            fix=("kite_bars", "options", "iv", "forecast")),
     Source("breakouts", "Breakout levels", "/api/breakouts", "live", ("as_of",), 10),
+    Source("sentinel", "System health", "/api/sentinel", "live", ("checked_at",), 25),
     Source("breakout_record", "Breakout record", "/api/breakouts", "nightly", ("record.computed_at",),
            fix=("breakouts",)),
     Source("pattern_options", "Pattern research", "/api/patterns/options", "nightly", ("computed_at",),

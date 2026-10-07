@@ -190,6 +190,17 @@ else
     echo "dashboard: no change"
 fi
 
+# The app must come back on the new code; if it does not, main goes back to
+# where it was and the old code is restarted, before anything is pushed.
+step "Health after the restart"
+source "$(dirname "$0")/land_health.sh"
+RESTART_ALL="launchctl kickstart -k $DOMAIN/com.niftycopilot.api; (cd '$LIVE/web' && npm run build >/dev/null 2>&1); launchctl kickstart -k $DOMAIN/com.niftycopilot.web"
+if ! health_after_restart "$BASE" "$RESTART_ALL" http://127.0.0.1:8000/health http://127.0.0.1:8000/api/freshness \
+        http://127.0.0.1:8000/api/indicators http://127.0.0.1:8000/api/breakouts http://127.0.0.1:3000/; then
+    "$LIVE/api/.venv/bin/python" -c "import sys; sys.path.insert(0, '$LIVE/api'); from sentinel.alerts import send; send('Landing rolled back', '$BRANCH broke the app; main is back at ${BASE:0:7}')" 2>/dev/null || true
+    die "rolled back: $BRANCH did not come up healthy — main is back at ${BASE:0:7} and nothing was pushed"
+fi
+
 if $PUSH; then
     step "Push"
     git push origin main || die "landed locally, but the push failed"

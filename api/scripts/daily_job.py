@@ -120,14 +120,14 @@ def step_forward_log() -> bool:
 
 
 def notify(message: str) -> None:
-    """A macOS notification — the nightly job runs unattended, and a failure
-    nobody sees is the same as no check at all. Best effort: never fails the job."""
-    safe = message.replace('"', "'")[:220]
+    """The nightly job runs unattended, and a failure nobody sees is the same
+    as no check at all: to the phone when ntfy is set up, and to the Mac
+    (sentinel/alerts.py). Best effort: never fails the job."""
     try:
-        subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "NIFTY Copilot"'],
-                       capture_output=True, timeout=10)
+        from sentinel.alerts import send
+        send("Nightly job", message)
     except Exception:
-        pass
+        pass  # an alert must never break what it reports on
 
 
 def step_gift_nifty() -> bool:
@@ -162,6 +162,15 @@ def step_paper() -> bool:
     return True
 
 
+def step_sentinel() -> bool:
+    """The sentinel's deep checks (api/sentinel/), after the audit they read:
+    database integrity, missing sessions, NSE's formats, the calendar, the
+    rate card, security. A failure there is an incident and an alert, not a
+    failed job."""
+    run_script("scripts/sentinel_run.py", "--mode", "deep", "--job-running", "no")
+    return True
+
+
 def step_audit() -> bool:
     """The phase-by-phase audit on real data, after everything is refreshed.
     Every bug the audit ever found had hidden for a while unnoticed."""
@@ -187,9 +196,11 @@ def step_backup() -> bool:
     from storage.backup import backup_forward_log, backup_news
     from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_option_snapshots
     from storage.backup import backup_day_forecast, backup_intraday_forward, backup_paper
+    from storage.backup import backup_breakouts, backup_incidents
     ok = True
     for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(), backup_gift_nifty(),
-              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast()):
+              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast(),
+              backup_breakouts(), backup_incidents()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
     return ok
@@ -257,7 +268,28 @@ def step_kite_bars() -> bool:
                 run_script("scripts/backfill_bars.py", "--timeframe", "5m")])
 
 
+LOCK_PATH = API_DIR / "data" / "daily_job.lock"
+
+
+def acquire_lock(path: Path = LOCK_PATH):
+    """An exclusive lock for the run, or None when another job holds it: two
+    jobs writing the same archives and backups at once is how data gets torn.
+    Released by the OS when the process ends, however it ends."""
+    import fcntl
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
 def main() -> int:
+    lock = acquire_lock()
+    if lock is None:
+        print("another nightly job is running; this one exits", flush=True)
+        return 0
     log("daily job start")
     steps = [
         ("forward log, journal and paper backup", step_backup),
@@ -296,6 +328,7 @@ def main() -> int:
         # holds everything written tonight.
         ("backup again, after tonight's writes", step_backup),
         ("audit", step_audit),
+        ("sentinel deep check", step_sentinel),
     ]
     failed = []
     for name, fn in steps:

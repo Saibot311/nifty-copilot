@@ -78,12 +78,12 @@ def log(message: str) -> None:
 
 
 def notify(message: str) -> None:
-    safe = message.replace('"', "'")[:220]
+    """To the phone when ntfy is set up, and to the Mac (sentinel/alerts.py)."""
     try:
-        subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "NIFTY Copilot"'],
-                       capture_output=True, timeout=10)
+        from sentinel.alerts import send
+        send("Service", message)
     except Exception:
-        pass
+        pass  # an alert must never break what it reports on
 
 
 def restart(label: str) -> bool:
@@ -122,6 +122,10 @@ def main() -> int:
     # its own process: a fix can take minutes, and this check must stay quick.
     if not a.dry_run and not unhealthy:
         subprocess.Popen([sys.executable, str(API_DIR / "scripts" / "freshness_check.py")], cwd=API_DIR,
+                         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # And the sentinel's quick checks (api/sentinel/): disk, memory, slow renders, backups, the job.
+    if not a.dry_run:
+        subprocess.Popen([sys.executable, str(API_DIR / "scripts" / "sentinel_run.py"), "--mode", "fast"], cwd=API_DIR,
                          start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not unhealthy:
         print("both services answering", flush=True)

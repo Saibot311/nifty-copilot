@@ -1424,6 +1424,15 @@ export type Freshness = {
 };
 export const fetchFreshness = () => get<Freshness>("/api/freshness");
 
+/** The sentinel (api/sentinel/): incidents open and recent, each with the repairs tried. */
+export type Incident = {
+  id: number; check_key: string; area: string; severity: "info" | "warn" | "critical"; opened_at: string;
+  summary: string; seen_count: number; last_seen: string; resolved_at: string | null;
+  repairs: { at: string; detail: string }[];
+};
+export type Sentinel = { checked_at: string | null; mode: string | null; open: Incident[]; recent: Incident[]; ntfy: boolean };
+export const fetchSentinel = () => get<Sentinel>("/api/sentinel");
+
 /** Today's breakout levels (briefing/breakout_levels.py). */
 export type BreakoutSummary = { n: number; held_30_pct: number | null; failed_pct: number | null;
                                 median_pts_30: number | null; median_pts_close: number | null };

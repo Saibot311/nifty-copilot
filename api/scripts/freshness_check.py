@@ -171,9 +171,8 @@ def main() -> int:
     today = now.date().isoformat()
     fresh_news = [s for s in behind if notified.get(s["key"]) != today]
     if fresh_news and not a.no_fix:
-        subprocess.run(["osascript", "-e", 'display notification "' +
-                        (f"{len(behind)} card(s) behind: " + ", ".join(s["card"] for s in behind[:4])).replace('"', "'")[:220]
-                        + '" with title "NIFTY Copilot"'], capture_output=True, timeout=10)
+        from sentinel.alerts import send
+        send("Data behind", f"{len(behind)} card(s) behind: " + ", ".join(s["card"] for s in behind[:4]))
         for s in fresh_news:
             notified[s["key"]] = today
     for s in behind:
