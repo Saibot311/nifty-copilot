@@ -120,6 +120,10 @@ def main() -> int:
     if not a.dry_run and not unhealthy:
         subprocess.Popen([sys.executable, str(API_DIR / "scripts" / "freshness_check.py")], cwd=API_DIR,
                          start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # And the sentinel's quick checks (api/sentinel/): disk, memory, slow renders, backups, the job.
+    if not a.dry_run:
+        subprocess.Popen([sys.executable, str(API_DIR / "scripts" / "sentinel_run.py"), "--mode", "fast"], cwd=API_DIR,
+                         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not unhealthy:
         print("both services answering", flush=True)
     return 0

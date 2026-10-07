@@ -159,6 +159,15 @@ def step_paper() -> bool:
     return True
 
 
+def step_sentinel() -> bool:
+    """The sentinel's deep checks (api/sentinel/), after the audit they read:
+    database integrity, missing sessions, NSE's formats, the calendar, the
+    rate card, security. A failure there is an incident and an alert, not a
+    failed job."""
+    run_script("scripts/sentinel_run.py", "--mode", "deep")
+    return True
+
+
 def step_audit() -> bool:
     """The phase-by-phase audit on real data, after everything is refreshed.
     Every bug the audit ever found had hidden for a while unnoticed."""
@@ -295,6 +304,7 @@ def main() -> int:
         # holds everything written tonight.
         ("backup again, after tonight's writes", step_backup),
         ("audit", step_audit),
+        ("sentinel deep check", step_sentinel),
     ]
     failed = []
     for name, fn in steps:
