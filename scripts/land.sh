@@ -182,6 +182,14 @@ if grep -E '^api/.*\.(py|txt|toml)$' <<<"$CHANGED" | grep -qvE '^api/tests/'; th
 else
     echo "API: no change"
 fi
+# New or updated packages: the live node_modules must match the lockfile before
+# the build (a landing used to rebuild against the old packages). A rollback
+# reinstalls the old set the same way.
+NPM_CI=""
+if grep -qE '^web/package-lock\.json$' <<<"$CHANGED"; then
+    NPM_CI="npm ci --no-audit --no-fund >/dev/null 2>&1 && "
+    (cd "$LIVE/web" && npm ci --no-audit --no-fund >/dev/null 2>&1) || echo "WARNING: npm ci failed in the live web folder"
+fi
 # The dashboard serves a build: anything that goes into it needs a rebuild.
 if grep -qE '^web/(src/|public/|server\.mjs|gate\.mjs|next\.config|package(-lock)?\.json|tsconfig|postcss)' <<<"$CHANGED"; then
     (cd "$LIVE/web" && npm run build >/dev/null 2>&1) || echo "WARNING: the live web build failed — the dashboard still serves the old build"
@@ -194,7 +202,7 @@ fi
 # where it was and the old code is restarted, before anything is pushed.
 step "Health after the restart"
 source "$(dirname "$0")/land_health.sh"
-RESTART_ALL="launchctl kickstart -k $DOMAIN/com.niftycopilot.api; (cd '$LIVE/web' && npm run build >/dev/null 2>&1); launchctl kickstart -k $DOMAIN/com.niftycopilot.web"
+RESTART_ALL="launchctl kickstart -k $DOMAIN/com.niftycopilot.api; (cd '$LIVE/web' && ${NPM_CI}npm run build >/dev/null 2>&1); launchctl kickstart -k $DOMAIN/com.niftycopilot.web"
 if ! health_after_restart "$BASE" "$RESTART_ALL" http://127.0.0.1:8000/health http://127.0.0.1:8000/api/freshness \
         http://127.0.0.1:8000/api/indicators http://127.0.0.1:8000/api/breakouts http://127.0.0.1:3000/; then
     "$LIVE/api/.venv/bin/python" -c "import sys; sys.path.insert(0, '$LIVE/api'); from sentinel.alerts import send; send('Landing rolled back', '$BRANCH broke the app; main is back at ${BASE:0:7}')" 2>/dev/null || true
