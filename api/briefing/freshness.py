@@ -69,6 +69,9 @@ SOURCES = (
     Source("day_forecast", "The next session", "/api/day_forecast", "self", ("status.stale",),
            fix=("kite_bars", "options", "iv", "forecast")),
     Source("breakouts", "Breakout levels", "/api/breakouts", "live", ("as_of",), 10),
+    # Its own time, set only when the option chain answered: an entry check
+    # without prices must show as behind, not quietly as current.
+    Source("breakout_entry", "Entry check", "/api/breakouts", "live", ("entry_as_of",), 10),
     Source("sentinel", "System health", "/api/sentinel", "live", ("checked_at",), 25),
     Source("breakout_record", "Breakout record", "/api/breakouts", "nightly", ("record.computed_at",),
            fix=("breakouts",)),

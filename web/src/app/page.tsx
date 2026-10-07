@@ -199,7 +199,7 @@ export default async function Home() {
                 </section>
                 <section className="min-w-0 lg:col-span-5">
                   <SectionLabel hint="4-hour candles, and the closes that would form a pattern that could become the call" behind={behind("chart")}>Where NIFTY stands</SectionLabel>
-                  <TodayChart data={candles.data} />
+                  <TodayChart data={candles.data} keyLevels={breakouts.data?.key_levels} />
                 </section>
               </div>
 

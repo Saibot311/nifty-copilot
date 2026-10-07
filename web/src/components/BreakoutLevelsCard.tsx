@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { BreakoutEvent, BreakoutLevel, BreakoutSlice, Breakouts, Versus } from "@/lib/api";
+import type { BreakoutEvent, BreakoutLevel, Breakouts, BreakoutSlice, EntrySide, Versus } from "@/lib/api";
 import { useStored } from "@/lib/stored";
 import { Offline, Panel } from "./ui";
 
@@ -155,16 +155,16 @@ function Detail({ lv, data, ti, onlyLike }: { lv: BreakoutLevel; data: Breakouts
   );
 }
 
-export function BreakoutLevelsCard({ data }: { data: Breakouts | null }) {
-  const targets = data?.targets ?? [];
+/** The record in full, behind "Show the history": every level, both
+ *  directions, the move size and time picked, against random lines. */
+function BreakoutHistory({ data }: { data: Breakouts }) {
+  const targets = data.targets ?? [];
   const [targetS, setTarget] = useStored("breakouts.target", "30");
   const [horizon, setHorizon] = useStored("breakouts.horizon", "30");
   const [onlyLike, setOnlyLike] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
 
-  if (!data) return <Offline what="Today's breakout levels" />;
-  if (!data.levels.length) return <Offline what="Today's breakout levels" why="No earlier session to draw levels from." />;
   const ti = Math.max(0, targets.indexOf(Number(targetS)));
   const target = targets[ti];
   const hz = data.horizons.includes(horizon) ? horizon : "30";
@@ -211,7 +211,7 @@ export function BreakoutLevelsCard({ data }: { data: Breakouts | null }) {
   };
 
   return (
-    <Panel className="p-4">
+    <div className="mt-3 border-t border-zinc-800 pt-3">
       <div className="mb-3 space-y-1.5">
         <p className="text-[13px] text-zinc-200">
           NIFTY <span className="font-mono tabular-nums">{n(data.last_close, 2)}</span>
@@ -263,6 +263,121 @@ export function BreakoutLevelsCard({ data }: { data: Breakouts | null }) {
           <li>{data.note}</li>
         </ul>
       )}
+    </div>
+  );
+}
+
+// --- the card ------------------------------------------------------------------------
+
+const ENTRY_VERDICT: Record<Versus, { word: string; cls: string }> = {
+  more: { word: "Better than a random line, beyond chance", cls: "border-indigo-500/40 bg-indigo-500/10 text-indigo-200" },
+  like: { word: "No edge: same as a random line", cls: "border-zinc-700 bg-zinc-800/60 text-zinc-200" },
+  less: { word: "No edge: worse than a random line", cls: "border-zinc-700 bg-zinc-800/60 text-zinc-200" },
+  few: { word: "Too few past breaks to judge", cls: "border-zinc-700 bg-zinc-800/60 text-zinc-300" },
+};
+
+function EntrySideCard({ side, where, w }: { side: EntrySide; where: "above" | "below"; w: string }) {
+  const win = side.windows[w];
+  const up = side.direction === "up";
+  const v = ENTRY_VERDICT[win?.verdict ?? "few"];
+  return (
+    <div className="min-w-0 rounded-lg border border-zinc-800 p-3 text-[12.5px]">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500">{where === "above" ? "Above · resistance" : "Below · support"}</p>
+      <p className="mt-0.5 text-zinc-100">
+        {side.label} <span className="font-mono tabular-nums">{n(side.price, 2)}</span>
+        <span className="text-zinc-500"> · {n(side.distance_pts, 0)} pts away</span>
+      </p>
+      <p className="mt-1 text-zinc-400">If a 5-minute candle closes {up ? "above" : "below"} it: {up ? "call" : "put"} side.</p>
+      {win?.need_pts != null ? (
+        <>
+          <p className="mt-1.5 text-zinc-300">
+            At-the-money {side.option.strike.toLocaleString("en-IN")} {side.option.kind} ₹{n(side.option.premium, 2)}: you need{" "}
+            <span className="font-mono font-medium tabular-nums text-zinc-100">{up ? "+" : "−"}{n(win.need_pts, 0)} pts</span>{" "}
+            within {w} min just to get your money back.
+          </p>
+          <p className="mt-1 text-zinc-300">
+            After past breaks of this level ({win.n.toLocaleString("en-IN")} since 2015): got there in{" "}
+            <span className="font-mono font-medium tabular-nums text-zinc-100">{pct(win.pct)}</span>
+            <span className="text-zinc-500"> · any random line {pct(win.random_pct)}</span>
+          </p>
+        </>
+      ) : (
+        <p className="mt-1.5 text-zinc-500">No price for the at-the-money {up ? "call" : "put"} to work the move out from.</p>
+      )}
+      <p className={`mt-2 inline-block rounded-md border px-2 py-1 text-[12px] font-medium ${v.cls}`}>{v.word}</p>
+    </div>
+  );
+}
+
+function LadderRow({ lv, last, keyRole }: { lv: BreakoutLevel; last: number | null; keyRole: "R" | "S" | null }) {
+  const crossed = lv.state.startsWith("broken");
+  const dist = last == null ? null : lv.price - last;
+  return (
+    <li className={`flex items-baseline gap-2 border-b border-zinc-900 py-1.5 text-[12.5px] ${keyRole ? "text-zinc-100" : "text-zinc-300"}`}>
+      {keyRole ? (
+        <span className={`w-4 shrink-0 rounded text-center text-[10px] font-semibold ${keyRole === "R" ? "bg-amber-500/20 text-amber-200" : "bg-sky-500/20 text-sky-200"}`}
+          title={keyRole === "R" ? "nearest resistance" : "nearest support"}>{keyRole}</span>
+      ) : <span className="w-4 shrink-0" />}
+      <span className="min-w-0 flex-1 truncate">{lv.label}</span>
+      <span className="shrink-0 font-mono tabular-nums">{n(lv.price, 2)}</span>
+      <span className="w-24 shrink-0 text-right text-[11.5px] text-zinc-500">
+        {dist == null ? "" : `${n(Math.abs(dist), 0)} pts ${dist > 0 ? "above" : "below"}`}
+      </span>
+      <span className="hidden w-36 shrink-0 text-right text-[11.5px] text-zinc-400 sm:inline">
+        {crossed ? `crossed ${arrow(lv.state.endsWith("up") ? "up" : "down")} ${lv.since ?? ""}${lv.failed ? ", back" : ""}` : ""}
+      </span>
+    </li>
+  );
+}
+
+export function BreakoutLevelsCard({ data }: { data: Breakouts | null }) {
+  const [w, setW] = useStored("breakouts.entry_window", "30");
+  const [history, setHistory] = useState(false);
+  if (!data) return <Offline what="Today's breakout levels" />;
+  if (!data.levels.length) return <Offline what="Today's breakout levels" why="No earlier session to draw levels from." />;
+  const win = ["15", "30", "60"].includes(w) ? w : "30";
+  const last = data.last_close;
+  const levels = data.levels_merged ?? [...data.levels].sort((a, b) => b.price - a.price).map((lv) => ({ ...lv, keys: [lv.key] }));
+  const cut = levels.findIndex((lv) => last != null && lv.price < last);
+  const split = cut === -1 ? levels.length : cut;
+  const rKey = data.key_levels?.resistance?.key, sKey = data.key_levels?.support?.key;
+  const e = data.entry;
+
+  return (
+    <Panel className="p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] text-zinc-200">
+          Entry check · NIFTY <span className="font-mono tabular-nums">{n(last, 2)}</span>
+          {data.bars_through && <span className="text-zinc-500"> at {data.bars_through}</span>}
+        </p>
+        <Chips id="bo-entry-window" label="Sell within" options={["15", "30", "60"]} value={win} fmt={(m) => `${m} min`} onChange={setW} />
+      </div>
+      {e?.error && <p className="mb-2 text-[12px] text-zinc-500">The option chain did not answer, so the move needed is not worked out: {e.error}.</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {e?.resistance ? <EntrySideCard side={e.resistance} where="above" w={win} /> : <p className="text-[12px] text-zinc-500">No level above NIFTY today.</p>}
+        {e?.support ? <EntrySideCard side={e.support} where="below" w={win} /> : <p className="text-[12px] text-zinc-500">No level below NIFTY today.</p>}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+        &ldquo;Got there&rdquo; counts touching that move at any point in the window, the best case. The option is priced now,
+        at the ask, with both legs&rsquo; charges and the spread. This measures the record; it does not say whether to buy.
+      </p>
+
+      <h3 className="mt-4 mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500">Today&rsquo;s levels, highest first</h3>
+      <ol aria-label="Levels from highest to lowest price, with NIFTY between them">
+        {levels.slice(0, split).map((lv) => <LadderRow key={lv.key} lv={lv} last={last} keyRole={lv.key === rKey ? "R" : null} />)}
+        <li className="flex items-center gap-2 border-y border-indigo-500/40 bg-indigo-500/[0.06] px-2 py-1 text-[12px]">
+          <span className="font-medium text-indigo-200">NIFTY now</span>
+          <span className="font-mono tabular-nums text-zinc-100">{n(last, 2)}</span>
+        </li>
+        {levels.slice(split).map((lv) => <LadderRow key={lv.key} lv={lv} last={last} keyRole={lv.key === sKey ? "S" : null} />)}
+      </ol>
+      <p className="mt-2 text-[11.5px] leading-relaxed text-zinc-400">{data.summary.edge}</p>
+
+      <button id="bo-history" type="button" aria-expanded={history} onClick={() => setHistory(!history)}
+        className="mt-2 min-h-8 text-[11.5px] text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60">
+        {history ? "Hide the history" : "Show the history: every level, any move size, against random lines"}
+      </button>
+      {history && <BreakoutHistory data={data} />}
     </Panel>
   );
 }
