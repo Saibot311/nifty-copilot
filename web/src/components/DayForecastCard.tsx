@@ -106,45 +106,77 @@ export function DayForecastCard({ data }: { data: DayForecast | null }) {
       )}
 
       {data.recent.length > 0 && (
-        <div className="mt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
-            How the forecasts turned out
-            {data.summary && <span className="font-normal normal-case tracking-normal text-zinc-500"> · {data.summary.forecasts} so far: close inside the 68% band {data.summary.inside68_pct}%, 95% band {data.summary.inside95_pct}%, lean right {data.summary.lean_hit_pct}%</span>}
-          </p>
-          <ul className="mt-2 space-y-2">
-            {data.recent.map((r) => (
-              <li key={r.target_day} className="rounded-lg bg-zinc-950/60 px-3 py-2 text-[11px]">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-zinc-300">{day(r.target_day)}</span>
-                  <span className="font-mono tabular-nums text-zinc-400">
-                    closed {n(r.outcome!.close)} ({signed(r.outcome!.move_pts)}) · range {n(r.outcome!.range_pts)} pts
-                  </span>
-                  <span className="flex gap-1">
-                    <Pill tone={r.outcome!.inside68 ? "good" : r.outcome!.inside95 ? "warn" : "bad"}>
-                      {r.outcome!.inside68 ? "in band" : r.outcome!.inside95 ? "outside 68%" : "outside 95%"}
-                    </Pill>
-                    <Pill tone={r.outcome!.lean_hit ? "good" : "neutral"}>lean {r.outcome!.lean_hit ? "right" : "wrong"}</Pill>
-                  </span>
-                </div>
-                {r.outcome!.why.length > 0 && (
-                  <ul className="mt-1 list-disc pl-4 text-zinc-500">
-                    {r.outcome!.why.map((w, i) => <li key={i}>{w}</li>)}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <details className="group mt-4 rounded-lg bg-zinc-950/40">
+          <summary className="flex cursor-pointer list-none flex-wrap items-baseline justify-between gap-2 px-3 py-2 text-[11px] text-zinc-400 hover:text-zinc-200">
+            <span>
+              <span className="mr-1 inline-block transition-transform group-open:rotate-90">›</span>
+              Past forecasts{data.summary && <> · {data.summary.forecasts} so far</>}
+            </span>
+            {data.summary && (
+              <span className="font-mono tabular-nums text-zinc-500">
+                in 68% {data.summary.inside68_pct}% · in 95% {data.summary.inside95_pct}% · lean {data.summary.lean_hit_pct}%
+              </span>
+            )}
+          </summary>
+          <div className="overflow-x-auto px-3 pb-2">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-[0.1em] text-zinc-500">
+                  <th className="py-1 pr-2 font-medium">Day</th>
+                  <th className="py-1 pr-2 text-right font-medium">Close</th>
+                  <th className="py-1 pr-2 text-right font-medium">Move</th>
+                  <th className="hidden py-1 pr-2 text-right font-medium sm:table-cell">Range</th>
+                  <th className="py-1 pr-2 text-center font-medium">Band</th>
+                  <th className="py-1 text-center font-medium">Lean</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono tabular-nums text-zinc-400">
+                {data.recent.map((r) => {
+                  const o = r.outcome!;
+                  const band = o.inside68 ? "in" : o.inside95 ? "68%" : "95%";
+                  return (
+                    <tr key={r.target_day} className="border-t border-zinc-800/60 align-top" title={o.why.join(" ")}>
+                      <td className="py-1 pr-2 font-sans text-zinc-300">
+                        {day(r.target_day)}
+                        {o.why.length > 0 && (
+                          <details className="font-sans">
+                            <summary className="cursor-pointer text-[10px] text-zinc-500 hover:text-zinc-300">why</summary>
+                            <ul className="mt-0.5 max-w-xs space-y-0.5 text-[10px] leading-snug text-zinc-500">
+                              {o.why.map((w, i) => <li key={i}>{w}</li>)}
+                            </ul>
+                          </details>
+                        )}
+                      </td>
+                      <td className="py-1 pr-2 text-right">{n(o.close)}</td>
+                      <td className={`py-1 pr-2 text-right ${o.move_pts > 0 ? "text-emerald-400" : o.move_pts < 0 ? "text-rose-400" : ""}`}>{signed(o.move_pts)}</td>
+                      <td className="hidden py-1 pr-2 text-right sm:table-cell">{n(o.range_pts)}</td>
+                      <td className="py-1 pr-2 text-center">
+                        <span className={band === "in" ? "text-emerald-400" : band === "68%" ? "text-amber-300" : "text-rose-400"}
+                          aria-label={band === "in" ? "inside the 68% band" : `outside the ${band} band`}>
+                          {band === "in" ? "✓ in" : `✗ ${band}`}
+                        </span>
+                      </td>
+                      <td className={`py-1 text-center ${o.lean_hit ? "text-emerald-400" : "text-zinc-500"}`}>{o.lean_hit ? "✓" : "✗"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
 
-      <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-        {h?.holdout_inside68_pct != null && <>Checked on the past before going live: with the width fitted on 2018–23, 2024–26 closes fell
-        inside the 68% band {h.holdout_inside68_pct}% of the time and the 95% band {h.holdout_inside95_pct}%. </>}
-        Each night the width is recalibrated from the last {data.calibration_now.window} sessions (now ×{data.calibration_now.k}), and event
-        days get ×{data.calibration_now.multipliers.event} from their own record. Another way of sizing the band replaces the one in use
-        only if it scores better on the last 250 sessions by a fixed margin and in both halves of them, so one lucky stretch
-        cannot flip it; only the width learns, never the direction. When a forecast misses, fixed checks say why. {data.note}
-      </p>
+      <details className="mt-2">
+        <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">How this works</summary>
+        <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+          {h?.holdout_inside68_pct != null && <>Checked on the past before going live: with the width fitted on 2018–23, 2024–26 closes fell
+          inside the 68% band {h.holdout_inside68_pct}% of the time and the 95% band {h.holdout_inside95_pct}%. </>}
+          Each night the width is recalibrated from the last {data.calibration_now.window} sessions (now ×{data.calibration_now.k}), and event
+          days get ×{data.calibration_now.multipliers.event} from their own record. Another way of sizing the band replaces the one in use
+          only if it scores better on the last 250 sessions by a fixed margin and in both halves of them, so one lucky stretch
+          cannot flip it; only the width learns, never the direction. When a forecast misses, fixed checks say why. {data.note}
+        </p>
+      </details>
     </Panel>
   );
 }
