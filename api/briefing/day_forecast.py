@@ -399,7 +399,20 @@ def accuracy(records: list[dict], last_n: int = 20) -> dict | None:
             "inside95_pct": round(sum(r["outcome"]["inside95"] for r in scored) / n * 100, 1),
             "lean_hit_pct": round(sum(r["outcome"]["lean_hit"] for r in scored) / n * 100, 1),
             "width_ratio": ratio, "width_reading": reading,
-            "mean_abs_move_pts": round(statistics.mean(abs(r["outcome"]["move_pts"]) for r in scored), 1)}
+            "mean_abs_move_pts": round(statistics.mean(abs(r["outcome"]["move_pts"]) for r in scored), 1),
+            # The same, in counts a beginner can read: of n days, how many closes
+            # landed in each range, against how many the bands are built for.
+            "inside68_n": sum(r["outcome"]["inside68"] for r in scored),
+            "inside95_n": sum(r["outcome"]["inside95"] for r in scored),
+            "lean_n": sum(r["outcome"]["lean_hit"] for r in scored),
+            "aim68_n": round(0.68 * n), "aim95_n": round(0.95 * n),
+            "days": [{"day": r["target_day"], "band": "in68" if r["outcome"]["inside68"] else
+                      "in95" if r["outcome"]["inside95"] else "out"} for r in scored],
+            "plain": (f"Too early to judge: {n} day{'s' if n != 1 else ''} scored so far, about 20 are needed."
+                      if n < 20 else
+                      "Lately NIFTY has moved more than the ranges expected: they have been too narrow." if ratio > 1.15 else
+                      "Lately NIFTY has moved less than the ranges expected: they have been too wide." if ratio < 0.85 else
+                      "The ranges have been about the right size.")}
 
 
 def view(db_path=None, inputs: dict | None = None) -> dict:

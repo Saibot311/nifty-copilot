@@ -50,14 +50,14 @@ export function DayForecastCard({ data }: { data: DayForecast | null }) {
               </div>
             </div>
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">Close, 2 in 3</div>
+              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">Likely range</div>
               <div className="font-mono text-sm tabular-nums text-zinc-100">{n(f.band68[0])}–{n(f.band68[1])}</div>
-              <div className="text-[11px] text-zinc-500">68% band</div>
+              <div className="text-[11px] text-zinc-500">close lands here 2 days in 3</div>
             </div>
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">Close, 19 in 20</div>
+              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">Wide range</div>
               <div className="font-mono text-sm tabular-nums text-zinc-100">{n(f.band95[0])}–{n(f.band95[1])}</div>
-              <div className="text-[11px] text-zinc-500">95% band</div>
+              <div className="text-[11px] text-zinc-500">close lands here 19 days in 20</div>
             </div>
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2">
               <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">High–low range</div>
@@ -81,24 +81,36 @@ export function DayForecastCard({ data }: { data: DayForecast | null }) {
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {acc && (
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-[11px]">
-              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">Accuracy, last {acc.forecasts}</div>
-              <div className="mt-1 font-mono tabular-nums text-zinc-200">
-                {acc.inside68_pct}% inside 68% · {acc.inside95_pct}% inside 95%
-              </div>
-              <div className="text-zinc-500">
-                Width ×{acc.width_ratio} of what it should be — {acc.width_reading}
-                {acc.forecasts < 20 && `; too few forecasts to read yet (68% and 95% are the targets)`}.
-              </div>
+              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">How it&apos;s doing · last {acc.forecasts} days</div>
+              {acc.days && (
+                <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Each day: green in the likely range, amber only in the wide range, red outside both">
+                  {acc.days.map((d) => (
+                    <span key={d.day} title={`${day(d.day)}: ${d.band === "in68" ? "in the likely range" : d.band === "in95" ? "in the wide range only" : "outside both ranges"}`}
+                      className={`h-2.5 w-2.5 rounded-full ${d.band === "in68" ? "bg-emerald-400" : d.band === "in95" ? "bg-amber-300" : "bg-rose-400"}`} />
+                  ))}
+                </div>
+              )}
+              {acc.inside68_n != null ? (
+                <ul className="mt-1.5 space-y-0.5 text-zinc-300">
+                  <li><b className="font-mono tabular-nums">{acc.inside68_n} of {acc.forecasts}</b> closes in the likely range <span className="text-zinc-500">(should be about {acc.aim68_n})</span></li>
+                  <li><b className="font-mono tabular-nums">{acc.inside95_n} of {acc.forecasts}</b> in the wide range <span className="text-zinc-500">(should be nearly all, about {acc.aim95_n})</span></li>
+                  <li><b className="font-mono tabular-nums">{acc.lean_n} of {acc.forecasts}</b> leans right <span className="text-zinc-500">(a coin toss gets about half)</span></li>
+                </ul>
+              ) : (
+                <div className="mt-1 font-mono tabular-nums text-zinc-200">{acc.inside68_pct}% inside 68% · {acc.inside95_pct}% inside 95%</div>
+              )}
+              <div className="mt-1 text-zinc-500">{acc.plain ?? acc.width_reading}</div>
             </div>
           )}
           {choice && (
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-[11px]">
-              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">How the band is sized</div>
-              <div className="mt-1 text-zinc-200">{choice.labels[choice.champion] ?? choice.champion}
-                {choice.switched && <Pill tone="info">switched</Pill>}</div>
+              <div className="text-[10px] uppercase tracking-[0.1em] text-zinc-500">How the range is set</div>
+              <div className="mt-1 text-zinc-200">From {choice.labels[choice.champion] ?? choice.champion}
+                {choice.switched && <> <Pill tone="info">switched</Pill></>}</div>
               <div className="text-zinc-500">
-                {choice.reason}. Checked every night against {Object.keys(choice.labels).length - 1} other ways
-                {data.learning.switches.length > 0 ? `; ${data.learning.switches.length} switch(es) so far` : "; no switch so far"}.
+                Every night it is compared with {Object.keys(choice.labels).length - 1} other ways of setting the range; it changes only if
+                another is clearly better over the last year
+                {data.learning.switches.length > 0 ? ` (changed ${data.learning.switches.length} time${data.learning.switches.length > 1 ? "s" : ""} so far)` : " (none has been so far)"}.
               </div>
             </div>
           )}
