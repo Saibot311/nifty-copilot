@@ -195,11 +195,11 @@ def step_backup() -> bool:
     each evening's rows in no backup until the next weekday."""
     from storage.backup import backup_forward_log, backup_news
     from storage.backup import backup_gift_nifty, backup_hypothesis_log, backup_journal, backup_option_snapshots
-    from storage.backup import backup_day_forecast, backup_intraday_forward, backup_paper
+    from storage.backup import backup_day_forecast, backup_intraday_forward, backup_paper, backup_kronos
     from storage.backup import backup_breakouts, backup_incidents
     ok = True
     for r in (backup_forward_log(), backup_journal(), backup_paper(), backup_news(), backup_gift_nifty(),
-              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast(),
+              backup_hypothesis_log(), backup_option_snapshots(), backup_intraday_forward(), backup_day_forecast(), backup_kronos(),
               backup_breakouts(), backup_incidents()):
         log(f"    {r['summary']}")
         ok = ok and r["ok"]
@@ -309,6 +309,8 @@ def main() -> int:
         # After the IV series has today's close: score today's day-ahead
         # forecast and write tomorrow's, before tomorrow opens.
         ("day-ahead forecast", lambda: run_script("scripts/day_forecast.py")),
+        # Kronos beside it: score its forecast for today, write the next.
+        ("kronos day-ahead", lambda: run_script("scripts/kronos_daily.py")),
         # After the forecast: the record reads its band, the bars and the options archive.
         ("breakout levels", lambda: run_script("scripts/breakout_levels.py")),
         ("participant positioning", lambda: run_script("scripts/backfill_participant_oi.py")),
