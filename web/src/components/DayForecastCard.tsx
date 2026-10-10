@@ -126,7 +126,7 @@ export function DayForecastCard({ data }: { data: DayForecast | null }) {
             </span>
             {data.summary && (
               <span className="font-mono tabular-nums text-zinc-500">
-                in 68% {data.summary.inside68_pct}% · in 95% {data.summary.inside95_pct}% · lean {data.summary.lean_hit_pct}%
+                likely range {data.summary.inside68_pct}% · wide range {data.summary.inside95_pct}% · lean right {data.summary.lean_hit_pct}%
               </span>
             )}
           </summary>
@@ -138,7 +138,7 @@ export function DayForecastCard({ data }: { data: DayForecast | null }) {
                   <th className="py-1 pr-2 text-right font-medium">Close</th>
                   <th className="py-1 pr-2 text-right font-medium">Move</th>
                   <th className="hidden py-1 pr-2 text-right font-medium sm:table-cell">Range</th>
-                  <th className="py-1 pr-2 text-center font-medium">Band</th>
+                  <th className="py-1 pr-2 text-center font-medium">Range hit</th>
                   <th className="py-1 text-center font-medium">Lean</th>
                 </tr>
               </thead>
@@ -165,7 +165,7 @@ export function DayForecastCard({ data }: { data: DayForecast | null }) {
                       <td className="py-1 pr-2 text-center">
                         <span className={band === "in" ? "text-emerald-400" : band === "68%" ? "text-amber-300" : "text-rose-400"}
                           aria-label={band === "in" ? "inside the 68% band" : `outside the ${band} band`}>
-                          {band === "in" ? "✓ in" : `✗ ${band}`}
+                          {band === "in" ? "✓ likely" : band === "68%" ? "~ wide" : "✗ outside"}
                         </span>
                       </td>
                       <td className={`py-1 text-center ${o.lean_hit ? "text-emerald-400" : "text-zinc-500"}`}>{o.lean_hit ? "✓" : "✗"}</td>
