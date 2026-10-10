@@ -1198,7 +1198,9 @@ export type DayForecast = {
   calibration_now: { k: number; window: number; multipliers: { event: number; expiry: number }; range_ratio: number };
   status: { due: string; stale: boolean; waiting: boolean; reasons: string[] };
   accuracy: { forecasts: number; inside68_pct: number; inside95_pct: number; lean_hit_pct: number;
-              width_ratio: number; width_reading: string; mean_abs_move_pts: number } | null;
+              width_ratio: number; width_reading: string; mean_abs_move_pts: number;
+              inside68_n?: number; inside95_n?: number; lean_n?: number; aim68_n?: number; aim95_n?: number;
+              days?: { day: string; band: "in68" | "in95" | "out" }[]; plain?: string } | null;
   learning: { latest: ForecastMethodChoice | null; switches: ForecastMethodChoice[] };
   note: string;
 };
