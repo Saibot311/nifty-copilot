@@ -1082,6 +1082,18 @@ def freshness() -> dict:
     return data
 
 
+@app.get("/api/kronos")
+def kronos() -> dict:
+    """Kronos (an open-source AI model for candles) beside the app's forecast:
+    the next session's and the next hour's forecasts, their forward record,
+    and its past check (which may include prices it was trained on)."""
+    from briefing.kronos_forecast import view
+    try:
+        return cached("kronos", ttl_seconds=60, producer=view, stale_ok=True)
+    except Exception as e:
+        raise HTTPException(503, f"Kronos unavailable: {str(e)[:160]}") from e
+
+
 @app.get("/api/day_forecast")
 def day_forecast() -> dict:
     """The next session's forecast (written before it opens, never edited),

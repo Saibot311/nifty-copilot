@@ -14,6 +14,7 @@ import { BreakoutLevelsCard } from "@/components/BreakoutLevelsCard";
 import { WeekdayCard } from "@/components/WeekdayCard";
 import { OptionMovesCard } from "@/components/OptionMovesCard";
 import { DayForecastCard } from "@/components/DayForecastCard";
+import { KronosCard } from "@/components/KronosCard";
 import { NiftyPipelineCard } from "@/components/NiftyPipelineCard";
 import { PatternTable } from "@/components/PatternTable";
 import { IndicatorGrid } from "@/components/IndicatorGrid";
@@ -47,6 +48,7 @@ import {
   fetchWeekdayProfile,
   fetchOptionMoves,
   fetchDayForecast,
+  fetchKronos,
   fetchBreakouts,
   fetchFreshness,
   fetchSentinel,
@@ -102,6 +104,7 @@ export default async function Home() {
     weekdayProfile,
     optionMoves,
     dayForecast,
+    kronos,
     breakouts,
     freshness,
     sentinel,
@@ -137,6 +140,7 @@ export default async function Home() {
     fetchWeekdayProfile(),
     fetchOptionMoves(),
     fetchDayForecast(),
+    fetchKronos(),
     fetchBreakouts(),
     fetchFreshness(),
     fetchSentinel(),
@@ -208,6 +212,13 @@ export default async function Home() {
                   The next session
                 </SectionLabel>
                 <DayForecastCard data={dayForecast.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="an open-source AI model for candles, scored beside our forecast — not a reason to trade">
+                  Kronos (AI model)
+                </SectionLabel>
+                <KronosCard data={kronos.data} />
               </section>
 
               {livePatterns.data?.candle && (

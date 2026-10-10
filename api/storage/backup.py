@@ -114,6 +114,13 @@ def backup_incidents(source: Path | None = None, dest_dir: Path | None = None, k
     return _backup(source or INCIDENTS_PATH, "incidents", "incidents", dest_dir, keep, today)
 
 
+def backup_kronos(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
+                  today: date | None = None) -> dict:
+    """Kronos's forecasts and outcomes, written before each outcome, never edited."""
+    from .kronos_db import DB_PATH as K_PATH
+    return _backup(source or K_PATH, "kronos", "forecasts", dest_dir, keep, today)
+
+
 def backup_hypothesis_log(source: Path | None = None, dest_dir: Path | None = None, keep: int = KEEP,
                           today: date | None = None) -> dict:
     """The audit trail of every strategy and parameter set ever run — the

@@ -1503,3 +1503,25 @@ export type Precheck = {
   checks: { key: string; tone: "warn" | "info"; text: string }[];
 };
 export const fetchPrecheck = (q: URLSearchParams) => journalRequest<Precheck>(`/api/precheck?${q.toString()}`);
+
+
+export type KronosBands = { median: number; p16: number; p84: number; p2_5: number; p97_5: number };
+export type KronosForecastBody = {
+  last_close: number; steps: KronosBands[]; median: number; band68: [number, number]; band95: [number, number];
+  direction: "up" | "down"; median_move: number; paths: number; target?: string; last_session?: string;
+  from_bar_close?: string; target_bar?: string; model: string;
+};
+export type KronosOutcome = { close: number; move: number; inside68: boolean; inside95: boolean; direction_hit: boolean; error: number };
+export type KronosRecord = { target: string; made_at: string; forecast: KronosForecastBody; scored_at: string | null; outcome: KronosOutcome | null };
+export type KronosScore = { sessions: number; inside68_pct: number | null; inside95_pct: number | null;
+                            direction_hit_pct?: number | null; median_abs_error?: number | null };
+export type KronosView = {
+  available: boolean; next_daily: KronosRecord | null; our_next: DayForecastBody | null; live_latest: KronosRecord | null;
+  forward: { daily: KronosScore | null; live: KronosScore | null; ours_same_days: KronosScore | null;
+             first_daily: string | null; first_live: string | null };
+  recent_daily: (KronosOutcome & { target: string; median: number })[];
+  recent_live: (KronosOutcome & { target: string; median: number })[];
+  hindcast: { kronos: KronosScore | null; ours_same_days: KronosScore | null; from: string; to: string; warning: string } | null;
+  note: string;
+};
+export const fetchKronos = () => get<KronosView>("/api/kronos");
