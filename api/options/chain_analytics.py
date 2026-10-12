@@ -65,6 +65,10 @@ def analyse_chain(data: dict, expiry: str | None = None) -> ChainAnalytics:
     records = data["records"]
     rows = records.get("data", [])
     underlying = float(records.get("underlyingValue") or 0)
+    if not underlying:
+        # With no index price every strike's distance from it is wrong, and
+        # the lowest strike would pass for the at-the-money one.
+        raise RuntimeError("NSE's chain carries no underlying value")
     expiries = records.get("expiryDates") or []
 
     target_expiry = expiry or (expiries[0] if expiries else None)

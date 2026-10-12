@@ -6,6 +6,7 @@ import { IVCard } from "@/components/IVCard";
 import { MarketTab } from "@/components/MarketCards";
 import { NewsResearchCard } from "@/components/NewsResearchCard";
 import { OptionChainCard } from "@/components/OptionChainCard";
+import { ChainTradeCard } from "@/components/ChainTradeCard";
 import { JournalTab } from "@/components/JournalTab";
 import { ReplicationCard } from "@/components/ReplicationCard";
 import { CourseResearchCard } from "@/components/CourseResearchCard";
@@ -35,6 +36,7 @@ import { SectionLabel } from "@/components/ui";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
 import {
   fetchBriefing,
+  fetchChainTrade,
   fetchChart,
   fetchCopilotStatus,
   fetchForwardLog,
@@ -108,6 +110,7 @@ export default async function Home() {
     breakouts,
     freshness,
     sentinel,
+    chainTrade,
   ] = await Promise.all([
     fetchSnapshot(),
     fetchLiveQuote(),
@@ -144,6 +147,7 @@ export default async function Home() {
     fetchBreakouts(),
     fetchFreshness(),
     fetchSentinel(),
+    fetchChainTrade(),
   ]);
 
   const snap = snapshot.data;
@@ -195,17 +199,37 @@ export default async function Home() {
             <>
               <div className="grid gap-6 lg:grid-cols-12">
                 <section className="min-w-0 lg:col-span-7">
-                  <SectionLabel hint="the only thing on this page that is a decision" behind={behind("recommendation")}>Today&apos;s call</SectionLabel>
+                  <SectionLabel hint="the tested strategies' verdict: the record behind it is below" behind={behind("recommendation")}>Today&apos;s call</SectionLabel>
                   <RecommendationCard rec={recommendation.data} />
-                  <div className="mt-6">
-                    <IndicatorGrid initial={indicators.data} />
-                  </div>
                 </section>
-                <section className="min-w-0 lg:col-span-5">
-                  <SectionLabel hint="4-hour candles, and the closes that would form a pattern that could become the call" behind={behind("chart")}>Where NIFTY stands</SectionLabel>
-                  <TodayChart data={candles.data} keyLevels={breakouts.data?.key_levels} />
+                {/* First on a phone, where the call's long record would push it off the screen. */}
+                <section className="order-first min-w-0 lg:order-none lg:col-span-5">
+                  <SectionLabel hint="read off the live chain — untested, not advice" behind={behind("option_chain")}>Option-chain trade</SectionLabel>
+                  <ChainTradeCard initial={chainTrade.data} />
                 </section>
               </div>
+
+              <section>
+                <SectionLabel hint="NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs" behind={behind("option_chain")}>
+                  Option chain
+                </SectionLabel>
+                <OptionChainCard initial={chainTable.data} />
+              </section>
+
+              <section>
+                <SectionLabel hint="the eight readings, and the 4-hour chart behind a click" behind={behind("chart", "indicators")}>Where NIFTY stands</SectionLabel>
+                <IndicatorGrid initial={indicators.data} />
+                <details className="group mt-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
+                  <summary className="flex min-h-10 cursor-pointer list-none items-center px-4 text-[12px] text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60">
+                    <span className="group-open:hidden">Show the chart ▾</span>
+                    <span className="hidden group-open:inline">Hide the chart ▴</span>
+                    <span className="ml-2 text-[11px] text-zinc-600">4-hour candles, and the closes that would form a pattern that could become the call</span>
+                  </summary>
+                  <div className="border-t border-zinc-800/60 p-3">
+                    <TodayChart data={candles.data} keyLevels={breakouts.data?.key_levels} />
+                  </div>
+                </details>
+              </section>
 
               <section>
                 <SectionLabel hint="written before the session, scored after — how far, not which way" behind={behind("day_forecast")}>
@@ -268,13 +292,6 @@ export default async function Home() {
                 ) : (
                   <PatternsTodayCard data={patternsToday.data} />
                 )}
-              </section>
-
-              <section>
-                <SectionLabel hint="NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs" behind={behind("option_chain")}>
-                  Option chain
-                </SectionLabel>
-                <OptionChainCard initial={chainTable.data} />
               </section>
 
               <section>

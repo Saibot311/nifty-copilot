@@ -917,6 +917,41 @@ export type OptionChainTable = {
 export const fetchOptionChainTable = (expiry?: string) =>
   get<OptionChainTable>(`/api/options/chain/contracts${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`);
 
+/** The option-chain trade's settings (api/options/chain_trade.py Rules). */
+export type ChainTradeRules = {
+  near_strikes: number; min_skew_pct: number; pcr_ce_min: number; pcr_pe_max: number;
+  iv_max: number; strike_offset: number; target_pct: number; stop_pct: number;
+};
+
+/** One option to buy off the live chain: the owner's scoped exception to
+ *  "never advise a trade". Untested; entry, target and stop are null when
+ *  NSE gave no price. */
+export type ChainTrade = {
+  action: "BUY_CE" | "BUY_PE" | "NO_TRADE";
+  reason: string | null;
+  trade: {
+    side: "CE" | "PE"; strike: number; expiry: string; identifier: string;
+    entry: number | null; entry_source: "ask" | "last" | null; target: number | null; stop: number | null;
+    iv: number | null; oi: number; oi_change: number; lot_size: number | null;
+    lot_rs: number | null; charges_rs: number | null; breakeven: number | null; rationale: string;
+  } | null;
+  inputs: {
+    expiry: string; as_of: string | null; spot: number; atm_strike: number | null; pcr: number | null;
+    near_from?: number; near_to?: number; call_oi_added?: number; put_oi_added?: number; skew_pct?: number | null;
+  };
+  rules: ChainTradeRules;
+  default_rules: boolean;
+  computed_at: string;
+  market_open: boolean;
+  logged: boolean;
+  record: ({ session: string; made_at: string } & Omit<ChainTrade, "record">)[] | null;
+};
+
+export const fetchChainTrade = (rules?: Partial<ChainTradeRules>) => {
+  const q = new URLSearchParams(Object.entries(rules ?? {}).map(([k, v]) => [k, String(v)])).toString();
+  return get<ChainTrade>(`/api/options/trade${q ? `?${q}` : ""}`);
+};
+
 export type NewsRow = {
   id: string;
   title: string;
