@@ -88,6 +88,14 @@ def add_exit(session: str, at: str, kind: str, body: dict, db_path: Path | None 
         return conn.total_changes > before
 
 
+def unclosed_before(session: str, db_path: Path | None = None) -> list[str]:
+    """Earlier sessions whose locked trade has no exit."""
+    with connect(db_path) as conn:
+        rows = conn.execute("SELECT s.session FROM suggestions s LEFT JOIN exits e ON e.session = s.session "
+                            "WHERE e.session IS NULL AND s.session < ?", (session,)).fetchall()
+    return [r["session"] for r in rows]
+
+
 def exit_for(session: str, db_path: Path | None = None) -> dict | None:
     with connect(db_path) as conn:
         r = conn.execute("SELECT session, at, kind, body FROM exits WHERE session = ?", (session,)).fetchone()

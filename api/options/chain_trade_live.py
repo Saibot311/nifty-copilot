@@ -53,6 +53,11 @@ def _stamped_today(table: dict, now: datetime) -> bool:
 def scan_and_track(now: datetime, chain: dict | None = None, db_path=None, holidays: set | None = None) -> dict:
     """One look. Returns what it did: {"did": "scan"|"locked"|"track"|"exit"|"idle", ...}."""
     session = now.date().isoformat()
+    # A day whose trade no run saw after the close (the Mac asleep) still ends, on time, unpriced.
+    for old in db.unclosed_before(session, db_path):
+        db.add_exit(old, now.isoformat(timespec="seconds"), "time",
+                    {"premium": None, "premium_source": None, "spot": None, "pnl_per_unit": None,
+                     "pnl_per_lot": None, "note": "not seen after the close"}, db_path)
     lock = db.suggestion_for(session, db_path)
     if lock is None:
         return _scan(now, session, chain, db_path, holidays)
