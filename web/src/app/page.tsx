@@ -32,7 +32,7 @@ import { PairPhone } from "@/components/PairPhone";
 import { PairingNotice } from "@/components/PairingNotice";
 import { SimilarityCard } from "@/components/SimilarityCard";
 import { ResearchCompare } from "@/components/ResearchCompare";
-import { SectionLabel } from "@/components/ui";
+import { Panel, SectionLabel, Tabs } from "@/components/ui";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
 import {
   fetchBriefing,
@@ -197,87 +197,103 @@ export default async function Home() {
         <DashboardTabs
           today={
             <>
+              <section>
+                <SectionLabel hint="4-hour candles by default — and the closes that would form a pattern that could become the call" behind={behind("chart", "indicators")}>Where NIFTY stands</SectionLabel>
+                <Panel className="min-w-0 p-3">
+                  <TodayChart data={candles.data} keyLevels={breakouts.data?.key_levels} />
+                </Panel>
+                <div className="mt-4">
+                  <IndicatorGrid initial={indicators.data} />
+                </div>
+              </section>
+
               <div className="grid gap-6 lg:grid-cols-12">
                 <section className="min-w-0 lg:col-span-7">
-                  <SectionLabel hint="the tested strategies' verdict: the record behind it is below" behind={behind("recommendation")}>Today&apos;s call</SectionLabel>
-                  <RecommendationCard rec={recommendation.data} />
-                </section>
-                {/* First on a phone, where the call's long record would push it off the screen. */}
-                <section className="order-first min-w-0 lg:order-none lg:col-span-5">
                   <SectionLabel hint="read off the live chain — untested, not advice" behind={behind("option_chain")}>Option-chain trade</SectionLabel>
                   <ChainTradeCard initial={chainTrade.data} />
                 </section>
+                <section className="min-w-0 lg:col-span-5">
+                  <SectionLabel hint="the tested strategies' verdict: the record behind it is below" behind={behind("recommendation")}>Today&apos;s call</SectionLabel>
+                  <RecommendationCard rec={recommendation.data} />
+                </section>
               </div>
 
-              <section>
-                <SectionLabel hint="NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs" behind={behind("option_chain")}>
-                  Option chain
-                </SectionLabel>
-                <OptionChainCard initial={chainTable.data} />
-              </section>
+              <Tabs
+                title="Option chain"
+                storageKey="today-chain"
+                tabs={[
+                  {
+                    id: "chain",
+                    label: "Chain",
+                    hint: "NSE's live chain: every strike and expiry, open interest included — pick a price for what a lot costs",
+                    behind: behind("option_chain"),
+                    content: <OptionChainCard initial={chainTable.data} />,
+                  },
+                  {
+                    id: "moves",
+                    label: "If NIFTY moves",
+                    hint: "8 strikes either side of the money — modelled from each price now, and as traded",
+                    behind: behind("option_moves"),
+                    content: <OptionMovesCard data={optionMoves.data} />,
+                  },
+                ]}
+              />
 
-              <section>
-                <SectionLabel hint="the eight readings, and the 4-hour chart behind a click" behind={behind("chart", "indicators")}>Where NIFTY stands</SectionLabel>
-                <IndicatorGrid initial={indicators.data} />
-                <details className="group mt-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-                  <summary className="flex min-h-10 cursor-pointer list-none items-center px-4 text-[12px] text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60">
-                    <span className="group-open:hidden">Show the chart ▾</span>
-                    <span className="hidden group-open:inline">Hide the chart ▴</span>
-                    <span className="ml-2 text-[11px] text-zinc-600">4-hour candles, and the closes that would form a pattern that could become the call</span>
-                  </summary>
-                  <div className="border-t border-zinc-800/60 p-3">
-                    <TodayChart data={candles.data} keyLevels={breakouts.data?.key_levels} />
-                  </div>
-                </details>
-              </section>
+              <Tabs
+                title="Forecasts"
+                storageKey="today-forecasts"
+                tabs={[
+                  {
+                    id: "next",
+                    label: "Next session",
+                    hint: "written before the session, scored after — how far, not which way",
+                    behind: behind("day_forecast"),
+                    content: <DayForecastCard data={dayForecast.data} />,
+                  },
+                  {
+                    id: "kronos",
+                    label: "Kronos AI",
+                    hint: "an open-source AI model for candles, scored beside our forecast — not a reason to trade",
+                    content: <KronosCard data={kronos.data} />,
+                  },
+                ]}
+              />
 
-              <section>
-                <SectionLabel hint="written before the session, scored after — how far, not which way" behind={behind("day_forecast")}>
-                  The next session
-                </SectionLabel>
-                <DayForecastCard data={dayForecast.data} />
-              </section>
-
-              <section>
-                <SectionLabel hint="an open-source AI model for candles, scored beside our forecast — not a reason to trade">
-                  Kronos (AI model)
-                </SectionLabel>
-                <KronosCard data={kronos.data} />
-              </section>
-
-              {livePatterns.data?.candle && (
-                <section>
-                  <SectionLabel hint="provisional until 15:30 — never a signal" behind={behind("live_patterns", "indicators")}>Live — during the session</SectionLabel>
-                  <LivePatternsCard initial={livePatterns.data} />
-                </section>
-              )}
-
-              <section>
-                <SectionLabel hint="the strategy pipeline's three, followed on completed 5-minute bars" behind={behind("intraday")}>
-                  Intraday rules
-                </SectionLabel>
-                <IntradayCard initial={intraday.data} />
-              </section>
-
-              <section>
-                <SectionLabel hint="from data that existed before each was used — every break since 2015 beside random levels" behind={behind("breakouts", "breakout_record")}>
-                  Breakout levels
-                </SectionLabel>
-                <BreakoutLevelsCard data={breakouts.data} />
-              </section>
+              <Tabs
+                title="During the session"
+                storageKey="today-session"
+                tabs={[
+                  ...(livePatterns.data?.candle
+                    ? [{
+                        id: "live",
+                        label: "Live patterns",
+                        hint: "provisional until 15:30 — never a signal",
+                        behind: behind("live_patterns", "indicators"),
+                        content: <LivePatternsCard initial={livePatterns.data} />,
+                      }]
+                    : []),
+                  {
+                    id: "intraday",
+                    label: "Intraday rules",
+                    hint: "the strategy pipeline's three, followed on completed 5-minute bars",
+                    behind: behind("intraday"),
+                    content: <IntradayCard initial={intraday.data} />,
+                  },
+                  {
+                    id: "breakouts",
+                    label: "Breakout levels",
+                    hint: "from data that existed before each was used — every break since 2015 beside random levels",
+                    behind: behind("breakouts", "breakout_record"),
+                    content: <BreakoutLevelsCard data={breakouts.data} />,
+                  },
+                ]}
+              />
 
               <section>
                 <SectionLabel hint="every session of this weekday since 2015, point by point — a description, not a signal" behind={behind("weekday_profile")}>
                   How {weekdayProfile.data ? `${weekdayProfile.data.weekday}s` : "this weekday"} move
                 </SectionLabel>
                 <WeekdayCard data={weekdayProfile.data} />
-              </section>
-
-              <section>
-                <SectionLabel hint="8 strikes either side of the money — modelled from each price now, and as traded" behind={behind("option_moves")}>
-                  What a move does to option prices
-                </SectionLabel>
-                <OptionMovesCard data={optionMoves.data} />
               </section>
 
               <section>

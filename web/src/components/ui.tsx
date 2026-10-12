@@ -132,3 +132,8 @@ export function fmtSigned(v: number | null | undefined, digits = 2) {
   const sign = v > 0 ? "+" : v < 0 ? "−" : "";
   return `${sign}${Math.abs(v).toFixed(digits)}`;
 }
+
+/** Tabbed card group: one heading, tabs, the open tab's card. Lives in TabbedCard.tsx because it needs the
+ *  browser; re-exported here so cards import every primitive from one place. */
+export { Tabs } from "./TabbedCard";
+export type { TabSpec } from "./TabbedCard";
