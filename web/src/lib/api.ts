@@ -926,7 +926,31 @@ export type ChainTradeRules = {
 /** One option to buy off the live chain: the owner's scoped exception to
  *  "never advise a trade". Untested; entry, target and stop are null when
  *  NSE gave no price. */
-export type ChainTrade = {
+export type ChainTradeLockedTrade = NonNullable<ChainTradeBase["trade"]>;
+
+/** The live lifecycle of the day's trade (api/options/chain_trade_live.py); every number is computed in Python. */
+export type ChainTradeLive = {
+  phase: "scanning" | "locked" | "closed" | "not_trading" | "unavailable";
+  message?: string;
+  last_scan?: { at: string; action: string; reason: string | null } | null;
+  next_check_minutes?: number;
+  locked_at?: string;
+  trade?: ChainTradeLockedTrade;
+  mark?: { premium: number | null; source: "bid" | "last" | null; spot: number } | null;
+  pnl_per_unit?: number; pnl_per_lot?: number | null; pnl_for_plan?: number;
+  /** Where the premium sits between the stop (0) and the target (1). */
+  position?: number | null;
+  sizing?: ChainTradeLockedTrade["sizing"];
+  exit?: {
+    session: string; at: string; kind: "target" | "stop" | "invalidated" | "time";
+    premium: number | null; premium_source: "bid" | "last" | null; spot: number;
+    pnl_per_unit: number | null; pnl_per_lot: number | null;
+  };
+};
+
+export type ChainTrade = ChainTradeBase & { live?: ChainTradeLive };
+
+type ChainTradeBase = {
   action: "BUY_CE" | "BUY_PE" | "NO_TRADE";
   reason: string | null;
   trade: {
@@ -960,7 +984,7 @@ export type ChainTrade = {
   computed_at: string;
   market_open: boolean;
   logged: boolean;
-  record: ({ session: string; made_at: string } & Omit<ChainTrade, "record">)[] | null;
+  record: ({ session: string; made_at: string } & Omit<ChainTradeBase, "record">)[] | null;
 };
 
 export const fetchChainTrade = (rules?: Partial<ChainTradeRules>, plan?: { capital: number; risk_pct: number }) => {

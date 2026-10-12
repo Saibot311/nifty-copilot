@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ChainTrade, ChainTradeRules } from "@/lib/api";
-import { fetchChainTrade } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import type { ChainTrade, ChainTradeLive, ChainTradeRules } from "@/lib/api";
+import { fetchChainTrade, subscribeToTick } from "@/lib/api";
 import { useStored } from "@/lib/stored";
 import { Offline, Panel, Pill, Stat, fmtNum, minus } from "./ui";
 
@@ -20,6 +20,8 @@ import { Offline, Panel, Pill, Stat, fmtNum, minus } from "./ui";
 const RULES_KEY = "chain_trade_rules";
 const PLAN_KEY = "chain_trade_plan";
 const STALE_MIN = 10;
+/** The shared tick drives a refetch at most this often while the market is open. */
+const REFRESH_MS = 30_000;
 
 const FIELDS: { key: keyof ChainTradeRules; label: string; step: number; hint: string }[] = [
   { key: "near_strikes", label: "Strikes each side", step: 1, hint: "how far from the money the build-up is read" },
@@ -89,7 +91,35 @@ export function ChainTradeCard({ initial }: { initial: ChainTrade | null }) {
   const answered = mine?.key === key;
   const state = !own ? "idle" : !answered ? "loading" : mine.data ? "idle" : "failed";
   // While a refresh for your rules is out, the last answer for them stays up.
-  const data = own ? (mine?.key.startsWith(prefix) ? mine.data : null) : initial;
+  const base = own ? (mine?.key.startsWith(prefix) ? mine.data : null) : initial;
+
+  // Live refresh: no timer of its own. The page's shared tick says whether the
+  // market is open; when 30 s have passed since the last fetch, ask again with
+  // the same rules and capital. A newer answer replaces the page's, until the
+  // rules or capital change.
+  const [polled, setPolled] = useState<{ prefix: string; data: ChainTrade } | null>(null);
+  const asked = useRef({ at: 0, busy: false });
+  const params = useRef({ stored, storedPlan, prefix });
+  useEffect(() => {
+    params.current = { stored, storedPlan, prefix };
+  }, [stored, storedPlan, prefix]);
+  useEffect(() => {
+    asked.current.at = Date.now();
+  }, [key]);
+  useEffect(() => {
+    return subscribeToTick((tick) => {
+      const open = tick.market?.is_open ?? tick.market?.open_by_clock;
+      const a = asked.current;
+      if (!open || a.busy || Date.now() - a.at < REFRESH_MS) return;
+      a.busy = true;
+      a.at = Date.now();
+      const { stored: st, storedPlan: sp, prefix: pf } = params.current;
+      fetchChainTrade(parseRules(st) ?? undefined, parsePlan(sp) ?? undefined)
+        .then((r) => { if (r.data) setPolled({ prefix: pf, data: r.data }); })
+        .finally(() => { a.busy = false; a.at = Date.now(); });
+    });
+  }, []);
+  const data = polled && base && polled.prefix === prefix && polled.data.computed_at >= base.computed_at ? polled.data : base;
   if (!initial && !own) {
     return <Offline what="The option-chain trade" why="NSE's option chain did not answer, so there is nothing to read the trade from." />;
   }
@@ -104,10 +134,14 @@ export function ChainTradeCard({ initial }: { initial: ChainTrade | null }) {
     );
   }
 
-  const t = data.trade;
+  const live = data.live;
+  const lockedTrade = live && (live.phase === "locked" || live.phase === "closed") ? live.trade ?? null : null;
+  // Once a trade is locked it is the day's trade; what the rule sees now is only a candidate.
+  const t = lockedTrade ? { ...lockedTrade, sizing: live?.sizing ?? null } : data.trade;
   const age = ageMinutes(data.inputs.as_of, data.computed_at);
   const stale = data.market_open && age != null && age > STALE_MIN;
   const sideTone = t?.side === "CE" ? "text-emerald-400" : "text-rose-400";
+  const pctOf = (v: number | null, e: number | null) => (v != null && e ? Math.round(Math.abs(v / e - 1) * 100) : null);
 
   return (
     <Panel className="overflow-hidden border-amber-500/25 bg-amber-500/[0.03]">
@@ -115,6 +149,9 @@ export function ChainTradeCard({ initial }: { initial: ChainTrade | null }) {
         <div className="min-w-0">
           {t ? (
             <p className="text-xl font-semibold tracking-tight">
+              {lockedTrade && live?.locked_at && (
+                <span className="mr-2 text-base font-medium text-zinc-400">Locked {hhmm(live.locked_at)} —</span>
+              )}
               <span className={sideTone}>Buy {t.strike.toLocaleString("en-IN")} {t.side}</span>
               <span className="ml-2 text-sm font-normal text-zinc-500">{t.expiry}</span>
             </p>
@@ -132,12 +169,19 @@ export function ChainTradeCard({ initial }: { initial: ChainTrade | null }) {
 
       <div className="px-5 py-4">
         <PlanForm plan={plan} onChange={(p) => setStoredPlan(p ? JSON.stringify(p) : "")} />
+        {live && <LiveState live={live} plan={plan} />}
+        {lockedTrade && (
+          <p className="mb-3 text-[12px] leading-relaxed text-zinc-500">
+            These are the levels locked for today and they stay fixed. The live candidate the rule sees now (the chain
+            figures below) is no longer used today.
+          </p>
+        )}
         {t ? (
           <>
             <div className="grid grid-cols-3 gap-3">
               <Stat label={t.entry_source === "last" ? "Entry (last trade)" : "Entry (ask)"} value={premium(t.entry)} />
-              <Stat label="Target" value={premium(t.target)} sub={`+${data.rules.target_pct}%`} />
-              <Stat label="Stop-loss" value={premium(t.stop)} sub={`−${data.rules.stop_pct}%`} />
+              <Stat label="Target" value={premium(t.target)} sub={`+${lockedTrade ? pctOf(t.target, t.entry) : data.rules.target_pct}%`} />
+              <Stat label="Stop-loss" value={premium(t.stop)} sub={`−${lockedTrade ? pctOf(t.stop, t.entry) : data.rules.stop_pct}%`} />
             </div>
             {t.entry == null && (
               <p className="mt-2 text-[12px] text-amber-300">NSE shows no price for this contract yet, so there is no entry, target or stop.</p>
@@ -216,6 +260,101 @@ function RulesForm({ rules, onApply }: { rules: ChainTradeRules; onApply: (r: Ch
         </button>
       </div>
     </form>
+  );
+}
+
+const hhmm = (iso: string) => iso.slice(11, 16);
+const signed = (v: number) => `${v < 0 ? "−" : "+"}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
+const KIND: Record<string, string> = {
+  target: "Target hit", stop: "Stop hit", invalidated: "Called off: NIFTY broke the level", time: "Closed on the clock",
+};
+
+/** The day's trade as it stands: scanning, locked with a live premium, or closed. Figures are the API's. */
+function LiveState({ live, plan }: { live: ChainTradeLive; plan: Plan | null }) {
+  const t = live.trade;
+  if (live.phase === "scanning" || live.phase === "not_trading" || live.phase === "unavailable") {
+    const scan = live.last_scan;
+    return (
+      <div className="mb-4 rounded-lg border border-zinc-700/70 bg-zinc-900/40 px-4 py-3" role="status">
+        {live.phase === "scanning" ? (
+          <p className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-300 motion-reduce:animate-none" />
+            Scanning the chain for a trade
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-zinc-200">{live.message}</p>
+        )}
+        {scan ? (
+          <p className="mt-1 text-[12px] leading-relaxed text-zinc-400">
+            Last checked {hhmm(scan.at)}: no trade{scan.reason ? ` — ${scan.reason}` : ""}
+            {live.phase === "scanning" && live.next_check_minutes ? ` Next check in about ${live.next_check_minutes} min.` : ""}
+          </p>
+        ) : live.phase === "scanning" ? (
+          <p className="mt-1 text-[12px] text-zinc-500">No check has run yet today. The next is within about {live.next_check_minutes ?? 5} min.</p>
+        ) : null}
+        {live.phase === "scanning" && (
+          <p className="mt-2 text-[11px] text-zinc-500">Below is the candidate as the rule sees it right now.</p>
+        )}
+      </div>
+    );
+  }
+  if (!t) return null;
+  if (live.phase === "closed" && live.exit) {
+    const ex = live.exit, pl = ex.pnl_per_lot;
+    const good = pl != null && pl > 0, bad = pl != null && pl < 0;
+    return (
+      <div className={`mb-4 rounded-lg border px-4 py-3 ${good ? "border-emerald-500/30 bg-emerald-500/[0.06]" : bad ? "border-rose-500/30 bg-rose-500/[0.06]" : "border-zinc-700/70 bg-zinc-900/40"}`}
+           role="status">
+        <p className={`text-sm font-semibold ${good ? "text-emerald-300" : bad ? "text-rose-300" : "text-zinc-200"}`}>
+          {KIND[ex.kind] ?? ex.kind} {hhmm(ex.at)}
+          {ex.premium != null ? ` at ₹${ex.premium.toFixed(2)}` : ""}
+          {pl != null ? `: ${signed(pl)} a lot after charges` : ""}
+        </p>
+        <p className="mt-1 text-[12px] text-zinc-400">
+          NIFTY {ex.spot.toLocaleString("en-IN")}
+          {ex.premium_source === "last" ? " · priced at the last trade (no bid)" : ""}
+          {plan && live.sizing?.lots ? ` · for your ${live.sizing.lots} ${live.sizing.lots === 1 ? "lot" : "lots"}: ${pl != null ? signed(pl * live.sizing.lots) : "–"}` : ""}
+        </p>
+      </div>
+    );
+  }
+  const m = live.mark, pl = live.pnl_per_lot;
+  const pos = live.position;
+  const tone = pl == null ? "text-zinc-200" : pl >= 0 ? "text-emerald-300" : "text-rose-300";
+  return (
+    <div className="mb-4 rounded-lg border border-zinc-700/70 bg-zinc-900/40 px-4 py-3" role="status">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-sm text-zinc-300">
+          Now <span className="font-mono font-semibold tabular-nums text-zinc-100">{m?.premium != null ? m.premium.toFixed(2) : "–"}</span>
+          {m?.source === "last" && <span className="text-[11px] text-amber-300"> (last trade, no bid)</span>}
+          {m && <span className="ml-2 text-[12px] text-zinc-500">NIFTY {m.spot.toLocaleString("en-IN")}</span>}
+        </p>
+        <p className={`text-sm font-semibold tabular-nums ${tone}`}>
+          {pl != null ? `${signed(pl)} a lot` : "–"}
+          {plan && live.pnl_for_plan != null && live.sizing?.lots ? (
+            <span className="ml-2 text-[12px] font-normal">· yours {signed(live.pnl_for_plan)} ({live.sizing.lots} {live.sizing.lots === 1 ? "lot" : "lots"})</span>
+          ) : null}
+        </p>
+      </div>
+      {pos != null && (
+        <div className="mt-3" aria-label={`Premium is ${Math.round(pos * 100)}% of the way from the stop to the target`}>
+          <div className="relative h-2 rounded-full bg-gradient-to-r from-rose-500/40 via-zinc-700/60 to-emerald-500/40">
+            {t.entry != null && t.stop != null && t.target != null && t.target > t.stop && (
+              <span className="absolute top-[-2px] h-3 w-px bg-zinc-300/70"
+                    style={{ left: `${((t.entry - t.stop) / (t.target - t.stop)) * 100}%` }} />
+            )}
+            <span className="absolute top-1/2 h-4 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-zinc-50 shadow shadow-black/40"
+                  style={{ left: `${pos * 100}%` }} />
+          </div>
+          <div className="mt-1 flex justify-between font-mono text-[11px] tabular-nums text-zinc-500">
+            <span>stop {t.stop?.toFixed(2)}</span>
+            <span>entry {t.entry?.toFixed(2)}</span>
+            <span>target {t.target?.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-zinc-500">Priced at the bid, net of the lock&apos;s round-trip charges.</p>
+    </div>
   );
 }
 
