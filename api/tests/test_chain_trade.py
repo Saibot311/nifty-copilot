@@ -91,3 +91,104 @@ def test_log_keeps_the_first_suggestion_of_a_session_and_refuses_edits(tmp_path)
     assert chain_trade_db.suggestions(db_path=db)[0]["action"] == "BUY_CE"
     with pytest.raises(sqlite3.DatabaseError), chain_trade_db.connect(db) as conn:
         conn.execute("DELETE FROM suggestions")
+
+
+# --- sizing and levels --------------------------------------------------------------
+
+from datetime import datetime
+
+from market_data.kite_session import IST
+
+NOW = datetime(2026, 10, 12, 12, 30, tzinfo=IST)
+
+
+def with_walls(t, put_strike=24900.0, call_strike=25100.0):
+    """Extra OI added today at a strike below spot (puts) and above it (calls)."""
+    for r in t["rows"]:
+        if r["strike"] == put_strike:
+            r["put"]["oi_change"] += 800
+        if r["strike"] == call_strike:
+            r["call"]["oi_change"] += 900
+        if r["strike"] == 24800.0:
+            r["put"]["oi_change"] += 300  # a smaller wall: not the one chosen
+    return t
+
+
+# one lot: 100 x 65 = 6,500 + 60 charges; risk at the stop: 25 x 65 + 60 = 1,685.
+def test_sizing_is_none_without_capital():
+    assert build_trade(table(put_add=1000))["trade"]["sizing"] is None
+
+
+def test_sizing_limited_by_money():
+    s = build_trade(table(put_add=1000), capital=9000, risk_pct=20)["trade"]["sizing"]
+    assert s["lot_cost_rs"] == 6560.0 and s["affordable_lots"] == 1 and s["lots_by_risk"] == 1
+    assert s["risk_per_lot_rs"] == 1685.0
+    assert s["lots"] == 1 and s["limited_by"] == "money" and s["quantity"] == 65
+    assert s["deployed_rs"] == 6560.0 and s["max_loss_rs"] == 1685.0
+    assert s["profit_at_target_rs"] == 40 * 65 - 60  # 2,540
+    assert s["note"] is None
+
+
+def test_sizing_limited_by_risk():
+    s = build_trade(table(put_add=1000), capital=50000, risk_pct=5)["trade"]["sizing"]
+    assert s["affordable_lots"] == 7 and s["lots_by_risk"] == 1  # 2,500 / 1,685
+    assert s["lots"] == 1 and s["limited_by"] == "risk" and s["max_loss_rs"] == 1685.0
+
+
+def test_sizing_zero_lot_notes():
+    poor = build_trade(table(put_add=1000), capital=5000)["trade"]["sizing"]
+    assert poor["lots"] == 0 and poor["quantity"] == 0 and poor["max_loss_rs"] == 0
+    assert "buys no lot" in poor["note"] and "₹6,560" in poor["note"]
+    tight = build_trade(table(put_add=1000), capital=50000, risk_pct=2)["trade"]["sizing"]
+    assert tight["lots"] == 0 and "more than 2%" in tight["note"] and "₹1,685" in tight["note"]
+
+
+def test_sizing_needs_a_price():
+    assert build_trade(table(put_add=1000, ask=None), capital=50000)["trade"]["sizing"] is None
+
+
+def test_ce_levels_use_the_strongest_put_wall_below_spot():
+    lv = build_trade(with_walls(table(put_add=1000)), now=NOW)["trade"]["levels"]
+    assert lv["support"] == 24900.0 and lv["ceiling"] == 25100.0
+    assert lv["enter_above"] == 24900.0 and "enter_below" not in lv
+    assert lv["entry_condition"] == "Consider entering while NIFTY holds above 24,900"
+    assert lv["entry_max_premium"] == 103.0
+    assert lv["invalidation_index"] == 24900.0 and "closes below 24,900" in lv["invalidation_text"]
+    assert lv["time_exit_by"] == "15:15" and "15:15" in lv["time_exit"]
+
+
+def test_pe_levels_mirror_with_the_call_wall():
+    lv = build_trade(with_walls(table(call_add=1000)), now=NOW)["trade"]["levels"]
+    assert lv["enter_below"] == 25100.0 and "holds below 25,100" in lv["entry_condition"]
+    assert lv["invalidation_index"] == 25100.0 and "closes above 25,100" in lv["invalidation_text"]
+
+
+def test_index_equivalents_follow_delta():
+    for build, up in ((lambda: table(put_add=1000), True), (lambda: table(call_add=1000), False)):
+        lv = build_trade(with_walls(build()), now=NOW)["trade"]["levels"]
+        d = lv["delta"]
+        assert d is not None and 0.2 < abs(d) < 0.8
+        sign = 1 if up else -1
+        assert lv["exit_target_index"] == round(25000 + sign * 40 / abs(d))
+        assert lv["exit_stop_index"] == round(25000 - sign * 25 / abs(d))
+        assert (lv["exit_target_index"] > 25000) is up and (lv["exit_stop_index"] < 25000) is up
+        assert "about NIFTY" in lv["exit_target_text"] and "must" not in lv["exit_target_text"]
+
+
+def test_no_wall_falls_back_to_a_quarter_percent():
+    lv = build_trade(table(put_add=1000), now=NOW)["trade"]["levels"]  # only ATM has changes
+    assert lv["support"] is None and lv["enter_above"] == 24938  # 25000 less 0.25%
+    assert lv["invalidation_index"] is None and lv["invalidation_text"] is None
+
+
+def test_no_clock_means_no_delta_and_premium_levels_only():
+    lv = build_trade(with_walls(table(put_add=1000)))["trade"]["levels"]
+    assert lv["delta"] is None and lv["exit_target_index"] is None and lv["exit_stop_index"] is None
+    assert "premium levels only" in lv["exit_target_text"] and "₹140.00" in lv["exit_target_text"]
+
+
+def test_expiry_day_exits_earlier():
+    t = with_walls(table(put_add=1000))
+    t["expiry"] = "12-Oct-2026"
+    lv = build_trade(t, now=NOW)["trade"]["levels"]
+    assert lv["time_exit_by"] == "14:30" and "expiry day" in lv["time_exit"]
