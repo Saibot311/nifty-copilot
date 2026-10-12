@@ -26,6 +26,7 @@ def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "option_snapshots.db")
     # The intraday record reads bars from the network; its own tests are in test_intraday_live.
     monkeypatch.setattr(snap, "record_intraday", lambda now, rows, *a: None)
+    monkeypatch.setattr(snap, "record_chain_trade", lambda *a: None)
 
 
 def _side(price):

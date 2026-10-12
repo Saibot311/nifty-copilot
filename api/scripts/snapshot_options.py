@@ -95,6 +95,7 @@ def main(now: datetime | None = None, nse=None) -> int:
         print(f"{now:%H:%M} {new} new of {len(rows)}")
         record_intraday(now, rows, lambda wanted: fetch(nse, now, expiries, wanted))
         record_breakouts(now, rows)
+        record_chain_trade(now, nse, expiries)
         return 0
     except Exception as e:  # noqa: BLE001 — a failed run is logged and retried in five minutes
         db.log_run("failed", 0, f"{type(e).__name__}: {e}")
@@ -155,6 +156,29 @@ def record_breakouts(now: datetime, rows: list[dict]) -> None:
             print(f"{now:%H:%M} breakout record: {', '.join(written)}")
     except Exception as e:  # noqa: BLE001 — the snapshot is saved either way
         print(f"{now:%H:%M} breakout record FAILED — {type(e).__name__}: {e}")
+
+
+def record_chain_trade(now: datetime, nse, expiries: list[str]) -> None:
+    """The Today tab's live option-chain trade: look for a trade until one
+    locks, then follow it to its exit (options/chain_trade_live.py), on the
+    nearest tradable expiry's fresh chain."""
+    try:
+        from options.chain_trade_live import scan_and_track
+        from options.move_table import nearest_tradable
+        expiry = nearest_tradable(expiries, now.date())
+        if not expiry:
+            return
+        table = build_chain_table(nse.index_option_chain("NIFTY", expiry), expiry, expiries, now.date())
+        try:
+            from market_data.nse_holidays import trading_holidays
+            holidays, _ = trading_holidays()
+        except Exception:  # noqa: BLE001 — holidays only refine the index levels
+            holidays = None
+        out = scan_and_track(now, chain=table, holidays=holidays)
+        if out.get("did") in ("locked", "exit"):
+            print(f"{now:%H:%M} chain trade: {out}")
+    except Exception as e:  # noqa: BLE001 — the snapshot is saved either way
+        print(f"{now:%H:%M} chain trade FAILED — {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":

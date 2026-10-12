@@ -450,7 +450,9 @@ def options_trade(
     except Exception as e:
         raise HTTPException(503, f"Option-chain trade unavailable: {str(e)[:160]}") from e
     result["logged"] = False
-    if result["trade"] and result["default_rules"] and result["market_open"] and result["trade"]["entry"]:
+    from options.chain_trade_live import scan_window
+    if (result["trade"] and result["default_rules"] and result["market_open"] and result["trade"]["entry"]
+            and scan_window(now)):
         try:
             # The owner's money is not part of the record.
             on_record = {**result, "trade": {**result["trade"], "sizing": None}}
@@ -463,6 +465,12 @@ def options_trade(
         result["record"] = None
     # Whether this session's trade is on record, by this request or an earlier one.
     result["logged"] = result["logged"] or any(r["session"] == now.date().isoformat() for r in result["record"] or [])
+    # The live lifecycle: scanning, locked (tracked on the chain just read), or closed.
+    try:
+        from options.chain_trade_live import live_block
+        result["live"] = live_block(now, chain, capital, risk_pct)
+    except Exception as e:
+        result["live"] = {"phase": "unavailable", "message": f"Live state unavailable: {str(e)[:160]}"}
     return result
 
 
