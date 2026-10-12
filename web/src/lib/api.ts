@@ -934,6 +934,22 @@ export type ChainTrade = {
     entry: number | null; entry_source: "ask" | "last" | null; target: number | null; stop: number | null;
     iv: number | null; oi: number; oi_change: number; lot_size: number | null;
     lot_rs: number | null; charges_rs: number | null; breakeven: number | null; rationale: string;
+    /** From the owner's capital (null without it): lots, money and loss, all computed in Python. */
+    sizing?: {
+      capital: number; risk_pct: number; lot_cost_rs: number; affordable_lots: number; risk_per_lot_rs: number;
+      lots_by_risk: number; lots: number; quantity: number; deployed_rs: number; max_loss_rs: number;
+      profit_at_target_rs: number; limited_by: "money" | "risk" | null; note: string | null;
+    } | null;
+    /** Where to enter and exit in NIFTY terms; index equivalents are null when no delta could be worked out. */
+    levels?: {
+      support: number | null; ceiling: number | null; delta: number | null; spot: number;
+      enter_above?: number; enter_below?: number; entry_condition: string;
+      entry_max_premium: number | null; entry_max_text: string | null;
+      exit_target_index: number | null; exit_stop_index: number | null;
+      exit_target_text: string | null; exit_stop_text: string | null;
+      invalidation_index: number | null; invalidation_text: string | null;
+      time_exit: string; time_exit_by: string;
+    } | null;
   } | null;
   inputs: {
     expiry: string; as_of: string | null; spot: number; atm_strike: number | null; pcr: number | null;
@@ -947,8 +963,8 @@ export type ChainTrade = {
   record: ({ session: string; made_at: string } & Omit<ChainTrade, "record">)[] | null;
 };
 
-export const fetchChainTrade = (rules?: Partial<ChainTradeRules>) => {
-  const q = new URLSearchParams(Object.entries(rules ?? {}).map(([k, v]) => [k, String(v)])).toString();
+export const fetchChainTrade = (rules?: Partial<ChainTradeRules>, plan?: { capital: number; risk_pct: number }) => {
+  const q = new URLSearchParams(Object.entries({ ...rules, ...plan }).map(([k, v]) => [k, String(v)])).toString();
   return get<ChainTrade>(`/api/options/trade${q ? `?${q}` : ""}`);
 };
 

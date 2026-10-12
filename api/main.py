@@ -423,6 +423,8 @@ def options_trade(
     strike_offset: int | None = Query(None, ge=0, le=10),
     target_pct: float | None = Query(None, gt=0, le=500),
     stop_pct: float | None = Query(None, gt=0, lt=100),
+    capital: float | None = Query(None, gt=0, le=1e9),
+    risk_pct: float = Query(2.0, ge=0.1, le=20),
 ) -> dict:
     """One option to buy, read off the live chain's open-interest build-up,
     PCR and IV: the owner's scoped exception to "never advise a trade".
@@ -442,13 +444,17 @@ def options_trade(
         expiry = nearest_tradable(first["expiries"], now.date()) or first["expiry"]
         chain = cached(f"option_chain_contracts:{expiry}", ttl_seconds=120, producer=lambda: live_chain_table(expiry),
                        stale_ok=True)
-        result = stamp(build_trade(chain, rules), now, open_by_clock(now))
+        from market_data.nse_holidays import trading_holidays
+        holidays, _ = trading_holidays()
+        result = stamp(build_trade(chain, rules, capital, risk_pct, now, holidays), now, open_by_clock(now))
     except Exception as e:
         raise HTTPException(503, f"Option-chain trade unavailable: {str(e)[:160]}") from e
     result["logged"] = False
     if result["trade"] and result["default_rules"] and result["market_open"] and result["trade"]["entry"]:
         try:
-            result["logged"] = chain_trade_db.add_suggestion(now.date().isoformat(), result["computed_at"], result)
+            # The owner's money is not part of the record.
+            on_record = {**result, "trade": {**result["trade"], "sizing": None}}
+            result["logged"] = chain_trade_db.add_suggestion(now.date().isoformat(), result["computed_at"], on_record)
         except Exception as e:
             result["log_error"] = str(e)[:160]
     try:
