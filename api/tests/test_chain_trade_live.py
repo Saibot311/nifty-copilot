@@ -176,3 +176,33 @@ def test_a_failing_chain_trade_never_costs_the_snapshot(capsys):
 
     snap.record_chain_trade(at(10, 5), Boom(), ["20-Oct-2026"])         # prints, never raises
     assert "chain trade FAILED" in capsys.readouterr().out
+
+
+def test_a_lock_no_run_saw_close_gets_an_unpriced_time_exit_next_day(path):
+    lock_ce(path)                                                     # Monday, never seen after 15:15
+    live.scan_and_track(datetime(2026, 10, 13, 9, 25, tzinfo=IST), chain(), path)
+    ex = db.exit_for(TODAY, path)
+    assert ex["kind"] == "time" and ex["premium"] is None and ex["note"] == "not seen after the close"
+
+
+def test_a_page_load_on_a_holiday_does_not_lock_the_last_sessions_chain(path, monkeypatch):
+    """20 Oct 2026 (a Tuesday, Diwali): the clock says open, NSE serves the 19th's chain."""
+    import main
+
+    stale = chain()
+    stale["as_of"] = "19-Oct-2026 15:30:00"
+    stale.setdefault("expiries", [stale["expiry"]])
+
+    class Holiday(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 20, 10, 30, tzinfo=IST)
+    monkeypatch.setattr(main, "datetime", Holiday)
+    monkeypatch.setattr(main, "cached", lambda key, ttl_seconds, producer, stale_ok=False: stale)
+    monkeypatch.setattr(db, "DB_PATH", path)
+    import market_data.nse_holidays as nh
+    monkeypatch.setattr(nh, "trading_holidays", lambda: (set(), True))
+    rules = dict.fromkeys(("near_strikes", "min_skew_pct", "pcr_ce_min", "pcr_pe_max", "iv_max", "strike_offset",
+                           "target_pct", "stop_pct", "capital"))
+    out = main.options_trade(**rules, risk_pct=2.0)
+    assert out["trade"] and out["logged"] is False and db.suggestion_for("2026-10-20", path) is None

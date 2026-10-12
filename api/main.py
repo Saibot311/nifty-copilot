@@ -450,9 +450,10 @@ def options_trade(
     except Exception as e:
         raise HTTPException(503, f"Option-chain trade unavailable: {str(e)[:160]}") from e
     result["logged"] = False
-    from options.chain_trade_live import scan_window
+    from options.chain_trade_live import _stamped_today, scan_window
+    # The clock does not know holidays; a chain NSE did not stamp today is the last session's.
     if (result["trade"] and result["default_rules"] and result["market_open"] and result["trade"]["entry"]
-            and scan_window(now)):
+            and scan_window(now) and _stamped_today(chain, now)):
         try:
             # The owner's money is not part of the record.
             on_record = {**result, "trade": {**result["trade"], "sizing": None}}
