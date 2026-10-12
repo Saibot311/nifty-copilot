@@ -10,7 +10,7 @@ import { Offline, Panel, Pill, Stat, fmtNum, fmtPct, fmtSigned } from "./ui";
  *  to buy now and where it breaks even. It replaced the separate open-interest
  *  card (2026-09-29): that card's summary is the stat row at the top, for
  *  whichever expiry is picked, and its bars sit behind the OI figures, growing
- *  outward from the strike column with the two heaviest strikes brightest.
+ *  outward from the strike column with the three heaviest each side in bold.
  *
  *  Calls sit left and puts right, as on NSE and Kite. In-the-money cells are
  *  shaded in zinc, not coloured: DESIGN.md §2 keeps emerald and rose for money
@@ -31,12 +31,18 @@ const compact = (v: number) => {
 };
 const compactSigned = (v: number) => (v === 0 ? "0" : `${v > 0 ? "+" : "−"}${compact(Math.abs(v))}`);
 const sideName = (k: Kind) => (k === "CE" ? "call" : "put");
+// Which way open interest moved today: added or cut. A glyph, not a colour
+// (DESIGN.md §2 keeps emerald and rose for money), so it reads without one.
+const oiArrow = (v: number) => (v > 0 ? "▲" : v < 0 ? "▼" : "");
+/** The three heaviest strikes by OI on one side, heaviest first. */
+const heaviest = (rows: OptionChainTable["rows"], side: "call" | "put") =>
+  rows.filter((r) => (r[side]?.oi ?? 0) > 0).sort((a, b) => b[side]!.oi - a[side]!.oi).slice(0, 3).map((r) => r.strike);
 
 /** One side of a strike's row, in the column order NSE uses: open interest
  *  on the outside, the price next to the strike. `mirror` flips it for puts. */
-function Side({ c, kind, strike, selected, onPick, mirror, maxOi, peak }: {
+function Side({ c, kind, strike, selected, onPick, mirror, maxOi, rank }: {
   c: ChainContract | null; kind: Kind; strike: number; selected: boolean; onPick: () => void; mirror: boolean;
-  maxOi: number; peak: boolean;
+  maxOi: number; rank: number | null;
 }) {
   const shade = selected ? "bg-indigo-500/10" : c?.itm ? "bg-zinc-800/40" : "";
   const td = `px-2 py-1.5 text-right ${shade}`;
@@ -52,14 +58,19 @@ function Side({ c, kind, strike, selected, onPick, mirror, maxOi, peak }: {
   }
   const click = { onClick: onPick };
   const cells = [
-    <td key="oi" {...click} className={`${td} relative cursor-pointer text-zinc-400`}
-        title={`${c.oi.toLocaleString("en-IN")} ${sideName(kind)} OI at ${strike.toLocaleString("en-IN")}`}>
+    <td key="oi" {...click} className={`${td} relative cursor-pointer ${rank ? "font-semibold text-zinc-100" : "text-zinc-400"}`}
+        title={`${c.oi.toLocaleString("en-IN")} ${sideName(kind)} OI at ${strike.toLocaleString("en-IN")}${
+          rank ? `, the ${["heaviest", "2nd heaviest", "3rd heaviest"][rank - 1]} ${sideName(kind)} strike` : ""}`}>
       {/* The open-interest bar: one scale for both sides, growing away from the strike. */}
       <span aria-hidden className={`absolute inset-y-1 ${mirror ? "left-0" : "right-0"} rounded-[2px] ${
-        peak ? "bg-zinc-300/35" : "bg-zinc-500/20"}`} style={{ width: `${(c.oi / maxOi) * 100}%` }} />
+        rank === 1 ? "bg-zinc-300/35" : rank ? "bg-zinc-400/25" : "bg-zinc-500/20"}`} style={{ width: `${(c.oi / maxOi) * 100}%` }} />
       <span className="relative">{compact(c.oi)}</span>
+      {/* Below lg the Chg OI column is hidden, so which way OI moved today rides beside the figure. */}
+      <span className="relative ml-0.5 text-[9px] text-zinc-500 lg:hidden">{oiArrow(c.oi_change)}</span>
     </td>,
-    <td key="oic" {...click} className={`${td} hidden cursor-pointer text-zinc-500 lg:table-cell`}>{compactSigned(c.oi_change)}</td>,
+    <td key="oic" {...click} className={`${td} hidden cursor-pointer lg:table-cell ${c.oi_change > 0 ? "text-zinc-200" : "text-zinc-500"}`}>
+      {compactSigned(c.oi_change)} <span className="text-[9px]">{oiArrow(c.oi_change)}</span>
+    </td>,
     <td key="vol" {...click} className={`${td} hidden cursor-pointer text-zinc-500 lg:table-cell`}>{compact(c.volume)}</td>,
     <td key="iv" {...click} className={`${td} hidden cursor-pointer text-zinc-500 sm:table-cell`}>{c.iv == null ? "–" : c.iv.toFixed(1)}</td>,
     <td key="ltp" className={`${shade} p-0`}>
@@ -178,6 +189,9 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
   const spotAt = data ? data.rows.findIndex((r) => r.strike > data.underlying_value) : -1;
   // Bar length only: a scale for drawing, not a figure anyone reads.
   const maxOi = data ? Math.max(...data.rows.flatMap((r) => [r.call?.oi ?? 0, r.put?.oi ?? 0]), 1) : 1;
+  const topCalls = data ? heaviest(data.rows, "call") : [];
+  const topPuts = data ? heaviest(data.rows, "put") : [];
+  const rankOf = (top: number[], strike: number) => (top.includes(strike) ? top.indexOf(strike) + 1 : null);
   const oi = data?.open_interest;
 
   return (
@@ -261,14 +275,14 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
                     <tr key={r.strike} ref={r.is_atm ? atm : undefined}
                         className={`border-b border-zinc-900 ${i === spotAt ? "border-t-2 border-t-zinc-400" : ""}`}>
                       <Side c={r.call} kind="CE" strike={r.strike} mirror={false} maxOi={maxOi}
-                            peak={r.strike === oi?.max_call_oi_strike}
+                            rank={rankOf(topCalls, r.strike)}
                             selected={pick?.strike === r.strike && pick.kind === "CE"}
                             onPick={() => setPick({ strike: r.strike, kind: "CE" })} />
                       <td className={`bg-zinc-900/60 px-2 py-1.5 text-center ${r.is_atm ? "font-semibold text-zinc-100" : "text-zinc-300"}`}>
                         {r.strike.toLocaleString("en-IN")}
                       </td>
                       <Side c={r.put} kind="PE" strike={r.strike} mirror maxOi={maxOi}
-                            peak={r.strike === oi?.max_put_oi_strike}
+                            rank={rankOf(topPuts, r.strike)}
                             selected={pick?.strike === r.strike && pick.kind === "PE"}
                             onPick={() => setPick({ strike: r.strike, kind: "PE" })} />
                     </tr>
@@ -286,8 +300,8 @@ export function OptionChainCard({ initial }: { initial?: OptionChainTable | null
           {data.lot_size} bought at the ask. Charges are {data.rate_card}, on the way in and on a sale at the same
           price; the spread is the real one on the book rather than the backtests&apos; assumed 1.5%. The breakeven
           counts the premium and both legs&apos; charges. This is what a contract costs, not whether it is worth
-          buying. The bar behind each OI figure is open interest on one scale for both sides; the brightest two
-          are the heaviest strikes named above. Those are commonly read as support (puts) and resistance (calls),
+          buying. The bar behind each OI figure is open interest on one scale for both sides; the three heaviest
+          strikes on each side are in bold, the heaviest brightest, and ▲ or ▼ says whether OI was added or cut today. Those are commonly read as support (puts) and resistance (calls),
           and the put/call ratio as sentiment, but this project has not tested whether either predicts anything on
           NIFTY: they are measurements, not signals.
         </p>

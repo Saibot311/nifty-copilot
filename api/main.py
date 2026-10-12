@@ -413,6 +413,53 @@ def options_moves(
         raise HTTPException(503, f"Option moves unavailable: {str(e)[:160]}")
 
 
+@app.get("/api/options/trade")
+def options_trade(
+    near_strikes: int | None = Query(None, ge=1, le=15),
+    min_skew_pct: float | None = Query(None, ge=0, le=100),
+    pcr_ce_min: float | None = Query(None, ge=0, le=5),
+    pcr_pe_max: float | None = Query(None, ge=0, le=5),
+    iv_max: float | None = Query(None, gt=0, le=200),
+    strike_offset: int | None = Query(None, ge=0, le=10),
+    target_pct: float | None = Query(None, gt=0, le=500),
+    stop_pct: float | None = Query(None, gt=0, lt=100),
+) -> dict:
+    """One option to buy, read off the live chain's open-interest build-up,
+    PCR and IV: the owner's scoped exception to "never advise a trade".
+    UNTESTED; every rule is a setting (options/chain_trade.py). The first
+    trade the default rules suggest in a session is logged before its outcome
+    exists. Uses the same cached chain as /api/options/moves."""
+    from options.chain_trade import parse_rules, build_trade, stamp
+    from options.move_table import nearest_tradable
+    from storage import chain_trade_db
+    now = datetime.now(kite_session.IST)
+    rules = parse_rules({"near_strikes": near_strikes, "min_skew_pct": min_skew_pct, "pcr_ce_min": pcr_ce_min,
+                         "pcr_pe_max": pcr_pe_max, "iv_max": iv_max, "strike_offset": strike_offset,
+                         "target_pct": target_pct, "stop_pct": stop_pct})
+    try:
+        first = cached("option_chain_contracts:near", ttl_seconds=120, producer=lambda: live_chain_table(None),
+                       stale_ok=True)
+        expiry = nearest_tradable(first["expiries"], now.date()) or first["expiry"]
+        chain = cached(f"option_chain_contracts:{expiry}", ttl_seconds=120, producer=lambda: live_chain_table(expiry),
+                       stale_ok=True)
+        result = stamp(build_trade(chain, rules), now, open_by_clock(now))
+    except Exception as e:
+        raise HTTPException(503, f"Option-chain trade unavailable: {str(e)[:160]}") from e
+    result["logged"] = False
+    if result["trade"] and result["default_rules"] and result["market_open"] and result["trade"]["entry"]:
+        try:
+            result["logged"] = chain_trade_db.add_suggestion(now.date().isoformat(), result["computed_at"], result)
+        except Exception as e:
+            result["log_error"] = str(e)[:160]
+    try:
+        result["record"] = chain_trade_db.suggestions(limit=10)
+    except Exception:
+        result["record"] = None
+    # Whether this session's trade is on record, by this request or an earlier one.
+    result["logged"] = result["logged"] or any(r["session"] == now.date().isoformat() for r in result["record"] or [])
+    return result
+
+
 @app.get("/api/options/archive")
 def options_archive_status() -> dict:
     """How much of the local NSE options archive has been backfilled."""
